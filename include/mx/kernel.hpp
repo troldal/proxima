@@ -12,6 +12,8 @@
 
 namespace mx {
 
+class Expr;
+
 namespace detail {
 class MaximaSession;
 }
@@ -21,10 +23,13 @@ class MaximaSession;
 /// The session is started on construction and shut down on destruction, so a
 /// single Kernel serves many queries without paying process startup each time.
 ///
-/// This is the whole public surface for now. It still speaks Maxima's own
-/// syntax and hands back the text of Maxima's internal s-expressions;
-/// structured expressions arrive with the term layer (PLAN.md steps 7-9), at
-/// which point eval becomes an escape hatch rather than the main entry point.
+/// The operations in mx/ops.hpp are the intended way in; this is the layer
+/// beneath them. Each entry point comes in two forms. One takes an Expr, which
+/// travels to Maxima as structure — its internal s-expression — and is the
+/// form the operations use. The other takes Maxima source text, for anything
+/// an Expr cannot say; Maxima parses it itself, inside the same error trap,
+/// so a malformed string is an ordinary failure rather than a stall. Both
+/// hand back the text of Maxima's internal reply.
 ///
 /// Thread-safe: calls are serialised, so concurrent callers take turns rather
 /// than interleaving requests on one pipe. That makes a Kernel safe to share,
@@ -45,13 +50,15 @@ public:
     Kernel(const Kernel &) = delete;
     Kernel &operator=(const Kernel &) = delete;
 
-    /// Evaluates one Maxima *expression* — `integrate(x^2, x)`, with no
-    /// trailing `;` or `$`, since the expression is substituted into a wrapper
-    /// that supplies its own terminator.
+    /// Evaluates Maxima source text — `integrate(x^2, x)` — or, in the Expr
+    /// form, an expression sent as structure.
     ///
     /// A Maxima error comes back as a Reply with `ok == false` and a reason,
-    /// because failing to integrate something is an ordinary outcome. Only
-    /// infrastructure failures throw: see mx::KernelError.
+    /// because failing to integrate something is an ordinary outcome. That
+    /// includes text Maxima cannot even parse: it is read inside the error
+    /// trap, so `eval("(1")` fails with a message rather than waiting out
+    /// Config::timeout. Only infrastructure failures throw: see
+    /// mx::KernelError.
     ///
     /// **Discards the reply cache.** This entry point can evaluate anything,
     /// including statements that change Maxima's state — an assignment, a new
@@ -61,6 +68,7 @@ public:
     /// cache is merely slower. Use evalPure for anything known to be a
     /// question rather than an instruction.
     Reply eval(std::string_view expression);
+    Reply eval(const Expr &form);
 
     /// Evaluates a *pure* expression, consulting and filling the reply cache.
     ///
@@ -73,6 +81,7 @@ public:
     /// cache is discarded whenever that state might have changed: any eval(),
     /// any assumption added or dropped through mx::Context.
     Reply evalPure(std::string_view expression);
+    Reply evalPure(const Expr &form);
 
     /// Evaluates a statement that changes Maxima's state in a way this
     /// kernel's replay journal accounts for.
@@ -86,6 +95,7 @@ public:
     /// mx::Context is the intended caller; there is rarely a reason to use this
     /// directly. Use eval() for anything else, which assumes the worst.
     Reply evalTracked(std::string_view statement);
+    Reply evalTracked(const Expr &form);
 
     /// Forgets every cached reply. Rarely needed directly — state changes made
     /// through this library already do it — but the escape hatch if Maxima has
@@ -112,6 +122,7 @@ public:
     /// state such as mx::Context registers itself here; there is rarely a
     /// reason to call this directly.
     std::uint64_t remember(std::string statement);
+    std::uint64_t remember(const Expr &form);
 
     /// Stops replaying the statement `handle` names.
     void forget(std::uint64_t handle);

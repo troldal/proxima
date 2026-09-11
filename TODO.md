@@ -1,0 +1,489 @@
+# TODO — review findings
+
+A full read of the project (all ~10,800 lines: public headers, every source
+file, the tests, the build) followed by probes that *ran* the suspicious cases
+rather than reasoning about them. Where a claim below is measured, it says so.
+
+**Overall.** The architecture is sound and the discipline is unusually good:
+layers only point downward, no public header includes an internal one, the
+whole library compiles with zero warnings under
+`-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion
+-Wold-style-cast` (checked, all 19 translation units), and 222 tests pass
+against a real Maxima. The protocol design — correlation IDs, `errcatch`,
+the `retrieve` override, internal s-expressions rather than display text —
+is the part most projects like this get wrong, and it is right here.
+
+The problems are at the edges: a handful of real semantic bugs in the
+numeric layer, one robustness hole that turns a typo into a two-minute
+stall, an API with a couple of silent traps, and performance costs that
+are fine today but will not scale. None of it is structural.
+
+Items are ordered by how much they matter, not by file.
+
+---
+
+## 1. Correctness — wrong answers
+
+These produce a result that disagrees with Maxima, silently.
+
+- [ ] **`mod` in the numeric evaluator is `std::fmod`; Maxima's `mod` is
+  floored.** `evalNumeric(mod(-7, 3))` gives **-1**; Maxima gives **2**.
+  A closed form containing `mod` evaluates to a different number here than
+  in Maxima. Fix: `a - b * std::floor(a / b)`. (`src/core/numeric.cpp`,
+  `kBuiltins`; measured.)
+
+- [ ] **`round` is `std::round` (half away from zero); Maxima rounds half to
+  even.** `round(2.5)` gives **3** here, **2** in Maxima. Fix:
+  `std::nearbyint` under `FE_TONEAREST`, or `std::rint`. (Measured.)
+
+- [ ] **`Expr(true)` is the Real `1.0`, and `Expr('a')` is the Real
+  `97.0`.** The integral constructor template correctly excludes `bool` and
+  `char`, but that only diverts them to the non-template `Expr(double)`,
+  which accepts them by standard conversion. The exclusion achieves the
+  opposite of its intent. Fix: make the `double` constructor a template
+  constrained on `std::floating_point`, or `= delete` the `bool` and `char`
+  overloads explicitly. Same hazard exists on `mx::Integer`'s constructors
+  for anything that later adds a floating constructor. (Measured.)
+
+- [ ] **`Expr::parse("x!!")` gives `factorial(factorial(x))`.** In Maxima
+  `!!` is the double factorial — a different function. The parser claims to
+  be a subset of Maxima's grammar; on this input it is a superset with a
+  different meaning. Either lex `!!` as its own token (→ `genfact`/
+  `double_factorial`) or reject it. (Measured.)
+
+- [ ] **`Expr::parse("a<b<c")` is accepted as `(a<b)<c`.** Maxima rejects
+  chained relations. Same subset-vs-superset problem: make relations
+  non-associative in the Pratt loop and throw. (Measured.)
+
+- [ ] **NaN breaks `compareExpr`'s strict weak ordering.** `compareExpr`
+  orders numbers through `double`; for NaN neither `<` nor `>` holds, so
+  distinct NaNs compare *equal* to everything numeric, which violates the
+  precondition of the `std::sort` calls in `normalize()` — that is
+  undefined behaviour, not merely a wrong order. Also `Expr::real(NaN) ==
+  Expr::real(NaN)` is false for two distinct nodes while their hashes are
+  equal, and NaN prints as `nan`, which Maxima reads as a *symbol*. Decide:
+  either reject NaN at `Expr::real` (throw) or give it a total order
+  (`std::strong_order` on the bit pattern) and a spelling. (Measured.)
+
+- [ ] **Persistent-cache temp files can collide between processes.** The
+  temporary is named with an in-process atomic counter, so two processes
+  both produce `<hash>.reply.tmp0`, one truncates the other's partial write,
+  and a corrupt file gets renamed into place. The length-prefixed format
+  makes the reader *reject* it (so it self-heals as a miss), but the
+  header comment claims "two writers race only to produce identical
+  content", which is true of the target and false of the temp file. Add the
+  PID or a random suffix. (`src/kernel/persistent_cache.cpp`)
+
+- [ ] **`contains()` ignores `Opaque` text.** `solve` uses it to reject
+  `[x = sin(x)]`-shaped non-solutions; a value that mentions the unknown
+  only inside an Opaque node passes the check. Low likelihood, but the
+  guard is the thing that makes "success really is a solution" true.
+
+- [ ] **Discovery's error message hardcodes `sbcl.exe` on every
+  platform.** Uses `kSbclName` everywhere else; two messages in
+  `discoverMaxima` do not. (`src/kernel/discovery.cpp`)
+
+## 2. Robustness — a typo costs two minutes
+
+- [x] **Resolved — outbound is now s-expressions; see PLAN.md "Outbound
+  s-expressions".** *Original finding:* a *read* error is not an *eval*
+  error, so `errcatch` never sees
+  it. The request is `cppsend(id, errcatch(ratdisrep(<text>)))$` with the
+  text spliced in raw. Any `$`, `;`, unbalanced paren or other syntax slip
+  in the text makes Maxima's *reader* fail before `errcatch` is ever
+  entered. No frame is produced, so `readFrame` waits the full
+  `Config::timeout` (**two minutes** by default), throws `TimeoutError`,
+  and then `recover()` kills and restarts the kernel — paying the
+  transport's 2-second grace period on top. *Measured:* `eval("1$ 2")`,
+  `eval("x; 3")` and `diff(Expr::opaque("x$ 0"), x)` each took the full
+  timeout and threw `TimeoutError`; the session did come back healthy
+  after each. The last one matters most: it reaches the stall through a
+  *typed* public operation, not the raw escape hatch. Also measured:
+  `eval("1) + cppsend(0, [7]")` succeeds — the spliced text is live
+  Maxima code and can call the framing helper itself.
+
+  This is reachable from: `Kernel::eval` / `evalPure` with user text,
+  any `Expr::opaque(...)`, any `Symbol` or `Expr::function` head containing
+  a character Maxima's reader treats specially, and `mx::parse` — no,
+  `mx::parse` is safe: it quotes the text into a string literal for
+  `parse_string`, which is exactly the right idea.
+
+  Fixes, in increasing ambition:
+  1. Send the text as a *string* and have the Lisp helper read it:
+     `cppsend(id, "<escaped>")` with `errcatch(eval_string(...))` or
+     `parse_string` inside the helper. Read errors then become ordinary
+     caught errors with a message, and the frame always arrives. This is
+     the real fix and it also closes every injection path at once.
+  2. Failing that, validate symbol/function names at construction
+     (`Symbol("x y")`, `Symbol("")`, `Expr::function("a(b", …)` are all
+     accepted today and print as broken Maxima source — measured) and
+     document that `eval` text must be a single expression.
+  3. Add a test for the read-error path. There is none: `grep` finds no
+     test of a malformed expression reaching the kernel.
+
+  *Outcome:* fix 1 was done, and it made fix 2 unnecessary — `Symbol("x y")`
+  now round-trips through Maxima as a bar-quoted symbol, so odd names are
+  simply names. Fix 3 is `test_to_maxima.cpp`.
+
+- [ ] **`recover()` after a timeout pays the 2-second grace period for
+  nothing.** `kill()` waits up to 2 s for a child that has been *asked to
+  quit* — but on a timeout it was not asked; it is busy computing and will
+  never leave voluntarily. Pass a flag so recovery terminates immediately.
+  (`child_process_win32.cpp`, `child_process_posix.cpp`)
+
+- [ ] **`Kernel::eval` switches persistence off for the rest of the
+  kernel's life.** `stateAccounted_ = false` is never reset. One diagnostic
+  `eval("1+1")` and `Config::cacheDirectory` is dead until a new Kernel.
+  The reasoning is sound (an unrecorded change cannot be keyed), but there
+  is no `Kernel::evalPure`-style way back and nothing tells the caller.
+  Either expose a `resetPersistence()` / document loudly, or make `eval`
+  restart the kernel with the journal replayed — which *does* restore an
+  accounted state.
+
+- [ ] **`Context` destroyed out of LIFO order resets Maxima's active
+  context to the wrong parent.** Move is deleted, but heap-allocated
+  Contexts (or two on different stack frames) can still die in any order;
+  the destructor does `context: <my parent>`, which for an *outer* scope
+  destroyed first makes Maxima's active context the now-dead inner one's
+  parent — i.e. wrong for the survivor. Either forbid it (track the stack
+  and throw/terminate on misuse) or only reset `context:` when this one is
+  the active one.
+
+- [ ] **`PersistentCache::readField` trusts the stored length.** A corrupt
+  or hostile `.reply` file with length `18446744073709551615` makes
+  `text.resize()` throw `std::length_error` / `bad_alloc`, which escapes
+  `evalPure` as a non-`mx::Error` exception. Cap the length (a reply cannot
+  exceed the file size) and treat anything else as a miss.
+
+- [ ] **A moved-from `Kernel` is a null pointer waiting to be
+  dereferenced.** Every method does `session_->…` unchecked. Either
+  document "moved-from is unusable" or throw `KernelError`.
+
+- [ ] **`sharedKernel()` and static destruction order.** A function-local
+  static Kernel is destroyed at exit; a user's own static that holds a
+  `Context` (which holds a raw `Kernel*`) and outlives it will call into a
+  dead object. Also: `ops.hpp` says `sharedKernel` is "Not thread-safe —
+  see PLAN.md step 13", which is wrong on both counts (C++11 statics are
+  thread-safe to initialise, and step 13 serialised the Kernel). Fix the
+  comment; consider `Context` holding a `shared_ptr` or a weak reference.
+
+- [ ] **Win32 launch leaks every inheritable handle into every child.**
+  `CreateProcessA(..., bInheritHandles = TRUE, ...)` with no
+  `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` gives each Maxima child a copy of
+  every inheritable handle in the host process, including other kernels'
+  pipe ends. *Measured:* teardown with a sibling kernel alive is 5 ms, same
+  as alone — masked here because `quit();` exits the process and `kill()`
+  waits on the process handle rather than on pipe EOF. But it is the
+  textbook cause of "pipe never reports EOF" bugs in host applications, and
+  it is the reason the POSIX side needed a close-on-exec status pipe. Use
+  the attribute list (or Boost.Process, see §6).
+
+- [ ] **Win32 uses the ANSI API family.** `CreateProcessA`,
+  `GetEnvironmentStringsA`, `STARTUPINFOA`. A Maxima installed under a
+  non-ASCII path — or a non-ASCII `Config::userDir` — will fail or be
+  mangled. Use the `W` variants and convert.
+
+- [ ] **Win32 `send` ignores `WriteFile`'s return value.** A failed or
+  short write is silently dropped; the next `readFrame` then times out
+  with a misleading diagnosis.
+
+- [ ] **The session mutex is held for the whole computation.**
+  `cacheStats()` and `setTimeout()` take the same lock as `eval`, so both
+  block for up to two minutes behind a running integral, and `setTimeout`
+  cannot shorten an in-flight call. Separate a short lock for the
+  bookkeeping from the long one for the pipe.
+
+## 3. Performance
+
+Fine at today's sizes; these are the walls you will hit.
+
+- [ ] **`sizeof(Node)` is 160 bytes** (measured). Every node — every
+  symbol, every `sin(x)` — carries two `cpp_int`s (64 bytes) plus a
+  `double`, a `string` and a `vector`. `node.hpp` calls this a deliberate
+  trade against `std::variant`; with `cpp_int` underneath the price
+  doubled. A `std::variant<Integer, Rational, double, std::string,
+  std::vector<Expr>>` payload, or a small tagged union, would halve the
+  node and put the args vector for leaves out of existence.
+
+- [ ] **`a + b` allocates about five times.** `Expr::add` takes a
+  `std::vector<Expr>` by value (1), `normalize()` builds `flat` (2),
+  `partitionNumbers` builds `numbers` and `rest` (3, 4), then
+  `make_shared` (5), plus a `std::sort` over two elements. Given Boost is
+  now a dependency and Boost.Container is *already being compiled* as part
+  of it, `boost::container::small_vector<Expr, 4>` for operands and
+  scratch is nearly free to adopt. A two-operand fast path in
+  `operator+`/`operator*` (skip flatten/partition when neither side is the
+  same kind and at most one is a number) would remove most of it.
+
+- [ ] **The printer runs the normaliser.** `negativeTerm()` rebuilds a
+  product with `Expr::mul(std::move(factors))` — allocation, flatten, sort
+  — for every negative term of every sum it prints, and `render(Add)`
+  copies the terms vector to rotate it. Printing should be a read-only
+  walk; carry the sign as a flag instead. Also `render()`'s `context`
+  parameter is entirely unused (`static_cast<void>(context)`) — dead
+  parameter, remove it.
+
+- [ ] **`readFrame` is O(n²) on large replies.** Every 4 KB chunk appends
+  to `buffer` and then `buffer.find(end)` searches *from the beginning*.
+  Not yet visible in practice — `expand((x+y+z)^40)` is a 6 KB reply and
+  takes 16 ms end to end — but it is quadratic in reply size by
+  construction. Search from `max(0, oldSize - end.size())` instead, and
+  raise the transport chunk size (64 KB) — the 4 KB buffer means a 1 MB
+  reply is 256 syscalls and 256 searches.
+
+- [ ] **Win32 `receive` polls with `Sleep(1)`.** `PeekNamedPipe` +
+  `Sleep(1)` in a loop; on a default Windows timer that sleep is 1–15 ms,
+  so every round trip carries that latency floor. *Measured:* **15.5 ms
+  per trivial `evalPure`** (200 cache-missing `1+i` calls), which is
+  almost exactly Windows' default 15.625 ms scheduler tick — the cost is
+  the sleep, not Maxima. That is 3 s for 200 questions, and it is the
+  number behind "a round trip costs milliseconds" in the docs. The comment
+  says "Step 13 replaces this with a dedicated reader thread" — it did
+  not. Options: overlapped I/O with an event, a reader thread feeding a
+  condition variable, or Boost.Process's async pipes (§6).
+
+- [ ] **`Context` construction clears the reply cache just to read a
+  name.** `evaluateOrThrow(kernel, "context")` goes through `evalTracked`,
+  which clears the in-memory cache, before anything has changed. Use
+  `evalPure` for the read.
+
+- [ ] **`evalNumeric`'s `walk()` allocates a `std::vector<double>` per
+  function call**, and `isEvaluable` builds failure strings it then
+  discards. Use a small stack array (max builtin arity is 2 except
+  `max`/`min`) and pass `nullptr` for the failure sink.
+
+- [ ] **`Compiled::pushConstant` dedups with `std::find` on `double ==`.**
+  Merges `-0.0` with `0.0` (sign of zero lost — harmless in practice) and
+  never merges NaN. Compare bit patterns if you want exact dedup; it is
+  O(n) per constant either way, fine for expression sizes seen here.
+
+## 4. API ergonomics
+
+- [ ] **No `operator<<` and no `std::formatter`** for `Expr`, `Integer`,
+  `Symbol`. Every print in the demo is `.str()`. Ten lines, large quality
+  of life gain.
+
+- [ ] **`Expr` has no ordering.** It cannot be a `std::map` key, cannot be
+  sorted, cannot be put in a `std::set` — yet a total order already exists
+  in `detail::compareExpr`. Expose it as `operator<=>` (fixing the NaN
+  case first, §1).
+
+- [ ] **No local structural substitution.** `subst(f, x, 5)` is a Maxima
+  round trip for what is a tree rewrite. A `replace(expr, symbol, value)`
+  in `src/core` — no kernel — would be the single most-used helper in any
+  numeric-driver code, and it composes with `Compiled`.
+
+- [ ] **No traversal helpers.** `args()` is enough to write a recursion,
+  but a `visit`/`transform`/`anyOf` would stop every caller writing the
+  same one (`contains` and `mentionsSymbol` in this codebase are already
+  the same function twice).
+
+- [ ] **The wire format leaks through `Kernel::eval`.** *(Partly done:
+  `eval`/`evalPure`/`evalTracked` now have `const Expr &` overloads, so a
+  caller can send structure. The reply is still raw text.)* It returns
+  `Reply::value` as raw s-expression text, and `reply.hpp` still says
+  "Text only for now: step 7 adds the reader". A public `Kernel::evalExpr`
+  returning `std::expected<Expr, Failure>` — which is what `ops.cpp`'s
+  private `evaluate()` already is — would let users who need a Maxima
+  function this library has not wrapped get an `Expr` back without
+  parsing s-expressions themselves. Keep `eval` for the raw case.
+
+- [ ] **The operation set is thin for "basic workable".** Missing and
+  cheap to add given the existing `evaluate()` helper: `is(...)`
+  (ask Maxima a predicate under the current assumptions — the natural
+  partner to `Context`), `taylor`, `trigsimp`/`trigexpand`/`radcan`,
+  `sum`/`product`, `partfrac`, `float`/`numer` (Maxima-side numeric
+  evaluation, complementing the local one), `lhs`/`rhs`, `coeff`,
+  `nroots`/`realroots`/`find_root`, `ode2`. Matrices can wait; they need a
+  typed node to be pleasant.
+
+- [ ] **`functions.hpp` puts `sin`, `cos`, `log`, `abs`, `exp`, `sqrt` in
+  `namespace mx`.** Under `using namespace mx;` with `<cmath>` in scope,
+  `abs(x)` for an `int x` now has a viable `mx::abs(Expr)` candidate via
+  the implicit constructor; overload resolution still picks the
+  `int`/`double` one, but it is the kind of thing that turns into an
+  ambiguity the day someone adds an overload. Consider a sub-namespace
+  (`mx::fn`) or accept it and document "don't `using namespace mx`".
+  Also: `minusInf()` vs `inf()` naming; `tanh`, `asinh`, `acosh`, `atanh`,
+  `erf`, `floor`, `ceiling`, `signum` are in the numeric builtin table but
+  have no builder; `%gamma` is a Maxima constant the numeric layer does
+  not know (`std::numbers::egamma` exists); `%phi` is known but
+  undocumented.
+
+- [ ] **`simplify` is `ratsimp`.** Documented, but the name promises more
+  than it does; `ratsimp` as the public name (with a doc pointing at
+  `trigsimp`, `radcan`) is more honest and matches Maxima's vocabulary,
+  which the rest of `ops.hpp` already does.
+
+- [ ] **`isUnevaluated(result, "list")` is used to mean "is a list".**
+  A misnomer that reads as "Maxima failed" at every call site in `solve`.
+  Add `isList()`.
+
+- [ ] **`wrongKind()` prints the kind as an integer.** "expression is not
+  an integer (kind 4)". Add a `to_string(Kind)` / `kindName()` — it is
+  also wanted for tests and logging.
+
+- [ ] **`Bindings` is keyed by `std::string`; `Compiled` takes
+  `span<const Symbol>`.** Two spellings of "which symbol". Accepting
+  `Symbol` in `Bindings` (or a transparent comparator over both) would
+  make the numeric API read consistently.
+
+- [ ] **Printing `-1*x` and `(-1*x)^2`.** `-(x+1)` prints `-1*(1 + x)`
+  and `(-x)^2` prints `(-1*x)^2` (measured). Valid Maxima, but every
+  user will read it as a bug. The printer already special-cases a leading
+  `-1` inside sums; extend it to products at the top level and inside
+  `Pow`.
+
+- [ ] **`x**2` and `1e400` are parse errors.** Maxima accepts `**` as
+  `^`; accept it. `1e400` overflows `double` — either throw a clearer
+  message ("out of range") or produce `inf`.
+
+## 5. Documentation drift
+
+The comments are unusually good at saying *why*, which makes the stale ones
+stand out. All refer to plan steps as future work that has since shipped:
+
+- [ ] `include/mx/expr.hpp`, `Expr::parse` doc: a paragraph is truncated
+  mid-sentence ("…becomes an Opaque node holding its") and then
+  contradicted by the next one. Delete the stale paragraph.
+- [x] `include/mx/reply.hpp`: "Text only for now: PLAN.md step 7 adds the
+  reader… Until then this is the rawest useful thing". *(Fixed.)*
+- [ ] `include/mx/kernel.hpp`: "This is the whole public surface for now…
+  structured expressions arrive with the term layer (PLAN.md steps 7-9)".
+- [ ] `include/mx/ops.hpp`, `sharedKernel`: "Not thread-safe — see PLAN.md
+  step 13". Wrong, see §2.
+- [ ] `include/mx/context.hpp`: "so that PLAN.md step 14's cache key can
+  include them".
+- [x] `src/core/printer.cpp` header: "which is also what the Expr →
+  Maxima direction of the translation layer will need (PLAN.md step 9)".
+  *(Fixed — and now the opposite is true: the printer is not on the path to
+  Maxima at all.)*
+- [ ] `src/transport/child_process_win32.cpp`: "Step 13 replaces this
+  with a dedicated reader thread feeding a bounded queue".
+- [ ] `include/mx/config.hpp`, `timeout`: "Maxima keeps computing until it
+  is killed" — true, but `recover()` *does* kill it on timeout; say so,
+  since the current wording suggests a runaway process is left behind.
+- [ ] `src/wire/from_maxima.cpp`: `mapInteger` and `mapRational` have
+  `Opaque` fallbacks for "digits that do not parse" that can no longer
+  happen — the lexer guarantees digits and `Integer` is unbounded. Dead
+  code; remove or `assert`.
+- [ ] `src/kernel/persistent_cache.hpp`: the concurrency claim (see §1).
+
+## 6. Things a library could do instead
+
+You said dependencies are fine. With Boost already fetched, these are the
+candidates, most valuable first.
+
+- [ ] **Boost.Process (v2) for `child_process_win32.cpp` /
+  `child_process_posix.cpp` / `process_env.cpp` / `win32_process_utils.hpp`
+  (~560 lines).** It handles the handle-inheritance list, Unicode paths,
+  argument quoting, environment merging, and — with Boost.Asio, which it
+  sits on — *asynchronous reads with a deadline*, which removes both the
+  Win32 `Sleep(1)` poll and the "cannot abandon a blocking ReadFile"
+  problem in one move. It is header-only. The cost is that Asio is a big
+  header (compile time) and a new concept in the codebase. The transport
+  interface is already abstract, so this is a drop-in behind `ITransport`
+  and FakeTransport keeps the tests honest. Worth doing; the hand-written
+  code is careful but §2 lists four platform-specific holes in it.
+
+- [ ] **`boost::container::small_vector` for `Node::args` and the
+  normaliser's scratch vectors.** Already compiled as a transitive
+  dependency of multiprecision. See §3.
+
+- [ ] **`std::variant` for the Node payload.** Standard library, no
+  dependency. See §3.
+
+- [ ] **A real database for the persistent cache?** SQLite would give
+  bounded size (there is *no eviction* today — `Config::cacheDirectory`
+  grows forever), atomic multi-entry writes and a proper cross-process
+  story. It is a compiled dependency, though, and the one-file-per-entry
+  design is genuinely simple. Recommendation: keep the files, add a size
+  cap with LRU-by-mtime eviction, and fix the temp-name collision (§1).
+
+- [ ] **Keep hand-written:** the LRU cache (70 lines, nothing to gain),
+  FNV-1a (stability across builds is the whole point; `std::hash` and
+  `boost::hash` do not promise it), the s-expression reader (small,
+  tested against golden files), and the Pratt parser (you asked for no
+  third-party parser, and it is the right call — its bugs in §1 are
+  semantic, not structural).
+
+- [ ] **A fuzz target for the two parsers.** libFuzzer/AFL on
+  `parseSExpr` and `Expr::parse` is an afternoon and is how hand-written
+  readers earn trust. `kMaxSExprDepth` exists, so someone already thought
+  about hostile input; a fuzzer would find what the depth limit does not.
+
+## 7. Build, repo, process
+
+- [ ] **No `LICENSE` file.** README has a "Licence" section about
+  Maxima's GPL and the process boundary, but this library's own licence
+  is never stated anywhere. That is the first thing a consumer looks for.
+
+- [ ] **`.idea/` is tracked** (7 files). The `.gitignore` only excludes a
+  subset. Either commit the whole project config deliberately or ignore
+  the directory.
+
+- [ ] **Warnings are clean but nothing enforces it.** Add
+  `-Wall -Wextra -Wpedantic -Wshadow -Wconversion` (`/W4` for MSVC) to the
+  library target, and `-Werror` in CI. The sweep for this review found
+  zero, so it costs nothing to turn on now and it will catch the first
+  regression.
+
+- [ ] **No CI.** Three toolchains were verified by hand for the Boost
+  change (GCC/Windows, clang-cl/Windows, GCC/Linux). A GitHub Actions
+  matrix running `ctest -LE maxima` (no Maxima needed) on all three, plus
+  one job with Maxima installed for the integration suite, would make
+  that automatic. The LP64 `long long` ambiguity that only Linux caught is
+  the argument.
+
+- [ ] **No `.clang-format` / `.clang-tidy`.** The code is consistently
+  styled, which means a format file already exists in someone's head;
+  commit it.
+
+- [ ] **`std::getenv` triggers MSVC's deprecation warning** under
+  clang-cl (seen in the build log). `_CRT_SECURE_NO_WARNINGS` on the
+  target, or `_dupenv_s` under `_WIN32`.
+
+- [ ] **`BUILD_SHARED_LIBS OFF` is passed to Boost through CPM
+  `OPTIONS`.** CPM sets those as cache variables, so it also pins *this*
+  project's default. Harmless today (the library is static regardless),
+  but it will surprise whoever adds a shared-library option.
+
+## 8. Tests — what is missing
+
+The suite is strong where it counts (golden transcripts from real Maxima,
+FakeTransport for the protocol, randomised bignum cross-checks against
+Maxima itself). Gaps, all cheap:
+
+- [x] The read-error path (§2): a malformed `eval` string, an `Opaque`
+  with a `$`, a `Symbol` with a space. *(`test_to_maxima.cpp`, against a
+  live kernel, with a 10 s bound that a regression to the old behaviour
+  would blow through.)*
+- [ ] `Expr(true)`, `Expr('a')` — pin the intended behaviour.
+- [ ] Out-of-order `Context` destruction.
+- [ ] Two threads sharing one `Kernel` (the README promises it is safe;
+  nothing exercises it).
+- [ ] `Kernel` after move.
+- [ ] `mod`/`round` against Maxima's own answers — the numeric builtins
+  are the one place the library computes something Maxima also computes,
+  so cross-check them the way `test_integer.cpp` cross-checks bignums.
+- [ ] Parser: every Maxima operator the subset *claims* to reject should
+  have a test that it does reject it, and `!!`, `**`, chained relations
+  should be decided and pinned.
+
+---
+
+## Not problems
+
+Things I checked that are fine and that a reviewer might flag anyway.
+
+- `sharedKernel()` as a function-local static is thread-safe to
+  construct; the comment is wrong, not the code.
+- `operator/` producing `x*0^(-1)` for division by zero: deliberate,
+  Maxima is the one that objects, and it does.
+- `x - x` staying `x - x`: correct, one canonicaliser.
+- `-0.0 == 0.0` as `Expr`: true, with equal hashes; consistent.
+- `Integer`'s small-value fast paths: verified allocation-free.
+- `isupper`/`islower` in `decodeMaximaName` are locale-sensitive in
+  principle; Maxima symbol names reaching here are ASCII in practice.
+- The 4 KB transport chunk and `find`-from-zero are the same issue as
+  §3's `readFrame`; listed once.

@@ -30,6 +30,7 @@ add_executable(mx_tests
         test_persistent_cache.cpp
         test_process_env.cpp
         test_sexpr.cpp
+        test_to_maxima.cpp
         test_kernel.cpp
         test_transport.cpp
 )

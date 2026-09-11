@@ -66,7 +66,7 @@ The node set stays small because of two escape hatches:
 - `Opaque(raw)` — last resort for non-applications (matrices, intervals,
   integration constants), so a Maxima result is *never* unrepresentable.
 
-**The wire format is Maxima's internal s-expressions, not its display output.**
+**The wire format is Maxima's internal s-expressions, not its display output — and, since the change recorded under *Outbound s-expressions*, in both directions.**
 `(%oN)` infix text is ambiguous, line-wraps, and is a display format Maxima is
 free to change. The internal form is unambiguous (no precedence to re-derive),
 preserves exact rationals and bignums, and parses with a tokenizer plus a stack.
@@ -413,6 +413,12 @@ The outbound half already existed: `Expr::str()` (`src/core/printer.cpp`) emits
 Maxima infix, and step 8 validated it against live Maxima on cases where
 dropping a parenthesis still parses but changes the value. Step 9 is the inbound
 half, `src/wire/from_maxima.cpp`.
+
+> **Superseded, in part.** The outbound half is no longer the infix printer.
+> Expressions now travel to Maxima as internal s-expressions too, through
+> `src/wire/to_maxima.cpp` and a `cppread` helper; the printer is for people.
+> The inbound half described below is unchanged. See *Outbound
+> s-expressions* under Open questions for why.
 
 **Maxima inverts symbol case.** `x` is stored as `$X`, but `X` as `|$x|` and
 `xY` as `|$xY|`: a uniformly-cased name is case-inverted, a mixed-case one is
@@ -1125,6 +1131,73 @@ Only Linux caught the portability bug: constructors on `int` and `std::int64_t`
 leave `long long` ambiguous wherever `int64_t` is `long`, which is every LP64
 platform. It compiled on Windows. Constrained templates take any integral type
 now, with unsigned values above the signed range widened rather than truncated.
+
+### Outbound s-expressions
+
+The review in TODO.md named one architectural flaw: the protocol was
+asymmetric. Inbound was structure — Maxima's internal s-expression, read and
+mapped onto `Expr`. Outbound was *text* — `Expr::str()` rendered infix and the
+request spliced it raw into `cppsend(id, errcatch(ratdisrep(<text>)))$`. So
+the printer was part of the protocol, and anything Maxima's *reader* disliked
+— a `$` in an Opaque, a space in a symbol name, an unbalanced paren in
+`Kernel::eval` — failed before `errcatch` was ever entered. No frame arrived,
+`readFrame` waited out the full `Config::timeout` (two minutes by default),
+and `recover()` then killed and restarted the kernel. Measured before the
+change: `eval("1$ 2")`, `eval("x; 3")` and `diff(Expr::opaque("x$ 0"), x)`
+each cost 120 s and a restart. The last reached the stall through a *typed*
+public operation.
+
+Now both directions are structure. `wire/to_maxima.cpp` is the mirror of
+`from_maxima.cpp`: it renders an `Expr` as `((MPLUS) 1 $X)`, heads without
+`SIMP` flags so Maxima simplifies what it is handed, symbols case-inverted
+and bar-quoted exactly as `decodeMaximaName` expects them back. The session
+sends it as
+
+    cppsend(<id>, errcatch(ratdisrep(cppread("((MPLUS) 1 $X)"))))$
+
+where `cppread` is a Lisp helper installed at launch: it reads one form from
+the string — `*read-eval*` off, the Maxima package current — resolves aliases
+with Maxima's own `getalias`, and hands the result to `meval`. Raw text takes
+the parallel path through `eval_string("...")`. In both cases the only thing
+Maxima's reader ever parses is the fixed wrapper plus a string literal that
+this library escaped, so a read error happens *inside* the trap and is an
+ordinary failure with a message. `Payload` in `session.hpp` is the type that
+says so: it has two factories and no other way to be made.
+
+Measured after the change, same cases: `eval("1$ 2")` answers `1` (parsed up
+to the terminator), `diff(Expr::opaque("x$ 0"), x)` answers `1`, and
+`eval("(1")` fails with a message — all in one round trip. A case that used
+to *succeed* by calling the framing helper from inside the expression text is
+now refused, which is the injection path closing. Round-trip latency is
+unchanged within the Windows timer tick.
+
+Two things found on the way that reading Maxima's source would not have
+predicted:
+
+- **`subst` is an alias.** Maxima's parser rewrites `subst` to `substitute`
+  on the way in; a form headed `$SUBST` evaluated to *itself*, unrecognised.
+  `diff`, `integrate` and the rest are real functions, so only `subst` broke
+  — which is exactly the kind of one-off that hides until a test runs.
+  `cppresolve` now applies `getalias` to every symbol in the form, which is
+  what the parser does, and also maps `$true`/`$false` to Lisp's `T`/`NIL`.
+- **Two tests had been passing for the wrong reason.** They provoked Maxima
+  errors with `Symbol("5")` and `Symbol("2")` as the integration and
+  differentiation variable. That only worked because rendering to text turned
+  the symbol into the number. As structure the symbol travels as `$5` — a
+  symbol named "5" — which Maxima is perfectly happy to differentiate with
+  respect to. The tests now use a divergent integral and an unreadable
+  Opaque, which are genuine errors.
+
+What this does *not* change: `Expr::str()` still exists and still renders
+infix, for people. It is simply no longer on the path to Maxima. The
+persistent-cache key changed format (it is the payload string), so entries
+written before this change miss rather than collide.
+
+Round-trip coverage: `test_to_maxima.cpp` sends a corpus through a live
+kernel and requires the mapped reply to equal the original — including
+`Symbol("x y")`, `Symbol("xY")`, `Symbol("X")` and a function head `a(b`,
+none of which could be sent before — and checks every golden reply the
+inbound reader has ever accepted renders to a form the reader accepts back.
 
 ### Decided, but not built
 

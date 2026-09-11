@@ -139,7 +139,15 @@ refused. `declare` covers `Integer`, `Even`, `Odd`, `Rational`, `Real`,
 - **Survives its own death.** If Maxima hangs or exits, the failing call reports
   it and the kernel is restarted with its assumptions replayed, so the next call
   starts from a working session rather than a wrong one.
-- **Remembers answers.** An LRU keyed on the Maxima source, discarded whenever
+- **Speaks structure, not text.** An expression reaches Maxima as its internal
+  s-expression and comes back the same way; the infix printer is for people
+  and is not on the path. So a symbol called `x y`, or an `Opaque` holding a
+  `$`, is simply a symbol or simply a question — nothing this library sends
+  can be misread by Maxima's parser, and nothing Maxima *cannot* read (a
+  malformed string given to `Kernel::eval`) costs more than one round trip
+  and a message. `Kernel::eval`, `evalPure` and `evalTracked` take an `Expr`
+  as well as text.
+- **Remembers answers.** An LRU keyed on the request, discarded whenever
   anything might have changed it — any raw `eval`, any assumption added or
   dropped. Sized by `Config::cacheEntries`; zero disables it.
 - **Optionally between runs.** Set `Config::cacheDirectory` and answers survive
@@ -261,8 +269,10 @@ any cached answer that depended on it.
 `PLAN.md` records the architecture and the reasoning, including the decisions
 that shaped it most: that the library owns a C++ expression tree with Maxima as
 an oracle rather than holding remote handles; that the wire format is Maxima's
-internal s-expressions rather than its display output, because `(%oN)` text is
-ambiguous and loses exact rationals; that there is exactly one canonicaliser,
+internal s-expressions in both directions rather than its display output or
+infix text, because `(%oN)` output is ambiguous and loses exact rationals and
+because anything Maxima has to *parse* can fail outside the error trap; that
+there is exactly one canonicaliser,
 which is why no second symbolic engine is linked in; and that Maxima runs as a
 separate process, which is a licensing requirement and not merely a convenience.
 

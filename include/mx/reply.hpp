@@ -18,9 +18,9 @@ struct Reply {
     /// The result, as the text of Maxima's own internal s-expression, e.g.
     /// "((MTIMES SIMP) 2 $X ((%SIN SIMP) $X))". Empty when `ok` is false.
     ///
-    /// Text only for now: PLAN.md step 7 adds the reader that turns this into a
-    /// tree, and step 9 maps that tree onto mx::Expr. Until then this is the
-    /// rawest useful thing to hand back.
+    /// Raw by design: this is the kernel's escape hatch, beneath the operations
+    /// in mx/ops.hpp, which turn it into an mx::Expr. A caller here wants the
+    /// wire form itself.
     std::string value;
 
     /// Maxima's own rendered message when `ok` is false, e.g.

@@ -16,6 +16,7 @@
 
 using mx::detail::FakeTransport;
 using mx::detail::MaximaSession;
+using mx::detail::Payload;
 
 namespace {
 
@@ -72,24 +73,26 @@ TEST_CASE("the handshake makes the session machine-readable and deterministic") 
     CHECK(sent.find("nolabels:true$") != std::string::npos);
     CHECK(sent.find("errormsg:false$") != std::string::npos);
 
-    // And a framed probe, which is what synchronises the stream.
-    CHECK(sent.find(MaximaSession::requestFor(1, "true")) != std::string::npos);
+    // And a framed probe, which is what synchronises the stream. A form, so
+    // that the handshake needs nothing but the helper installed at launch.
+    CHECK(sent.find(MaximaSession::requestFor(1, Payload::form("T")))
+          != std::string::npos);
 }
 
 TEST_CASE("a request carries its own correlation id") {
     ScriptedSession scripted({frame(2, true, "((MPLUS SIMP) 1 $X)")});
-    scripted.session->eval("x+1");
+    scripted.session->eval(Payload::text("x+1"));
 
     // Request 1 was the handshake probe, so the first real request is 2.
     CHECK(scripted.transport->sent().back()
-          == MaximaSession::requestFor(2, "x+1") + "\n");
+          == MaximaSession::requestFor(2, Payload::text("x+1")) + "\n");
 }
 
 TEST_CASE("a successful reply yields the internal s-expression") {
     ScriptedSession scripted(
         {frame(2, true, "((MTIMES SIMP) 2 $X ((%SIN SIMP) $X))")});
 
-    const mx::Reply reply = scripted.session->eval("2*x*sin(x)");
+    const mx::Reply reply = scripted.session->eval(Payload::text("2*x*sin(x)"));
     CHECK(reply.ok);
     CHECK(reply.value == "((MTIMES SIMP) 2 $X ((%SIN SIMP) $X))");
     CHECK(reply.reason.empty());
@@ -102,7 +105,7 @@ TEST_CASE("a Maxima error is a value, not an exception") {
         {frame(2, false, "NIL",
                "integrate: variable must not be a number; found: 5")});
 
-    const mx::Reply reply = scripted.session->eval("integrate(x, 5)");
+    const mx::Reply reply = scripted.session->eval(Payload::text("integrate(x, 5)"));
     CHECK_FALSE(reply.ok);
     CHECK(reply.reason == "integrate: variable must not be a number; found: 5");
     CHECK(reply.value.empty());
@@ -112,12 +115,12 @@ TEST_CASE("exact rationals survive the round trip") {
     // The whole reason for using the internal form rather than display output:
     // 1/3 stays a rational instead of becoming 0.333...
     ScriptedSession scripted({frame(2, true, "((RAT SIMP) 11 15)")});
-    CHECK(scripted.session->eval("1/3 + 2/5").value == "((RAT SIMP) 11 15)");
+    CHECK(scripted.session->eval(Payload::text("1/3 + 2/5")).value == "((RAT SIMP) 11 15)");
 }
 
 TEST_CASE("prompts and banner text between frames are discarded") {
     ScriptedSession scripted({noise(5) + "\n" + frame(2, true, "42")});
-    CHECK(scripted.session->eval("6*7").value == "42");
+    CHECK(scripted.session->eval(Payload::text("6*7")).value == "42");
 }
 
 TEST_CASE("a reply split across several reads is reassembled") {
@@ -129,7 +132,7 @@ TEST_CASE("a reply split across several reads is reassembled") {
     ScriptedSession scripted({whole.substr(0, third),
                               whole.substr(third, third),
                               whole.substr(2 * third)});
-    CHECK(scripted.session->eval("x+1").value == "((MPLUS SIMP) 1 $X)");
+    CHECK(scripted.session->eval(Payload::text("x+1")).value == "((MPLUS SIMP) 1 $X)");
 }
 
 TEST_CASE("a delimiter split across two reads is still recognised") {
@@ -139,7 +142,7 @@ TEST_CASE("a delimiter split across two reads is still recognised") {
     const size_t cut = whole.size() - 4;
 
     ScriptedSession scripted({whole.substr(0, cut), whole.substr(cut)});
-    CHECK(scripted.session->eval("7").value == "7");
+    CHECK(scripted.session->eval(Payload::text("7")).value == "7");
 }
 
 TEST_CASE("a stale frame from an earlier request is skipped") {
@@ -149,7 +152,7 @@ TEST_CASE("a stale frame from an earlier request is skipped") {
     ScriptedSession scripted({frame(1, true, "$STALE_ANSWER")
                               + frame(2, true, "$CORRECT_ANSWER")});
 
-    CHECK(scripted.session->eval("something").value == "$CORRECT_ANSWER");
+    CHECK(scripted.session->eval(Payload::text("something")).value == "$CORRECT_ANSWER");
 }
 
 TEST_CASE("a value containing delimiter-like text is not truncated") {
@@ -158,18 +161,18 @@ TEST_CASE("a value containing delimiter-like text is not truncated") {
     // may terminate its frame.
     const std::string tricky = R"("contains @@E99@@ and @@B3@@ inside")";
     ScriptedSession scripted({frame(2, true, tricky)});
-    CHECK(scripted.session->eval("\"...\"").value == tricky);
+    CHECK(scripted.session->eval(Payload::text("\"...\"")).value == tricky);
 }
 
 TEST_CASE("a closing delimiter with no opening one is a protocol error") {
     ScriptedSession scripted({MaximaSession::frameEnd(2) + "\n"});
-    CHECK_THROWS_AS(scripted.session->eval("x"), mx::KernelError);
+    CHECK_THROWS_AS(scripted.session->eval(Payload::text("x")), mx::KernelError);
 }
 
 TEST_CASE("a frame missing its field separators is a protocol error") {
     ScriptedSession scripted({MaximaSession::frameBegin(2) + "T"
                               + MaximaSession::frameEnd(2)});
-    CHECK_THROWS_AS(scripted.session->eval("x"), mx::KernelError);
+    CHECK_THROWS_AS(scripted.session->eval(Payload::text("x")), mx::KernelError);
 }
 
 TEST_CASE("a session whose child has died reports a KernelError") {
@@ -177,7 +180,7 @@ TEST_CASE("a session whose child has died reports a KernelError") {
     // signal a real transport gives when the child exits.
     ScriptedSession scripted({});
     REQUIRE(scripted.transport->scriptExhausted());
-    CHECK_THROWS_AS(scripted.session->eval("1+1"), mx::KernelError);
+    CHECK_THROWS_AS(scripted.session->eval(Payload::text("1+1")), mx::KernelError);
 }
 
 TEST_CASE("a null transport is rejected rather than dereferenced") {
@@ -215,24 +218,24 @@ TEST_CASE("a session that cannot answer restarts and replays its state") {
     MaximaSession session(factory, mx::Config{});
     REQUIRE(built == 1);
 
-    const std::uint64_t handle = session.remember("assume(x > 0)");
+    const std::uint64_t handle = session.remember(Payload::text("assume(x > 0)"));
     static_cast<void>(handle);
 
     // The first transport's script is exhausted, so this call finds a dead
     // child and fails — but triggers recovery on the way out.
-    CHECK_THROWS_AS(session.eval("1+1"), mx::KernelError);
+    CHECK_THROWS_AS(session.eval(Payload::text("1+1")), mx::KernelError);
     CHECK(built == 2);
 
     // And the session works again, with the remembered statement replayed.
-    CHECK(session.eval("something").value == "$RECOVERED");
+    CHECK(session.eval(Payload::text("something")).value == "$RECOVERED");
 }
 
 TEST_CASE("a session with no way to build another transport does not restart") {
     ScriptedSession scripted({});
     REQUIRE(scripted.transport->scriptExhausted());
-    CHECK_THROWS_AS(scripted.session->eval("1+1"), mx::KernelError);
+    CHECK_THROWS_AS(scripted.session->eval(Payload::text("1+1")), mx::KernelError);
     // Still dead, and honestly so, rather than pretending to recover.
-    CHECK_THROWS_AS(scripted.session->eval("1+1"), mx::KernelError);
+    CHECK_THROWS_AS(scripted.session->eval(Payload::text("1+1")), mx::KernelError);
 }
 
 TEST_CASE("forgetting a statement stops it being replayed") {
@@ -250,11 +253,11 @@ TEST_CASE("forgetting a statement stops it being replayed") {
     };
 
     MaximaSession session(factory, mx::Config{});
-    const std::uint64_t handle = session.remember("assume(x > 0)");
+    const std::uint64_t handle = session.remember(Payload::text("assume(x > 0)"));
     session.forget(handle);
 
-    CHECK_THROWS_AS(session.eval("1+1"), mx::KernelError);
-    CHECK(session.eval("again").value == "$CLEAN");
+    CHECK_THROWS_AS(session.eval(Payload::text("1+1")), mx::KernelError);
+    CHECK(session.eval(Payload::text("again")).value == "$CLEAN");
 }
 
 TEST_CASE("a failed handshake is reported at construction") {

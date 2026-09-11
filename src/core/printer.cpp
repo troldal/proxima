@@ -7,8 +7,12 @@
 
 // Written entirely against Expr's public accessors rather than Node, so that
 // the printer doubles as a check that the public API is sufficient to read a
-// tree. The output is Maxima-compatible infix, which is also what the
-// Expr -> Maxima direction of the translation layer will need (PLAN.md step 9).
+// tree. The output is Maxima-compatible infix, for people: diagnostics, test
+// failures, and anyone who wants to paste a result into a Maxima session.
+//
+// It is *not* how expressions reach Maxima. That is wire/to_maxima.cpp, which
+// sends the internal s-expression; this printer is not part of the protocol,
+// and nothing about the kernel depends on what it emits.
 
 namespace mx {
 namespace {

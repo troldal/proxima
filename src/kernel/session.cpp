@@ -2,6 +2,7 @@
 
 #include "kernel/discovery.hpp"
 #include "transport/child_process.hpp"
+#include "wire/to_maxima.hpp"
 
 #include <mx/errors.hpp>
 #include <mx/version.hpp>
@@ -27,8 +28,22 @@ std::string toMaximaPath(const std::filesystem::path &p) {
     return text;
 }
 
-// The Lisp helpers installed at startup: one that does the framing, and one
-// that stops Maxima asking questions.
+// The Lisp helpers installed at startup: one that reads a form and evaluates
+// it, one that does the framing, and one that stops Maxima asking questions.
+//
+// `$cppread` is the outbound half of the s-expression protocol. It reads one
+// Lisp form from the string it is given — with *read-eval* off, so `#.` cannot
+// run code, and with the Maxima package current, so `MPLUS` and `$X` land on
+// the symbols Maxima uses — and hands it to meval. Because it is called from
+// inside errcatch, a form that fails to read or to evaluate is an ordinary
+// Maxima error with a message, not a silence.
+//
+// One thing Maxima's parser does that reading a form does not: resolve
+// aliases. `subst` is an alias for `substitute`, and a form headed `$SUBST`
+// would evaluate to itself, unrecognised, where the text `subst(...)` would
+// have been rewritten on the way in. `cppresolve` walks the form applying
+// Maxima's own `getalias` to every symbol, which is exactly what the parser
+// does — including `$true` and `$false` to their Lisp spellings.
 //
 // Maxima interrogates the user when it needs a fact it has not been told —
 // `integrate(x^n, x)` asks "Is n equal to -1?" — by printing a prompt and
@@ -51,6 +66,17 @@ std::string toMaximaPath(const std::filesystem::path &p) {
 // Keep the delimiters here in step with frameBegin/frameSeparator/frameEnd
 // below; a test asserts that they agree.
 constexpr const char *kHelperLisp = R"LISP((progn
+ (defun maxima::cppresolve (form)
+  (cond ((symbolp form) (maxima::getalias form))
+        ((atom form) form)
+        (t (mapcar (function maxima::cppresolve) form))))
+ (defun maxima::$cppread (text)
+  (let ((*package* (find-package :maxima))
+        (*read-eval* nil)
+        (*read-base* 10)
+        (*read-default-float-format* 'double-float)
+        (*readtable* (copy-readtable nil)))
+   (maxima::meval (maxima::cppresolve (read-from-string text)))))
  (defun maxima::retrieve (msg flag &rest more)
   (declare (ignore flag more))
   (maxima::merror
@@ -96,7 +122,7 @@ std::string MaximaSession::persistenceStamp() const {
     stamp += version;
     stamp += "\nmaxima=" + maximaVersion_ + "\nstate=";
     for (const JournalEntry &entry : journal_) {
-        stamp += entry.statement;
+        stamp += entry.payload.str();
         stamp += ';';
     }
     return stamp;
@@ -140,13 +166,21 @@ std::vector<std::string> MaximaSession::setupStatements() {
     };
 }
 
-std::string MaximaSession::requestFor(std::uint64_t id,
-                                      std::string_view expression) {
+Payload Payload::form(std::string_view sexpr) {
+    return Payload("cppread(" + stringLiteral(sexpr) + ")");
+}
+
+Payload Payload::text(std::string_view source) {
+    return Payload("eval_string(" + stringLiteral(source) + ")");
+}
+
+std::string MaximaSession::requestFor(std::uint64_t id, const Payload &payload) {
     // errcatch turns a Maxima error into an empty list rather than an error
     // prompt; ratdisrep keeps canonical rational (MRAT) forms from coming back
-    // in place of general ones.
+    // in place of general ones. The payload is a call on a string literal, so
+    // this text is well-formed whatever the caller asked.
     return "cppsend(" + std::to_string(id) + ", errcatch(ratdisrep("
-           + std::string(expression) + ")))$";
+           + payload.str() + ")))$";
 }
 
 std::vector<std::string>
@@ -266,14 +300,16 @@ void MaximaSession::handshake() {
     // the stream: the startup banner and every prompt printed so far fall
     // before it and are discarded. No prompt markers are needed for this — the
     // frame delimiters already say exactly where a reply begins.
-    const Reply ready = evalLocked("true", config_.startupTimeout);
+    // A form rather than text, so the handshake depends on nothing but the
+    // helper itself — eval_string lives in a package Maxima autoloads.
+    const Reply ready = evalLocked(Payload::form("T"), config_.startupTimeout);
     if (!ready.ok) {
         throw KernelError("Maxima rejected the startup handshake: "
                           + ready.reason);
     }
 }
 
-Reply MaximaSession::eval(std::string_view expression) {
+Reply MaximaSession::eval(const Payload &payload) {
     const std::lock_guard<std::mutex> lock(mutex_);
     // This entry point can evaluate anything, including a statement that
     // changes Maxima's state, and nothing in the text says which. Assuming the
@@ -285,7 +321,7 @@ Reply MaximaSession::eval(std::string_view expression) {
     // claim conditions that do not hold. Persistence stops here.
     stateAccounted_ = false;
     try {
-        return evalLocked(expression, config_.timeout);
+        return evalLocked(payload, config_.timeout);
     } catch (const KernelError &) {
         // The conversation broke down. Put the session back on its feet before
         // reporting, so that only this call is lost rather than every call
@@ -301,14 +337,14 @@ Reply MaximaSession::eval(std::string_view expression) {
     }
 }
 
-Reply MaximaSession::evalTracked(std::string_view statement) {
+Reply MaximaSession::evalTracked(const Payload &payload) {
     const std::lock_guard<std::mutex> lock(mutex_);
     // A state change the journal accounts for. The in-memory cache still has to
     // go — its entries were computed under the old state — but persistence
     // survives, because the new state will be part of the key.
     cache_.clear();
     try {
-        return evalLocked(statement, config_.timeout);
+        return evalLocked(payload, config_.timeout);
     } catch (const KernelError &) {
         if (factory_ && !recovering_) {
             try {
@@ -320,17 +356,17 @@ Reply MaximaSession::evalTracked(std::string_view statement) {
     }
 }
 
-Reply MaximaSession::evalLocked(std::string_view expression,
+Reply MaximaSession::evalLocked(const Payload &payload,
                                 std::chrono::milliseconds timeout) {
     const std::uint64_t id = ++nextRequestId_;
-    writeLine(requestFor(id, expression));
+    writeLine(requestFor(id, payload));
     return readFrame(id, timeout);
 }
 
-Reply MaximaSession::evalPure(std::string_view expression) {
+Reply MaximaSession::evalPure(const Payload &payload) {
     const std::lock_guard<std::mutex> lock(mutex_);
 
-    const std::string key(expression);
+    const std::string &key = payload.str();
     if (const Reply *cached = cache_.find(key)) {
         return *cached;
     }
@@ -345,7 +381,7 @@ Reply MaximaSession::evalPure(std::string_view expression) {
 
     Reply reply;
     try {
-        reply = evalLocked(expression, config_.timeout);
+        reply = evalLocked(payload, config_.timeout);
     } catch (const KernelError &) {
         if (factory_ && !recovering_) {
             try {
@@ -380,13 +416,13 @@ void MaximaSession::setTimeout(std::chrono::milliseconds timeout) {
     config_.timeout = timeout;
 }
 
-std::uint64_t MaximaSession::remember(std::string statement) {
+std::uint64_t MaximaSession::remember(Payload payload) {
     const std::lock_guard<std::mutex> lock(mutex_);
     // Remembering a statement means Maxima's state is about to change, or just
     // has: every cached answer was computed under the old one.
     cache_.clear();
     const std::uint64_t handle = ++nextJournalHandle_;
-    journal_.push_back({handle, std::move(statement)});
+    journal_.push_back({handle, std::move(payload)});
     restampPersistence();
     return handle;
 }
@@ -429,10 +465,10 @@ void MaximaSession::recover() {
     // assumption scopes correctly: each supcontext activates the scope that the
     // assumptions after it belong to.
     for (const JournalEntry &entry : journal_) {
-        const Reply reply = evalLocked(entry.statement, config_.startupTimeout);
+        const Reply reply = evalLocked(entry.payload, config_.startupTimeout);
         if (!reply.ok) {
             throw KernelError("could not restore session state after a restart: "
-                              + entry.statement + " failed: " + reply.reason);
+                              + entry.payload.str() + " failed: " + reply.reason);
         }
     }
 }

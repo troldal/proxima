@@ -91,6 +91,7 @@ add_library(maxima_cpp
         src/transport/process_env.cpp
         src/wire/from_maxima.cpp
         src/wire/sexpr.cpp
+        src/wire/to_maxima.cpp
         ${MX_CHILD_PROCESS_SOURCE}
 )
 

@@ -2,6 +2,7 @@
 
 #include "wire/from_maxima.hpp"
 #include "wire/sexpr.hpp"
+#include "wire/to_maxima.hpp"
 
 #include <mx/errors.hpp>
 
@@ -12,17 +13,20 @@
 namespace mx {
 namespace {
 
-/// Evaluates Maxima source and maps the reply back into an expression.
+/// Sends a form to Maxima and maps the reply back into an expression.
 ///
-/// The whole round trip in one place: print, send, read, map. Every operation
-/// below is a one-line wrapper around this, which is what keeps the dispatch
-/// layer from accumulating protocol knowledge.
-std::expected<Expr, Failure> evaluate(Kernel &kernel, const std::string &source) {
+/// The whole round trip in one place. Note what is *not* here: no printing.
+/// The form goes out as structure — its internal s-expression — and comes
+/// back the same way, so nothing between this function and Maxima ever
+/// parses infix text. That is what makes a symbol called `x y`, or an Opaque
+/// holding a `$`, a question Maxima can answer (or refuse, with a message)
+/// rather than a stall.
+std::expected<Expr, Failure> evaluate(Kernel &kernel, const Expr &form) {
     // evalPure, not eval: every operation here is a question rather than an
     // instruction, so the answer can be remembered. The promise that goes with
     // evalPure is exactly what these functions are — nothing below assigns,
     // assumes or defines anything.
-    const Reply reply = kernel.evalPure(source);
+    const Reply reply = kernel.evalPure(form);
     if (!reply.ok) {
         return std::unexpected(Failure{reply.reason});
     }
@@ -30,46 +34,28 @@ std::expected<Expr, Failure> evaluate(Kernel &kernel, const std::string &source)
 }
 
 /// For the operations with no ordinary failure mode.
-Expr evaluateOrThrow(Kernel &kernel, const std::string &source) {
-    auto result = evaluate(kernel, source);
+Expr evaluateOrThrow(Kernel &kernel, const Expr &form) {
+    auto result = evaluate(kernel, form);
     if (!result) {
         throw MaximaError(result.error().message);
     }
     return std::move(*result);
 }
 
-std::string call(std::string_view head, std::initializer_list<std::string> args) {
-    std::string source(head);
-    source += "(";
-    bool first = true;
-    for (const std::string &arg : args) {
-        if (!first) {
-            source += ", ";
-        }
-        first = false;
-        source += arg;
-    }
-    source += ")";
-    return source;
-}
-
-/// Renders `text` as a Maxima string literal.
-std::string quoteForMaxima(std::string_view text) {
-    std::string out = "\"";
-    for (const char c : text) {
-        if (c == '"' || c == '\\') {
-            out.push_back('\\');
-        }
-        out.push_back(c);
-    }
-    out.push_back('"');
-    return out;
+/// `head(args...)` as a form. Unnormalised, since Expr::function does not
+/// reorder its arguments — which for a Maxima call is essential.
+Expr call(std::string head, std::vector<Expr> args) {
+    return Expr::function(std::move(head), std::move(args));
 }
 
 /// True when `expr` is `head(...)` left unevaluated by Maxima — its way of
 /// saying it could not do the job.
 bool isUnevaluated(const Expr &expr, std::string_view head) {
     return expr.is(Kind::Function) && expr.name() == head;
+}
+
+bool isList(const Expr &expr) {
+    return isUnevaluated(expr, "list");
 }
 
 std::string_view sideKeyword(Side side) {
@@ -95,37 +81,37 @@ Kernel &sharedKernel() {
 }
 
 std::expected<Expr, Failure> parse(std::string_view source, Kernel &kernel) {
-    return evaluate(kernel, call("parse_string", {quoteForMaxima(source)}));
+    // The source travels as a string literal, which an Opaque of that shape
+    // becomes, for parse_string to read on the far side.
+    return evaluate(kernel, call("parse_string",
+                                 {Expr::opaque(detail::stringLiteral(source))}));
 }
 
 Expr diff(const Expr &expr, const Symbol &wrt, unsigned order, Kernel &kernel) {
-    return evaluateOrThrow(
-        kernel,
-        call("diff", {expr.str(), wrt.name(), std::to_string(order)}));
+    return evaluateOrThrow(kernel, call("diff", {expr, wrt, Expr(order)}));
 }
 
 Expr expand(const Expr &expr, Kernel &kernel) {
-    return evaluateOrThrow(kernel, call("expand", {expr.str()}));
+    return evaluateOrThrow(kernel, call("expand", {expr}));
 }
 
 Expr factor(const Expr &expr, Kernel &kernel) {
-    return evaluateOrThrow(kernel, call("factor", {expr.str()}));
+    return evaluateOrThrow(kernel, call("factor", {expr}));
 }
 
 Expr simplify(const Expr &expr, Kernel &kernel) {
-    return evaluateOrThrow(kernel, call("ratsimp", {expr.str()}));
+    return evaluateOrThrow(kernel, call("ratsimp", {expr}));
 }
 
 Expr subst(const Expr &expr, const Symbol &symbol, const Expr &value,
            Kernel &kernel) {
     // Maxima's argument order is (replacement, target, expression).
-    return evaluateOrThrow(
-        kernel, call("subst", {value.str(), symbol.name(), expr.str()}));
+    return evaluateOrThrow(kernel, call("subst", {value, symbol, expr}));
 }
 
 std::expected<Expr, Failure> integrate(const Expr &expr, const Symbol &wrt,
                                        Kernel &kernel) {
-    auto result = evaluate(kernel, call("integrate", {expr.str(), wrt.name()}));
+    auto result = evaluate(kernel, call("integrate", {expr, wrt}));
     if (!result) {
         return result;
     }
@@ -142,9 +128,7 @@ std::expected<Expr, Failure> integrate(const Expr &expr, const Symbol &wrt,
 std::expected<Expr, Failure> integrate(const Expr &expr, const Symbol &wrt,
                                        const Expr &from, const Expr &to,
                                        Kernel &kernel) {
-    auto result = evaluate(
-        kernel,
-        call("integrate", {expr.str(), wrt.name(), from.str(), to.str()}));
+    auto result = evaluate(kernel, call("integrate", {expr, wrt, from, to}));
     if (!result) {
         return result;
     }
@@ -158,13 +142,11 @@ std::expected<Expr, Failure> integrate(const Expr &expr, const Symbol &wrt,
 
 std::expected<Expr, Failure> limit(const Expr &expr, const Symbol &wrt,
                                    const Expr &to, Side side, Kernel &kernel) {
-    const std::string_view keyword = sideKeyword(side);
-    auto result
-        = keyword.empty()
-              ? evaluate(kernel,
-                         call("limit", {expr.str(), wrt.name(), to.str()}))
-              : evaluate(kernel, call("limit", {expr.str(), wrt.name(), to.str(),
-                                                std::string(keyword)}));
+    std::vector<Expr> args{expr, wrt, to};
+    if (const std::string_view keyword = sideKeyword(side); !keyword.empty()) {
+        args.push_back(Expr::symbol(std::string(keyword)));
+    }
+    auto result = evaluate(kernel, call("limit", std::move(args)));
     if (!result) {
         return result;
     }
@@ -192,30 +174,20 @@ solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
         return std::unexpected(Failure{"solve was given no equations"});
     }
 
-    const auto listOf = [](auto &&items, auto &&render) {
-        std::string text = "[";
-        bool first = true;
-        for (const auto &item : items) {
-            if (!first) {
-                text += ", ";
-            }
-            first = false;
-            text += render(item);
-        }
-        text += "]";
-        return text;
-    };
-
-    const std::string equationList
-        = listOf(equations, [](const Expr &e) { return e.str(); });
-    const std::string unknownList
-        = listOf(unknowns, [](const Symbol &s) { return s.name(); });
+    const Expr equationList
+        = call("list", std::vector<Expr>(equations.begin(), equations.end()));
+    std::vector<Expr> unknownExprs;
+    unknownExprs.reserve(unknowns.size());
+    for (const Symbol &unknown : unknowns) {
+        unknownExprs.push_back(unknown);
+    }
+    const Expr unknownList = call("list", std::move(unknownExprs));
 
     auto result = evaluate(kernel, call("solve", {equationList, unknownList}));
     if (!result) {
         return std::unexpected(result.error());
     }
-    if (!isUnevaluated(*result, "list")) {
+    if (!isList(*result)) {
         return std::unexpected(
             Failure{"solve did not return a list of solutions, but "
                     + result->str()});
@@ -229,8 +201,9 @@ solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
         = !result->args().empty() && result->arg(0).is(Kind::Relation);
 
     const auto reject = [&](const std::string &why) {
-        return std::unexpected(Failure{"Maxima did not solve " + equationList
-                                       + " for " + unknownList + ": " + why});
+        return std::unexpected(Failure{"Maxima did not solve "
+                                       + equationList.str() + " for "
+                                       + unknownList.str() + ": " + why});
     };
 
     std::vector<Solution> solutions;
@@ -242,7 +215,7 @@ solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
         std::vector<Expr> assignments;
         if (flattened) {
             assignments.push_back(candidate);
-        } else if (isUnevaluated(candidate, "list")) {
+        } else if (isList(candidate)) {
             assignments.assign(candidate.args().begin(), candidate.args().end());
         } else {
             return reject("expected a list of assignments but found "

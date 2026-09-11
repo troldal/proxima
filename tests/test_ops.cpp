@@ -133,8 +133,11 @@ TEST_CASE("integration") {
     }
 
     SUBCASE("a genuine Maxima error is also a Failure") {
-        const auto bad = mx::integrate(Expr(x), Symbol("5"));
-        CHECK_FALSE(bad.has_value());
+        // A divergent definite integral is something Maxima *errors* on,
+        // rather than handing back unevaluated.
+        const auto bad = mx::integrate(Expr(1) / Expr(x), x, Expr(0), Expr(1));
+        REQUIRE_FALSE(bad.has_value());
+        CHECK(bad.error().message.find("divergent") != std::string::npos);
     }
 }
 
@@ -329,8 +332,14 @@ TEST_CASE("parsing delegates to Maxima's own parser") {
 }
 
 TEST_CASE("an operation with no ordinary failure mode throws instead") {
-    // diff cannot sensibly fail, so a Maxima error there is exceptional.
-    CHECK_THROWS_AS(mx::diff(Expr(1), Symbol("2")), mx::MaximaError);
+    // diff cannot sensibly fail, so a Maxima error there is exceptional. An
+    // Opaque that Maxima cannot parse is the surest way to provoke one.
+    //
+    // (This used to use Symbol("2") as the variable. That worked only because
+    // the expression was rendered to text, which turned the symbol into the
+    // number 2 on the way. It now travels as the symbol it is, which Maxima
+    // is perfectly happy to differentiate with respect to.)
+    CHECK_THROWS_AS(mx::diff(Expr::opaque("(1"), Symbol("x")), mx::MaximaError);
 }
 
 TEST_CASE("results are canonical expressions, not text") {

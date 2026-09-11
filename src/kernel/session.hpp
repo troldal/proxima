@@ -40,10 +40,15 @@ namespace mx::detail {
 ///
 /// and each request is sent as
 ///
-///     cppsend(<id>, errcatch(ratdisrep(<expression>)))$
+///     cppsend(<id>, errcatch(ratdisrep(<payload>)))$
 ///
-/// Four things fall out of that shape, each of which the prototype's
-/// prompt-marker scheme got wrong:
+/// where the payload is one of exactly two calls, each taking a single string
+/// literal that this layer escaped itself:
+///
+///     cppread("((MPLUS) 1 $X)")        a Maxima internal form, read and evaluated
+///     eval_string("integrate(x^2, x)") Maxima source, parsed and evaluated
+///
+/// Five things fall out of that shape:
 ///
 /// - **The id makes desynchronisation detectable.** A reply is only accepted
 ///   for the request that asked for it; a stale or duplicated frame is skipped
@@ -52,14 +57,52 @@ namespace mx::detail {
 ///   `[result]` on success, so Maxima never drops into an error prompt that
 ///   leaves the stream off by one. Success and failure are read from the frame
 ///   rather than guessed at from the shape of some text.
+/// - **Nothing variable ever reaches Maxima's reader as syntax.** The only
+///   text Maxima parses is the fixed wrapper plus a string literal. Reading
+///   the string's *contents* happens inside errcatch, so a malformed
+///   expression is an ordinary failure with a message. Before this, the
+///   expression was spliced in raw, and a stray `$` failed in the reader —
+///   before errcatch — which produced no frame at all and cost the caller the
+///   full Config::timeout and a restart.
 /// - **The value is Maxima's internal s-expression, not its display output.**
 ///   `(%oN)` text is a display format: it is ambiguous, it line-wraps, and it
 ///   loses exact rationals. The internal form has no precedence to re-derive
 ///   and keeps `((RAT SIMP) 1 3)` as a rational. `ratdisrep` prevents canonical
-///   rational (`MRAT`) forms coming back in place of general ones.
+///   rational (`MRAT`) forms coming back in place of general ones. And with
+///   `cppread` the *outbound* direction is the same form, so an expression
+///   goes out as structure and comes back as structure: the infix printer is
+///   no longer part of the protocol at all.
 /// - **Errors no longer leak into the stream.** With `errormsg:false` Maxima
 ///   stops printing them, and the helper renders the message into the frame, so
 ///   everything between frames is noise that can simply be discarded.
+/// The variable part of a request: a Maxima call taking one string literal.
+///
+/// Only the two factories can make one, and both escape the string they are
+/// given, so there is no way to hand the session text that Maxima's reader
+/// will see as syntax. That is the whole point of the type; see the protocol
+/// notes above.
+class Payload {
+public:
+    /// `cppread("<sexpr>")` — a Maxima internal form, to be read by the Lisp
+    /// helper and evaluated. What toMaxima produces.
+    static Payload form(std::string_view sexpr);
+
+    /// `eval_string("<source>")` — Maxima source text, parsed and evaluated
+    /// by Maxima's own parser. The escape hatch for anything an Expr cannot
+    /// say.
+    static Payload text(std::string_view source);
+
+    /// The call, exactly as it is substituted into the request wrapper. Also
+    /// the reply-cache key, since it is the whole question.
+    const std::string &str() const { return call_; }
+
+    bool operator==(const Payload &other) const = default;
+
+private:
+    explicit Payload(std::string call) : call_(std::move(call)) {}
+    std::string call_;
+};
+
 class MaximaSession {
 public:
     /// Produces a transport, and can be asked again after one dies. Holding a
@@ -82,12 +125,9 @@ public:
     MaximaSession(const MaximaSession &) = delete;
     MaximaSession &operator=(const MaximaSession &) = delete;
 
-    /// Evaluates one Maxima *expression* — `integrate(x^2, x)`, not
-    /// `integrate(x^2, x);` — and returns its result.
-    ///
-    /// Note the change from the prototype: no terminator, because the
-    /// expression is substituted into a wrapper that supplies its own. A
-    /// Maxima error is reported through Reply::ok rather than thrown.
+    /// Evaluates one request and returns its result. A Maxima error —
+    /// including a malformed expression, which fails inside the payload's
+    /// own reader — is reported through Reply::ok rather than thrown.
     ///
     /// Throws TimeoutError if Maxima did not answer within Config::timeout, or
     /// KernelError if the session died or answered something unintelligible. In
@@ -96,14 +136,14 @@ public:
     ///
     /// Serialised: concurrent callers take turns rather than interleaving
     /// requests on one pipe.
-    Reply eval(std::string_view expression);
+    Reply eval(const Payload &payload);
 
     /// Evaluates a pure expression, consulting and filling the reply cache.
     /// The caller guarantees the expression changes nothing in Maxima.
-    Reply evalPure(std::string_view expression);
+    Reply evalPure(const Payload &payload);
 
     /// Evaluates a state-changing statement the journal accounts for.
-    Reply evalTracked(std::string_view statement);
+    Reply evalTracked(const Payload &payload);
 
     /// Discards every cached reply.
     void invalidateCache();
@@ -123,7 +163,7 @@ public:
     /// declarations, bindings — that a restart would otherwise silently lose,
     /// leaving later results quietly wrong rather than obviously broken. Scoped
     /// state such as mx::Context registers itself here.
-    std::uint64_t remember(std::string statement);
+    std::uint64_t remember(Payload payload);
 
     /// Stops replaying the statement `handle` names.
     void forget(std::uint64_t handle);
@@ -145,9 +185,9 @@ public:
     /// exactly these.
     static std::vector<std::string> setupStatements();
 
-    /// Wraps `expression` in the framed, error-trapping call sent to Maxima.
+    /// Wraps `payload` in the framed, error-trapping call sent to Maxima.
     /// Exposed for testing.
-    static std::string requestFor(std::uint64_t id, std::string_view expression);
+    static std::string requestFor(std::uint64_t id, const Payload &payload);
 
     /// Frame delimiters for request `id`. Exposed so tests can script replies
     /// in the same shape Maxima produces.
@@ -158,12 +198,11 @@ public:
 private:
     struct JournalEntry {
         std::uint64_t handle;
-        std::string statement;
+        Payload payload;
     };
 
     /// The body of eval, with the lock already held.
-    Reply evalLocked(std::string_view expression,
-                     std::chrono::milliseconds timeout);
+    Reply evalLocked(const Payload &payload, std::chrono::milliseconds timeout);
 
     /// Discards the dead transport, builds another, and restores the session:
     /// handshake, then every remembered statement in the order it was made.

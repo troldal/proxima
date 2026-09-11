@@ -236,14 +236,17 @@ TEST_CASE("the Lisp helper's delimiters agree with the ones C++ looks for") {
 }
 
 TEST_CASE("a request is wrapped so errors become values") {
-    const std::string request = MaximaSession::requestFor(42, "integrate(x, 5)");
+    const std::string request = MaximaSession::requestFor(
+        42, mx::detail::Payload::text("integrate(x, 5)"));
 
     CHECK(request.find("cppsend(42,") != std::string::npos);
     // errcatch is what stops a Maxima error leaving the stream in an error
     // prompt; ratdisrep keeps canonical rational (MRAT) forms from coming back.
     CHECK(request.find("errcatch(") != std::string::npos);
     CHECK(request.find("ratdisrep(") != std::string::npos);
-    CHECK(request.find("integrate(x, 5)") != std::string::npos);
+    // The expression travels as a string literal for Maxima to parse inside
+    // the trap, never as bare syntax.
+    CHECK(request.find("eval_string(\"integrate(x, 5)\")") != std::string::npos);
     // '$' rather than ';': the wrapper prints the frame itself and Maxima
     // should print nothing of its own.
     CHECK(request.back() == '$');
