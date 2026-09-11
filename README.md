@@ -21,20 +21,121 @@ if (const auto integral = mx::integrate(f, x)) {
 
 ## What it does
 
-- **Exact arithmetic.** `1/3 + 2/5` is `11/15`, not `0.7333…`.
-- **Symbolic calculus**, from Maxima: `diff`, `integrate` (indefinite and
-  definite), `limit`, `solve`, `expand`, `factor`, `simplify`, `subst`.
-- **Expressions as values.** `mx::Expr` is immutable, hashable, comparable and
-  usable in standard containers. Results chain: `expand(factor(diff(e, x)))`.
-- **Assumption scopes.** `mx::Context` opens a Maxima context and discards it on
-  destruction, assumptions and declarations alike.
-- **Numeric evaluation** without a round trip, once a closed form exists.
-- **Two parsers.** `Expr::parse("x^2 - 3*x + 2")` needs no kernel and covers
-  ordinary infix; `mx::parse` hands the text to Maxima for anything beyond that.
-  Note that the first only parses, while the second also evaluates — `5!` is
-  `factorial(5)` to one and `120` to the other.
-- **A kernel that survives its own death.** If Maxima hangs or exits, the call
-  reports it and the kernel restarts with its assumptions replayed.
+### Expressions
+
+`mx::Expr` is an immutable value: copying is a pointer copy, the hash is
+computed once, and equality is structural. It works in `std::unordered_map`,
+`std::find` and anything else expecting a regular type — and because it is a
+local value rather than a handle into the Maxima process, it survives a kernel
+restart.
+
+```cpp
+const mx::Symbol x("x"), y("y");
+
+mx::Expr f = pow(mx::Expr(x), 2) + 3 * x + 2;   // operators
+f = mx::Expr::parse("x^2 + 3*x + 2");           // or infix text, no kernel
+```
+
+Ten node kinds — `Integer`, `Rational`, `Real`, `Symbol`, `Add`, `Mul`, `Pow`,
+`Function`, `Relation`, `Opaque` — stay that few because two of them absorb
+everything else. `Function(head, args)` is an *uninterpreted* application, so
+`bessel_j`, a matrix, a derivative or your own `f` need no new type; `Opaque`
+holds Maxima source for whatever is not an application at all. A result from
+Maxima is never unrepresentable.
+
+**Arithmetic is exact.** `1/3 + 2/5` is `11/15`, not `0.7333…`, and `2` is not
+`2.0`. An integer beyond `int64_t` — `30!`, say — keeps every digit as `Opaque`
+text rather than wrapping.
+
+Expressions are **normalised at construction**: nested sums flattened, numeric
+terms folded, identities dropped, operands canonically ordered. So `x + 1` and
+`1 + x` are equal and hash alike. It is normalisation, not algebra: `x - x`
+stays `x - x`, and nothing is expanded or factored, because that is Maxima's
+job and having two things simplify would make results depend on which path
+produced them.
+
+`str()` renders Maxima-compatible infix, parenthesised by precedence.
+
+### Operations
+
+| | |
+|---|---|
+| `diff(f, x, n)` | derivative, to any order |
+| `integrate(f, x)` / `integrate(f, x, a, b)` | indefinite and definite |
+| `limit(f, x, a, side)` | two-sided, or from above or below |
+| `solve(equation, x)` | values for one unknown |
+| `solve(equations, unknowns)` | a system; one value per unknown, in the order asked for |
+| `expand` `factor` `simplify` `subst` | algebraic rearrangement |
+| `parse(text)` | Maxima's own parser, for anything the offline one will not take |
+| `contains(e, x)` | local; no kernel |
+
+Builders for `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `log`,
+`abs`, `exp`, `sqrt`, and the constants `%pi`, `%e`, `%i`, `inf`, `minf`.
+Relations are built by name — `eq`, `ne`, `lt`, `le`, `gt`, `ge` — so that `==`
+can keep its ordinary meaning.
+
+Results chain, because what comes back is an expression rather than text:
+
+```cpp
+mx::expand(mx::factor(mx::diff(f, x)));
+```
+
+### Two parsers
+
+`Expr::parse` is a Pratt parser over a subset of Maxima's grammar — arithmetic,
+comparisons, function application, lists, strings — and needs **no kernel**.
+Statements are refused; it parses expressions, not programs. `mx::parse` hands
+the text to Maxima and so accepts everything, at the cost of a round trip.
+
+They differ in more than grammar: **`Expr::parse` parses, `mx::parse` also
+evaluates.** `5!` is `factorial(5)` to the first and `120` to the second.
+
+Precedences are Maxima's, including the two that catch people out: `^` is
+right-associative (`x^2^3` is `x^(2^3)`) and unary minus binds looser than it
+(`-x^2` is `-(x^2)`).
+
+### Numeric evaluation
+
+Once a closed form exists, turning it into numbers is ordinary arithmetic — no
+round trip per point.
+
+```cpp
+mx::evalNumeric(*integral, {{"x", 1.0}});        // 2.22324
+const auto F = mx::asFunction(*integral, x);     // usable in a loop
+mx::isEvaluable(e, bindings);                    // ask without catching
+```
+
+`%pi` and friends are recognised; an explicit binding overrides them. An unknown
+function is an error rather than a guess.
+
+### Assumptions
+
+`mx::Context` opens a Maxima context and discards it on destruction —
+assumptions *and* declarations, which forgetting each assumption individually
+would not achieve. Contexts nest and inherit. A contradictory assumption is
+refused. `declare` covers `Integer`, `Even`, `Odd`, `Rational`, `Real`,
+`Complex`, `Prime`, `Constant` and the rest of Maxima's features.
+
+### The kernel
+
+- **Started on first use**, or constructed explicitly. `sharedKernel()` is the
+  process-wide one; every operation takes a `Kernel` defaulting to it.
+- **Serialised**, so a `Kernel` is safe to share between threads. For real
+  parallelism, give each thread its own — Maxima is one process doing one thing.
+- **Survives its own death.** If Maxima hangs or exits, the failing call reports
+  it and the kernel is restarted with its assumptions replayed, so the next call
+  starts from a working session rather than a wrong one.
+- **Remembers answers.** An LRU keyed on the Maxima source, discarded whenever
+  anything might have changed it — any raw `eval`, any assumption added or
+  dropped. Sized by `Config::cacheEntries`; zero disables it.
+- **Cannot be deadlocked by a prompt.** Maxima asks the user for facts it lacks,
+  and reads the answer from standard input; over a pipe that would block and
+  then swallow the next request. Questions become errors instead — see *When
+  Maxima needs a fact it has not been told*.
+
+`Config` covers `maximaRoot`, `timeout`, `startupTimeout`, `cacheEntries`,
+`loadUserInit` and `userDir`. The user's own `maxima-init.mac` is **not** loaded
+by default: a library should compute the same answer on every machine.
 
 ## Requirements
 
@@ -91,7 +192,7 @@ if (const auto result = mx::integrate(mx::exp(mx::sin(x)), x)) {
 }
 ```
 
-## Assumptions
+## When Maxima needs a fact it has not been told
 
 Maxima sometimes needs a fact it has not been told. Asked to integrate `x^n` it
 would normally *interrogate the user* — "Is n equal to -1?" — which over a pipe
@@ -99,9 +200,10 @@ cannot be answered. The kernel turns the question into an error naming the
 missing fact, so it tells you exactly what to supply:
 
 ```cpp
-mx::integrate(pow(mx::Expr(x), mx::Expr(n)), x);
-// no result: this computation needs an assumption that was not supplied.
-//            Maxima asked: Is n equal to -1?
+const auto stuck = mx::integrate(pow(mx::Expr(x), mx::Expr(n)), x);
+stuck.error().message;
+// "this computation needs an assumption that was not supplied.
+//  Maxima asked: Is n equal to -1?"
 
 mx::Context ctx;
 ctx.assume(gt(mx::Expr(n), mx::Expr(0)));
