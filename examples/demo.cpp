@@ -18,8 +18,16 @@ int main() {
     try {
         const mx::Symbol x("x");
 
+        // Two ways to build an expression: with operators, or from text.
+        // Expr::parse needs no running Maxima.
         const mx::Expr f = pow(mx::Expr(x), 2) + 3 * x + 2;
+        const mx::Expr fromText = mx::Expr::parse("x^2 + 3*x + 2");
+
         std::cout << "f                = " << f.str() << '\n';
+        std::cout << "  from text      = " << fromText.str() << "   "
+                  << (fromText == f ? "(the same expression)"
+                                    : "(a different one!)")
+                  << '\n';
         std::cout << "f'               = " << mx::diff(f, x).str() << '\n';
         std::cout << "f(5)             = "
                   << mx::subst(f, x, mx::Expr(5)).str() << '\n';
@@ -67,6 +75,16 @@ int main() {
                 std::cout << "x+y=3, x-y=1     = x = " << solution[0].str()
                           << ", y = " << solution[1].str() << '\n';
             }
+        }
+
+        // The other parser hands the text to Maxima itself, which accepts
+        // everything its own syntax allows — but evaluates as it reads, so the
+        // two answer differently.
+        std::cout << "Expr::parse(5!)  = " << mx::Expr::parse("5!").str()
+                  << "   (parsed, not evaluated)\n";
+        if (const auto viaMaxima = mx::parse("5!")) {
+            std::cout << "mx::parse(5!)    = " << viaMaxima->str()
+                      << "            (Maxima evaluates as it parses)\n";
         }
 
         // Failure is an ordinary outcome, reported rather than thrown: Maxima
