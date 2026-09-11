@@ -1,5 +1,7 @@
 #include "core/node.hpp"
 
+#include "core/normalize.hpp"
+
 #include <mx/errors.hpp>
 
 #include <limits>
@@ -178,9 +180,9 @@ Expr Expr::opaque(std::string text) {
 }
 
 Expr Expr::add(std::vector<Expr> terms) {
-    // The only structural rules applied at construction: a sum of one is that
-    // term, a sum of none is zero. Flattening, constant folding and ordering
-    // are the normaliser's job (PLAN.md step 10).
+    // Normalised at construction, so every Expr in existence is in canonical
+    // form and equality never has to re-derive it.
+    terms = detail::normalizeSum(std::move(terms));
     if (terms.empty()) {
         return integer(0);
     }
@@ -194,6 +196,7 @@ Expr Expr::add(std::vector<Expr> terms) {
 }
 
 Expr Expr::mul(std::vector<Expr> factors) {
+    factors = detail::normalizeProduct(std::move(factors));
     if (factors.empty()) {
         return integer(1);
     }
@@ -207,6 +210,9 @@ Expr Expr::mul(std::vector<Expr> factors) {
 }
 
 Expr Expr::pow(Expr base, Expr exponent) {
+    if (auto simplified = detail::normalizePower(base, exponent)) {
+        return *simplified;
+    }
     Node node;
     node.kind = Kind::Pow;
     node.args = {std::move(base), std::move(exponent)};

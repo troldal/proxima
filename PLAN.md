@@ -455,11 +455,46 @@ rational rather than a bfloat. Verified with `is(equal(…, bfloat(%pi)))`.
 
 ### Step 10. Normalizer
 
-Flatten nested `Add`/`Mul`, fold numeric constants, sort operands by hash, drop
-identities. Applied at construction. This exists for **stable hashing and
-equality**, not simplification — Maxima owns simplification.
+Applied at construction, in `Expr::add`, `Expr::mul` and `Expr::pow`, so every
+expression in existence is canonical and equality never has to re-derive it.
 
-- *Verify:* `x+1` and `1+x` hash equal; `x*1` collapses to `x`.
+Rules: nested sums and products spliced in; numeric operands folded into one;
+identities dropped (`x + 0`, `x * 1`), with a zero factor absorbing the whole
+product; `x^1`, `x^0` and `1^n` collapsed; operands ordered.
+
+**Ordering is structural, not by hash.** The original sketch said "sort by
+hash", but `std::hash<std::string>` differs between standard library
+implementations, which would make canonical form — and therefore printed output
+and every test expectation — vary by platform. The order is instead: numbers,
+then symbols alphabetically, then compounds. That is also the order Maxima's own
+internal representation uses (`x + 1` arrives as `((MPLUS SIMP) 1 $X)`), so
+normalisation is a no-op on anything mapped back from Maxima rather than a
+reshuffle that obscures diffs.
+
+**Folding refuses to wrap.** Exact arithmetic that would overflow `mx::Integer`
+is abandoned and the terms stay unfolded — correct, if less tidy, and far better
+than a silently wrong number. The accumulator reduces after every step, which is
+what keeps a long sum of fractions from overflowing on the denominators alone.
+Inexactness is contagious, as in Maxima: one float makes the whole constant a
+float. Exact and inexact are never folded together into equality, so `2` and
+`2.0` stay distinguishable.
+
+**What it deliberately does not do**, and the tests say so explicitly: collect
+like terms (`x - x` stays `x - x`), expand, factor, or combine powers. That is
+algebra, and algebra belongs to Maxima. Doing half of it here would reintroduce
+exactly the two-canonicalisers problem that dropping SymEngine avoided.
+
+One consequence worth knowing: `str()` shows canonical order, not the order an
+expression was written in. `x + 1` prints as `1 + x`. The printer makes one
+display-only concession — a *negative* leading constant is moved to the end, so
+`x - 1` reads as written rather than as `-1 + x`; a positive one stays, since
+`1 - x` already reads better than `-x + 1`.
+
+- *Verify:* `x + 1` and `1 + x` are equal and hash equally; associativity and
+  commutativity hold structurally; `x*1` collapses to `x`; overflow leaves terms
+  unfolded rather than wrapping. And the full Maxima round-trip from step 9
+  still passes, now with every mapped expression being normalised on the way
+  through — evidence that canonical form stays valid Maxima.
 
 ### Step 11. Operations and shared kernel
 

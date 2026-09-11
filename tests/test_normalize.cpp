@@ -1,0 +1,180 @@
+// Normalisation tests. No Maxima, no child process.
+//
+// The normaliser exists to make structurally identical expressions *look*
+// identical, so equality and hashing mean something and cache keys hit. It is
+// deliberately not algebra — the second half of this file is as important as
+// the first.
+
+#include <doctest/doctest.h>
+
+#include <mx/expr.hpp>
+#include <mx/symbol.hpp>
+
+#include <limits>
+#include <string>
+
+using mx::Expr;
+using mx::Kind;
+using mx::Symbol;
+
+TEST_CASE("nested sums and products are flattened") {
+    const Symbol x("x");
+    const Symbol y("y");
+    const Symbol z("z");
+
+    const Expr sum = (Expr(x) + Expr(y)) + Expr(z);
+    REQUIRE(sum.kind() == Kind::Add);
+    CHECK(sum.arity() == 3);
+
+    const Expr product = (Expr(x) * Expr(y)) * Expr(z);
+    REQUIRE(product.kind() == Kind::Mul);
+    CHECK(product.arity() == 3);
+
+    // So associativity holds structurally, which a nested shape would break.
+    CHECK((Expr(x) + Expr(y)) + Expr(z) == Expr(x) + (Expr(y) + Expr(z)));
+    CHECK((Expr(x) * Expr(y)) * Expr(z) == Expr(x) * (Expr(y) * Expr(z)));
+}
+
+TEST_CASE("operand order is canonical, so commutativity holds") {
+    const Symbol x("x");
+    const Symbol y("y");
+
+    CHECK(Expr(x) + 1 == Expr(1) + Expr(x));
+    CHECK(Expr(x) * 2 == Expr(2) * Expr(x));
+    CHECK(Expr(x) + Expr(y) == Expr(y) + Expr(x));
+    CHECK(Expr(x) * Expr(y) == Expr(y) * Expr(x));
+
+    SUBCASE("and equal expressions hash equally") {
+        CHECK((Expr(x) + 1).hash() == (Expr(1) + Expr(x)).hash());
+        CHECK((Expr(x) * Expr(y)).hash() == (Expr(y) * Expr(x)).hash());
+    }
+}
+
+TEST_CASE("numbers are folded into one term") {
+    const Symbol x("x");
+
+    CHECK(Expr(1) + Expr(2) == Expr(3));
+    CHECK(Expr(2) * Expr(3) == Expr(6));
+    CHECK(Expr(1) + Expr(2) + Expr(x) == Expr(3) + Expr(x));
+    CHECK((Expr(2) * Expr(3) * Expr(x)).str() == "6*x");
+
+    SUBCASE("exactly, for exact operands") {
+        CHECK(Expr::rational(1, 2) + Expr::rational(1, 3)
+              == Expr::rational(5, 6));
+        CHECK(Expr::rational(2, 3) * Expr::rational(3, 4)
+              == Expr::rational(1, 2));
+        // A fraction that comes out whole collapses.
+        CHECK(Expr::rational(1, 2) + Expr::rational(1, 2) == Expr(1));
+    }
+
+    SUBCASE("inexactness is contagious, as it is in Maxima") {
+        const Expr mixed = Expr(1) + Expr(2.5);
+        REQUIRE(mixed.kind() == Kind::Real);
+        CHECK(mixed.realValue() == doctest::Approx(3.5));
+    }
+
+    SUBCASE("regardless of the order they were written in") {
+        CHECK(Expr(1) + Expr(x) + Expr(2) == Expr(3) + Expr(x));
+        CHECK(Expr(2) * Expr(x) * Expr(3) == Expr(6) * Expr(x));
+    }
+}
+
+TEST_CASE("identities are dropped") {
+    const Symbol x("x");
+
+    CHECK(Expr(x) + 0 == Expr(x));
+    CHECK(Expr(x) * 1 == Expr(x));
+    CHECK(Expr(x) * 0 == Expr(0));
+
+    SUBCASE("but a lone identity survives, since it is the whole value") {
+        CHECK(Expr::add({Expr(0), Expr(0)}) == Expr(0));
+        CHECK(Expr::mul({Expr(1), Expr(1)}) == Expr(1));
+    }
+
+    SUBCASE("and folding can produce one") {
+        // 1 + -1 folds to 0, which then vanishes from the sum.
+        CHECK(Expr(1) + Expr(x) + Expr(-1) == Expr(x));
+        CHECK(Expr(2) * Expr(x) * Expr::rational(1, 2) == Expr(x));
+    }
+}
+
+TEST_CASE("the identities of exponentiation apply") {
+    const Symbol x("x");
+
+    CHECK(pow(Expr(x), 1) == Expr(x));
+    CHECK(pow(Expr(x), 0) == Expr(1));
+    CHECK(pow(Expr(1), Expr(x)) == Expr(1));
+
+    SUBCASE("0^0 is left for Maxima to have an opinion about") {
+        CHECK(pow(Expr(0), 0).kind() == Kind::Pow);
+    }
+}
+
+TEST_CASE("folding refuses to wrap") {
+    // Exact arithmetic that would overflow mx::Integer is abandoned rather than
+    // silently producing a wrong number. The terms simply stay unfolded.
+    constexpr mx::Integer max = std::numeric_limits<mx::Integer>::max();
+
+    const Expr sum = Expr(max) + Expr(max);
+    REQUIRE(sum.kind() == Kind::Add);
+    CHECK(sum.arity() == 2);
+
+    const Expr product = Expr(max) * Expr(max);
+    REQUIRE(product.kind() == Kind::Mul);
+    CHECK(product.arity() == 2);
+
+    SUBCASE("a long sum of fractions does not overflow on denominators") {
+        // Reducing after every step is what keeps this in range.
+        Expr total = Expr(0);
+        for (int i = 1; i <= 40; ++i) {
+            total = total + Expr::rational(1, i);
+        }
+        CHECK(total.isNumber());
+    }
+}
+
+TEST_CASE("canonical order is platform-independent") {
+    // Ordering by hash would have been simpler, but std::hash<std::string>
+    // differs between standard libraries, which would make canonical form —
+    // and therefore printed output and these very expectations — vary by
+    // platform. The order is structural instead.
+    const Symbol x("x");
+    const Symbol y("y");
+    const Symbol a("a");
+
+    // Numbers, then symbols alphabetically, then compounds.
+    CHECK((Expr(y) + Expr(a) + Expr(2)).str() == "2 + a + y");
+    CHECK((Expr(x) * Expr(a) * Expr(3)).str() == "3*a*x");
+}
+
+// --- what the normaliser deliberately does not do -------------------------
+
+TEST_CASE("like terms are not collected") {
+    // That is algebra, and algebra belongs to Maxima. One canonicaliser is the
+    // whole reason SymEngine was dropped; doing half of it here would
+    // reintroduce exactly the problem that decision avoided.
+    const Symbol x("x");
+
+    CHECK_FALSE(Expr(x) - Expr(x) == Expr(0));
+    CHECK_FALSE(Expr(x) + Expr(x) == Expr(2) * Expr(x));
+}
+
+TEST_CASE("nothing is expanded or factored") {
+    const Symbol x("x");
+
+    CHECK_FALSE(pow(Expr(x) + 1, 2)
+                == Expr(x) * Expr(x) + 2 * Expr(x) + 1);
+    CHECK_FALSE((Expr(x) + 1) * (Expr(x) - 1) == pow(Expr(x), 2) - 1);
+}
+
+TEST_CASE("powers are not combined") {
+    const Symbol x("x");
+    CHECK_FALSE(pow(Expr(x), 2) * pow(Expr(x), 3) == pow(Expr(x), 5));
+}
+
+TEST_CASE("exact and inexact stay distinguishable") {
+    // 2 and 2.0 must not be folded together, or exactness would be lost the
+    // moment a float appeared anywhere in an expression.
+    CHECK_FALSE(Expr(2) == Expr(2.0));
+    CHECK_FALSE(Expr::rational(1, 2) == Expr(0.5));
+}

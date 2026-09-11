@@ -100,7 +100,9 @@ TEST_CASE("operators build the expected shapes") {
     SUBCASE("subtraction is addition of a negation") {
         const Expr difference = Expr(x) - 1;
         REQUIRE(difference.kind() == Kind::Add);
-        CHECK(difference.arg(1) == Expr(-1));
+        // Canonical order puts the constant first, whichever way it was written.
+        CHECK(difference.arg(0) == Expr(-1));
+        CHECK(difference.arg(1) == Expr(x));
     }
     SUBCASE("dividing exact integers stays exact") {
         // Not 1*3^-1, which would be correct but unhelpful to hand a user.
@@ -110,11 +112,13 @@ TEST_CASE("operators build the expected shapes") {
         CHECK(third.denominator() == 3);
     }
     SUBCASE("dividing anything else is multiplication by a reciprocal") {
-        // Which is how Maxima represents it internally too.
+        // Which is how Maxima represents it internally too. The 1 is the
+        // multiplicative identity and the normaliser drops it, leaving the
+        // power alone.
         const Expr reciprocal = Expr(1) / Expr(x);
-        REQUIRE(reciprocal.kind() == Kind::Mul);
-        CHECK(reciprocal.arg(1).kind() == Kind::Pow);
-        CHECK(reciprocal.arg(1).arg(1) == Expr(-1));
+        REQUIRE(reciprocal.kind() == Kind::Pow);
+        CHECK(reciprocal.arg(0) == Expr(x));
+        CHECK(reciprocal.arg(1) == Expr(-1));
     }
     SUBCASE("negating a literal gives a literal") {
         CHECK((-Expr(5)).kind() == Kind::Integer);
@@ -177,8 +181,9 @@ TEST_CASE("operator== is structural equality returning bool") {
     CHECK(Expr(x) + 1 == Expr(x) + 1);
     // Structural, so nothing is simplified and nothing consults Maxima.
     CHECK_FALSE(pow(Expr(x) + 1, 2) == Expr(x) * Expr(x) + 2 * Expr(x) + 1);
-    // And, until the normaliser orders operands, order matters.
-    CHECK_FALSE(Expr(x) + 1 == Expr(1) + Expr(x));
+    // Operand order does not, because the normaliser puts every sum and
+    // product into canonical order at construction.
+    CHECK(Expr(x) + 1 == Expr(1) + Expr(x));
 
     SUBCASE("so expressions work in standard containers") {
         std::unordered_set<Expr> seen;
@@ -206,22 +211,24 @@ TEST_CASE("printing parenthesises by precedence") {
     const Symbol x("x");
     const Symbol y("y");
 
-    CHECK((Expr(x) + 1).str() == "x + 1");
-    CHECK((Expr(x) * 2).str() == "x*2");
+    // Note the canonical order: numbers lead, as they do in Maxima's own
+    // internal representation.
+    CHECK((Expr(x) + 1).str() == "1 + x");
+    CHECK((Expr(x) * 2).str() == "2*x");
     CHECK(pow(Expr(x), 2).str() == "x^2");
 
     SUBCASE("a sum inside a product is wrapped") {
-        CHECK(((Expr(x) + 1) * Expr(y)).str() == "(x + 1)*y");
+        CHECK(((Expr(x) + 1) * Expr(y)).str() == "y*(1 + x)");
     }
     SUBCASE("a sum or product inside a power is wrapped") {
-        CHECK(pow(Expr(x) + 1, 2).str() == "(x + 1)^2");
+        CHECK(pow(Expr(x) + 1, 2).str() == "(1 + x)^2");
         CHECK(pow(Expr(x) * Expr(y), 2).str() == "(x*y)^2");
     }
     SUBCASE("a negative literal base is wrapped, since -3^2 is not (-3)^2") {
         CHECK(pow(Expr(-3), 2).str() == "(-3)^2");
     }
     SUBCASE("a power inside a product is not wrapped") {
-        CHECK((pow(Expr(x), 2) * Expr(y)).str() == "x^2*y");
+        CHECK((pow(Expr(x), 2) * Expr(y)).str() == "y*x^2");
     }
     SUBCASE("a power's own base is wrapped, since ^ is right-associative") {
         CHECK(pow(pow(Expr(x), 2), 3).str() == "(x^2)^3");
@@ -231,16 +238,18 @@ TEST_CASE("printing parenthesises by precedence") {
 TEST_CASE("printing renders subtraction rather than adding a negative") {
     const Symbol x("x");
 
+    // A negative leading constant moves to the end for display, so this reads
+    // as written rather than as "-1 + x".
     CHECK((Expr(x) - 1).str() == "x - 1");
     CHECK((Expr(x) - 3 * Expr(x)).str() == "x - 3*x");
     // -1*x is a negation, and reads as one.
     CHECK((Expr(x) + -Expr(x)).str() == "x - x");
-    // A leading negative term keeps its sign where it is, and needs no
-    // parentheses: Maxima reads -1*x as -(1*x), the same value.
-    CHECK((-Expr(x) + 1).str() == "-1*x + 1");
-    // A negative factor that is not leading does need them, since `x*-2` is
-    // not valid Maxima.
-    CHECK(Expr::mul({Expr(x), Expr(-2)}).str() == "x*(-2)");
+    // A positive leading constant stays put, since this reads better than
+    // "-x + 1".
+    CHECK((-Expr(x) + 1).str() == "1 - x");
+    // Canonical order puts the number first, where it needs no parentheses:
+    // Maxima reads -2*x as -(2*x), the same value.
+    CHECK(Expr::mul({Expr(x), Expr(-2)}).str() == "-2*x");
 }
 
 TEST_CASE("rationals and reals print recognisably") {

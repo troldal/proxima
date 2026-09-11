@@ -15,6 +15,7 @@ endif ()
 
 add_library(maxima_cpp
         src/core/expr.cpp
+        src/core/normalize.cpp
         src/core/printer.cpp
         src/kernel/discovery.cpp
         src/kernel/kernel.cpp

@@ -1,7 +1,9 @@
 #include <mx/expr.hpp>
 
+#include <algorithm>
 #include <charconv>
 #include <string>
+#include <vector>
 
 // Written entirely against Expr's public accessors rather than Node, so that
 // the printer doubles as a check that the public API is sufficient to read a
@@ -115,9 +117,20 @@ std::string render(const Expr &expr, int context) {
         return expr.opaqueText();
 
     case Kind::Add: {
+        std::vector<Expr> terms(expr.args().begin(), expr.args().end());
+
+        // Canonical order puts the constant first, so `x - 1` would come out as
+        // `-1 + x`. Moving a *negative* leading constant to the end recovers the
+        // conventional reading without disturbing the canonical order itself —
+        // this is a display choice, not a change to the expression. A positive
+        // one stays put, since `1 - x` already reads better than `-x + 1`.
+        if (terms.size() > 1 && terms.front().isNegativeNumber()) {
+            std::rotate(terms.begin(), terms.begin() + 1, terms.end());
+        }
+
         std::string out;
-        for (std::size_t i = 0; i < expr.arity(); ++i) {
-            const Expr &term = expr.arg(i);
+        for (std::size_t i = 0; i < terms.size(); ++i) {
+            const Expr &term = terms[i];
             std::string negated;
             if (i != 0 && negativeTerm(term, negated)) {
                 out += " - ";
