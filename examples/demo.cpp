@@ -12,6 +12,7 @@
 
 #include <exception>
 #include <iostream>
+#include <vector>
 
 int main() {
     try {
@@ -54,6 +55,18 @@ int main() {
                 std::cout << root.str() << ' ';
             }
             std::cout << '\n';
+        }
+
+        // A system. Values come back in the order the unknowns were asked for.
+        const mx::Symbol y("y");
+        const std::vector<mx::Expr> system{eq(x + y, mx::Expr(3)),
+                                           eq(x - y, mx::Expr(1))};
+        const std::vector<mx::Symbol> unknowns{x, y};
+        if (const auto found = mx::solve(system, unknowns)) {
+            for (const mx::Solution &solution : *found) {
+                std::cout << "x+y=3, x-y=1     = x = " << solution[0].str()
+                          << ", y = " << solution[1].str() << '\n';
+            }
         }
 
         // Failure is an ordinary outcome, reported rather than thrown: Maxima

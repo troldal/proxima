@@ -5,6 +5,7 @@
 
 #include <mx/errors.hpp>
 
+#include <algorithm>
 #include <string>
 #include <utility>
 
@@ -181,10 +182,36 @@ std::expected<Expr, Failure> limit(const Expr &expr, const Symbol &wrt,
     return result;
 }
 
-std::expected<std::vector<Expr>, Failure>
-solve(const Expr &equation, const Symbol &unknown, Kernel &kernel) {
-    auto result
-        = evaluate(kernel, call("solve", {equation.str(), unknown.name()}));
+std::expected<std::vector<Solution>, Failure>
+solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
+      Kernel &kernel) {
+    if (unknowns.empty()) {
+        return std::unexpected(Failure{"solve was given no unknowns"});
+    }
+    if (equations.empty()) {
+        return std::unexpected(Failure{"solve was given no equations"});
+    }
+
+    const auto listOf = [](auto &&items, auto &&render) {
+        std::string text = "[";
+        bool first = true;
+        for (const auto &item : items) {
+            if (!first) {
+                text += ", ";
+            }
+            first = false;
+            text += render(item);
+        }
+        text += "]";
+        return text;
+    };
+
+    const std::string equationList
+        = listOf(equations, [](const Expr &e) { return e.str(); });
+    const std::string unknownList
+        = listOf(unknowns, [](const Symbol &s) { return s.name(); });
+
+    auto result = evaluate(kernel, call("solve", {equationList, unknownList}));
     if (!result) {
         return std::unexpected(result.error());
     }
@@ -194,23 +221,89 @@ solve(const Expr &equation, const Symbol &unknown, Kernel &kernel) {
                     + result->str()});
     }
 
-    std::vector<Expr> values;
-    values.reserve(result->arity());
-    for (const Expr &solution : result->args()) {
-        // Maxima reports failure to solve by returning something that is not a
-        // solution rather than by erroring: an equation still mentioning the
-        // unknown on both sides, or one it never rearranged. Rejecting those
-        // here is what makes a success mean what it says.
-        const bool isAssignment = solution.is(Kind::Relation)
-                                  && solution.relationOp() == RelOp::Equal
-                                  && solution.arg(0) == Expr(unknown)
-                                  && !contains(solution.arg(1), unknown);
-        if (!isAssignment) {
-            return std::unexpected(
-                Failure{"Maxima did not solve " + equation.str() + " for "
-                        + unknown.name() + "; it returned " + result->str()});
+    // Maxima flattens the result when there is one unknown: solve([x^2=1], [x])
+    // gives [x = -1, x = 1], not [[x = -1], [x = 1]]. Detecting that from the
+    // shape rather than from the number of unknowns keeps this right whichever
+    // way Maxima decides to answer.
+    const bool flattened
+        = !result->args().empty() && result->arg(0).is(Kind::Relation);
+
+    const auto reject = [&](const std::string &why) {
+        return std::unexpected(Failure{"Maxima did not solve " + equationList
+                                       + " for " + unknownList + ": " + why});
+    };
+
+    std::vector<Solution> solutions;
+    solutions.reserve(result->arity());
+
+    for (const Expr &candidate : result->args()) {
+        // Each solution is a list of assignments — or, when flattened, a single
+        // assignment standing on its own.
+        std::vector<Expr> assignments;
+        if (flattened) {
+            assignments.push_back(candidate);
+        } else if (isUnevaluated(candidate, "list")) {
+            assignments.assign(candidate.args().begin(), candidate.args().end());
+        } else {
+            return reject("expected a list of assignments but found "
+                          + candidate.str());
         }
-        values.push_back(solution.arg(1));
+
+        // Collected by name, so the caller's ordering is honoured whatever
+        // order Maxima chose to answer in.
+        std::vector<std::pair<std::string, Expr>> byName;
+        for (const Expr &assignment : assignments) {
+            if (!assignment.is(Kind::Relation)
+                || assignment.relationOp() != RelOp::Equal
+                || !assignment.arg(0).is(Kind::Symbol)) {
+                return reject(assignment.str() + " is not an assignment");
+            }
+            // The same rule the single-unknown case has always applied: a value
+            // that still mentions an unknown is Maxima saying it could not
+            // finish, not a solution. `[x = sin(x)]` is the classic shape.
+            for (const Symbol &unknown : unknowns) {
+                if (contains(assignment.arg(1), unknown)) {
+                    return reject(assignment.str()
+                                  + " still depends on " + unknown.name());
+                }
+            }
+            byName.emplace_back(assignment.arg(0).name(), assignment.arg(1));
+        }
+
+        Solution solution;
+        solution.reserve(unknowns.size());
+        for (const Symbol &unknown : unknowns) {
+            const auto found = std::find_if(
+                byName.begin(), byName.end(),
+                [&](const auto &entry) { return entry.first == unknown.name(); });
+            if (found == byName.end()) {
+                return reject("no value for " + unknown.name() + " in "
+                              + candidate.str());
+            }
+            solution.push_back(found->second);
+        }
+        solutions.push_back(std::move(solution));
+    }
+    return solutions;
+}
+
+std::expected<std::vector<Expr>, Failure>
+solve(const Expr &equation, const Symbol &unknown, Kernel &kernel) {
+    // Delegates, so that the rules deciding what counts as a solution live in
+    // one place rather than being maintained twice.
+    const Expr equations[] = {equation};
+    const Symbol unknowns[] = {unknown};
+
+    auto solutions = solve(std::span<const Expr>(equations),
+                           std::span<const Symbol>(unknowns), kernel);
+    if (!solutions) {
+        return std::unexpected(solutions.error());
+    }
+
+    std::vector<Expr> values;
+    values.reserve(solutions->size());
+    for (const Solution &solution : *solutions) {
+        values.push_back(solution.front());
     }
     return values;
 }

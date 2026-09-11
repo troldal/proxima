@@ -5,6 +5,7 @@
 #include <mx/symbol.hpp>
 
 #include <expected>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -90,6 +91,33 @@ std::expected<Expr, Failure> limit(const Expr &expr, const Symbol &wrt,
 /// An empty result means Maxima found no solutions, which is itself an answer.
 std::expected<std::vector<Expr>, Failure>
 solve(const Expr &equation, const Symbol &unknown,
+      Kernel &kernel = sharedKernel());
+
+/// One solution of a system: a value for each unknown, in the order they were
+/// asked for, so `solution[i]` belongs to `unknowns[i]`.
+///
+/// The values are matched to unknowns by name rather than by the position
+/// Maxima returned them in, so the correspondence holds regardless of how
+/// Maxima chose to order its answer.
+using Solution = std::vector<Expr>;
+
+/// Solves a system of equations for several unknowns.
+///
+/// Each entry of `equations` should be a relation, as `eq(lhs, rhs)` builds.
+/// A bare expression is accepted and means `expression = 0`, which is Maxima's
+/// own convention.
+///
+/// Reports a Failure when the result is not a set of solutions: an equation
+/// still mentioning an unknown on its right-hand side, or a solution that does
+/// not give a value for every unknown asked about. An empty result means no
+/// solutions exist, which is an answer rather than a failure.
+///
+/// An underdetermined system solves parametrically, with free parameters
+/// appearing as symbols named `%r1`, `%r2` and so on — Maxima's own spelling.
+/// Those are values like any other, but they are not among the unknowns, so a
+/// caller wanting only fully determined solutions should check for them.
+std::expected<std::vector<Solution>, Failure>
+solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
       Kernel &kernel = sharedKernel());
 
 // --- Inspection -----------------------------------------------------------

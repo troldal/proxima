@@ -525,6 +525,24 @@ needed to discover and which shapes two of these signatures:
   at all — so a successful `solve` really is a solution. An empty result means
   no solutions, which is itself an answer.
 
+**`solve` comes in two forms.** `solve(equation, unknown)` returns the values
+for one unknown; `solve(equations, unknowns)` solves a system and returns, per
+solution, a value for each unknown *in the order the caller asked for them*.
+The single form delegates to the system form, so the rules deciding what counts
+as a solution live in one place.
+
+Two things measurement settled here. Maxima **flattens** the result when there
+is one unknown — `solve([x^2=1], [x])` gives `[x = -1, x = 1]`, not
+`[[x = -1], [x = 1]]` — so the shape is detected from the reply rather than
+assumed from the number of unknowns. And although Maxima does answer in the
+order the unknowns were given, values are matched back **by name** anyway; that
+costs nothing and turns a silent mis-pairing into a detectable missing value.
+
+An underdetermined system solves parametrically, with free parameters appearing
+as `%r1`, `%r2`. Those are values like any other and are not among the unknowns,
+so they are not grounds for rejection — but a caller wanting only fully
+determined solutions has to look for them.
+
 **`parse` is a free function, not `Expr::parse`.** `Expr` belongs to a layer
 that knows nothing about the kernel, and parsing needs one. It also only parses:
 `parse("a: 7")` yields the assignment as a term and does not perform it.
@@ -840,10 +858,13 @@ quoting and environment-block tests), 7 integration on both.
 2. ~~**POSIX transport**~~ — step 5b: both platforms, one `ITransport`.
 3. ~~**`operator==`**~~ — step 8: structural equality returning `bool`, with
    `eq(lhs, rhs)` building equations.
+4. ~~**`solve` over a system**~~ — built after step 15, once the gap was
+   noticed: `solve(equations, unknowns)`, with the single-unknown form
+   delegating to it. See step 11.
 
 ### Genuinely undecided
 
-4. **Offline `parse()`.** `mx::parse` delegates to Maxima and so needs a running
+5. **Offline `parse()`.** `mx::parse` delegates to Maxima and so needs a running
    kernel. If constructing expressions from strings without one ever becomes a
    requirement, a hand-written Pratt parser (~250 lines) is the answer; nothing
    so far has needed it.
@@ -853,14 +874,6 @@ quoting and environment-block tests), 7 integration on both.
 These are known gaps rather than open questions — the approach is settled, the
 work simply is not done. Listed here because a reader scanning this section
 should not have to reconstruct them from the step narratives.
-
-5. **`solve` handles one equation and one unknown.** The step 11 sketch above
-   specified `solve(std::span<const Equation>, std::span<const Symbol>)`; the
-   implementation narrowed it to `solve(equation, unknown)` and that narrowing
-   went unrecorded until now. Systems are the common next need. Maxima's `solve`
-   already accepts them, returning a list of lists, so the work is in the
-   result-shape checking that makes a successful `solve` mean something — see
-   the rejection rules in step 11, which would have to apply per unknown.
 
 6. **A persistent cache would need a Maxima version stamp in its key.** Step 14
    omits one deliberately: an in-memory cache belongs to one kernel running one

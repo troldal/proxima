@@ -9,7 +9,9 @@
 #include <mx/ops.hpp>
 #include <mx/symbol.hpp>
 
+#include <span>
 #include <string>
+#include <vector>
 
 using mx::Expr;
 using mx::Kind;
@@ -198,6 +200,110 @@ TEST_CASE("solving") {
         REQUIRE(none.has_value());
         CHECK(none->empty());
     }
+}
+
+TEST_CASE("solving a system") {
+    const Symbol x("x");
+    const Symbol y("y");
+    const std::vector<Symbol> unknowns{x, y};
+
+    const std::vector<Expr> linear{eq(Expr(x) + Expr(y), Expr(3)),
+                                   eq(Expr(x) - Expr(y), Expr(1))};
+
+    const auto solutions = mx::solve(linear, unknowns);
+    REQUIRE(solutions.has_value());
+    REQUIRE(solutions->size() == 1);
+    REQUIRE(solutions->front().size() == 2);
+    CHECK(solutions->front()[0] == Expr(2)); // x
+    CHECK(solutions->front()[1] == Expr(1)); // y
+
+    SUBCASE("values follow the order the unknowns were asked for") {
+        // Maxima answers in whatever order it likes; the correspondence is
+        // established by name, not by position.
+        const std::vector<Symbol> reversed{y, x};
+        const auto swapped = mx::solve(linear, reversed);
+        REQUIRE(swapped.has_value());
+        REQUIRE(swapped->front().size() == 2);
+        CHECK(swapped->front()[0] == Expr(1)); // y
+        CHECK(swapped->front()[1] == Expr(2)); // x
+    }
+
+    SUBCASE("a system with several solutions returns each of them") {
+        const std::vector<Expr> circle{
+            eq(pow(Expr(x), 2) + pow(Expr(y), 2), Expr(1)),
+            eq(Expr(y), Expr(x))};
+        const auto both = mx::solve(circle, unknowns);
+        REQUIRE(both.has_value());
+        CHECK(both->size() == 2);
+        // On this circle the two coordinates are equal in both solutions.
+        for (const mx::Solution &solution : *both) {
+            REQUIRE(solution.size() == 2);
+            CHECK(solution[0] == solution[1]);
+        }
+    }
+
+    SUBCASE("no solution is an answer, not a failure") {
+        const std::vector<Expr> contradictory{eq(Expr(x), Expr(1)),
+                                              eq(Expr(x), Expr(2))};
+        const std::vector<Symbol> justX{x};
+        const auto none = mx::solve(contradictory, justX);
+        REQUIRE(none.has_value());
+        CHECK(none->empty());
+    }
+}
+
+TEST_CASE("a single unknown works through the system form too") {
+    // Maxima flattens the result when there is one unknown — solve([x^2=1],[x])
+    // gives [x = -1, x = 1] rather than [[x = -1], [x = 1]] — so the shape has
+    // to be detected rather than assumed from the number of unknowns.
+    const Symbol x("x");
+    const std::vector<Expr> equations{eq(pow(Expr(x), 2), Expr(1))};
+    const std::vector<Symbol> unknowns{x};
+
+    const auto solutions = mx::solve(equations, unknowns);
+    REQUIRE(solutions.has_value());
+    REQUIRE(solutions->size() == 2);
+    CHECK(solutions->at(0).size() == 1);
+    CHECK(solutions->at(0)[0] == Expr(-1));
+    CHECK(solutions->at(1)[0] == Expr(1));
+}
+
+TEST_CASE("an underdetermined system solves parametrically") {
+    // One equation, two unknowns: Maxima introduces a free parameter named %r1,
+    // %r2 and so on. That is a value like any other, and not among the
+    // unknowns, so it is not grounds for rejection.
+    const Symbol x("x");
+    const Symbol y("y");
+    const std::vector<Expr> equations{eq(Expr(x) + Expr(y), Expr(3))};
+    const std::vector<Symbol> unknowns{x, y};
+
+    const auto solutions = mx::solve(equations, unknowns);
+    REQUIRE(solutions.has_value());
+    REQUIRE(solutions->size() == 1);
+
+    // y is the parameter and x is 3 minus it, so the two still sum to 3.
+    const mx::Solution &solution = solutions->front();
+    REQUIRE(solution.size() == 2);
+    CHECK(mx::simplify(solution[0] + solution[1]) == Expr(3));
+}
+
+TEST_CASE("a system Maxima cannot solve is a Failure") {
+    const Symbol x("x");
+    const Symbol y("y");
+    const std::vector<Expr> equations{eq(mx::sin(Expr(x)), Expr(x)),
+                                      eq(Expr(y), Expr(1))};
+    const std::vector<Symbol> unknowns{x, y};
+
+    CHECK_FALSE(mx::solve(equations, unknowns).has_value());
+}
+
+TEST_CASE("solving a system rejects degenerate arguments") {
+    const Symbol x("x");
+    const std::vector<Expr> equations{eq(Expr(x), Expr(1))};
+    const std::vector<Symbol> unknowns{x};
+
+    CHECK_FALSE(mx::solve(equations, std::span<const Symbol>{}).has_value());
+    CHECK_FALSE(mx::solve(std::span<const Expr>{}, unknowns).has_value());
 }
 
 TEST_CASE("parsing delegates to Maxima's own parser") {
