@@ -18,11 +18,21 @@ struct Config {
     /// How long to wait for a single statement to produce its result before
     /// giving up on it.
     ///
-    /// Generous by default: some integrals legitimately take a long time, and
-    /// until PLAN.md step 13 adds restart-and-replay, exceeding this leaves the
-    /// session unusable rather than recovering it. Treat it as a backstop
-    /// against a wedged child, not as a cancellation mechanism.
+    /// Generous by default, since some integrals legitimately take a long time.
+    /// Exceeding it costs the call but not the session: the kernel is restarted
+    /// and its assumptions replayed. Treat it as a backstop against a wedged
+    /// child, not as a cancellation mechanism — Maxima keeps computing until it
+    /// is killed.
     std::chrono::milliseconds timeout{std::chrono::minutes{2}};
+
+    /// How long to allow for starting Maxima and restoring session state.
+    ///
+    /// Separate from `timeout`, and deliberately so. Launching a Lisp image is
+    /// not a computation, and a caller who wants a one-second deadline on their
+    /// integrals should not thereby make the kernel unstartable — nor should a
+    /// timeout leave recovery unable to run because the very deadline that was
+    /// just exceeded also governs the restart.
+    std::chrono::milliseconds startupTimeout{std::chrono::seconds{30}};
 
     /// Whether to let Maxima load the user's maxima-init.mac at startup.
     ///

@@ -602,15 +602,58 @@ markers in step 6.
 
 ### Step 13. Timeouts, restart, thread safety
 
-A dedicated reader thread draining into a bounded queue, so the child never
-blocks on a full pipe buffer. Per-request deadlines. `--disable-debugger` plus a
-`*debugger-hook*` that emits a framed failure instead of blocking forever on
-stdin.
+`Kernel` is now serialised, survives its own death, and cannot be deadlocked by
+SBCL's debugger.
 
-A **state journal** on the C++ side records `assume`/`declare`/definitions, so
-timeout -> kill -> restart -> replay is transparent. Expressions are local
-values and survive untouched — the payoff for choosing an owned AST.
-Mutex-serialize `Kernel`; `Expr` is immutable and needs no locking.
+**Restart and replay.** The session holds a transport *factory* rather than a
+transport, so a dead kernel can be replaced. A call that ends in a `KernelError`
+— timeout, crash, protocol breakdown — restarts the kernel, replays the journal,
+and then reports: only that call is lost.
+
+The journal is what makes this worth doing. A kernel that came back *working*
+but missing the caller's assumptions would answer every later question
+confidently and wrongly, with nothing to announce that anything had happened —
+worse than an outright failure. `mx::Context` registers its `supcontext`,
+`assume` and `declare` statements with `Kernel::remember`, and drops them on
+scope exit, so replay reconstructs exactly the scopes that are still live. Order
+is preserved, which is what makes nested scopes come back nested.
+
+**`--disable-debugger`.** An unhandled Lisp error otherwise drops SBCL into a
+debugger that reads standard input — over a pipe, the same deadlock as the
+interactive questions in step 12. With it the process exits instead, which
+recovery can undo. It is a *toplevel* option, not a runtime one; placed among
+the runtime options SBCL refuses to start at all. `errcatch` is unaffected: it
+handles the error long before the debugger would see it.
+
+**Two timeouts, not one.** `Config::startupTimeout` (30s) governs launching and
+restoring; `Config::timeout` (2 min) governs one computation. Separating them is
+not tidiness — with a single value, asking for a one-second deadline on
+integrals would make the kernel unstartable, and worse, the deadline that had
+just been exceeded would also govern the restart meant to answer it.
+`Kernel::setTimeout` adjusts the per-call deadline on a running kernel.
+
+**A real bug found while testing.** The deadline was only checked when a read
+came back empty, so a reply arriving as a slow but unbroken trickle would never
+test it and could run indefinitely. It is now checked every time round the loop,
+and the wait is clamped to the time remaining so the deadline is honoured to
+within one poll rather than overshot by one.
+
+**Deviation: no reader thread.** The plan called for one, to stop the child
+blocking on a full pipe buffer. On inspection there is no window for that to
+happen: the session reads continuously for the whole of a request, and between
+requests Maxima emits only a short prompt. The one case where output could pile
+up unread — a timeout, while Maxima keeps computing — ends in the process being
+killed anyway. A background thread reading a pipe needs careful shutdown, and on
+Windows closing a handle out from under a blocking read is racy; that cost is
+not worth paying for a window that does not exist. `receive` already honours a
+deadline, so the thread would buy no cancellation either.
+
+- *Verify:* scripted transports drive restart-and-replay with no Maxima at all,
+  including that a *forgotten* statement is not replayed. Against a real kernel:
+  `quit()` kills it, the next call works, and the assumption is still in force;
+  an assumption whose scope ended does *not* come back; and a tightened deadline
+  on a genuinely slow computation throws `TimeoutError` while leaving the next
+  call working.
 
 ### Step 14. Memo cache
 

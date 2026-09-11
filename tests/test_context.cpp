@@ -10,6 +10,7 @@
 #include <mx/ops.hpp>
 #include <mx/symbol.hpp>
 
+#include <chrono>
 #include <string>
 
 using mx::Context;
@@ -149,6 +150,67 @@ TEST_CASE("supplying the assumption lets the computation through") {
     REQUIRE(integral.has_value());
     // x^(n+1)/(n+1)
     CHECK(mx::simplify(mx::diff(*integral, x)) == pow(Expr(x), Expr(n)));
+}
+
+// --- surviving a kernel that dies -----------------------------------------
+
+TEST_CASE("a kernel that dies is restarted with its assumptions intact") {
+    // The failure this guards against is not the crash but what comes after it.
+    // A kernel that came back *working* yet missing the caller's assumptions
+    // would answer every later question confidently and wrongly, with nothing
+    // to announce that anything had happened.
+    //
+    // Uses its own kernel rather than the shared one, so killing it cannot
+    // disturb the other tests.
+    mx::Kernel kernel;
+    const Symbol x("restart_probe");
+
+    Context ctx(kernel);
+    ctx.assume(gt(Expr(x), Expr(0)));
+    REQUIRE(kernel.eval("is(restart_probe > 0)").value == "T");
+
+    // Ask Maxima to leave. The call itself fails, because the reply never
+    // arrives.
+    CHECK_THROWS_AS(kernel.eval("quit()"), mx::KernelError);
+
+    // But the session is usable again...
+    CHECK(kernel.eval("2 + 2").value == "4");
+    // ...and the assumption survived the restart.
+    CHECK(kernel.eval("is(restart_probe > 0)").value == "T");
+}
+
+TEST_CASE("an assumption dropped before a death does not come back") {
+    mx::Kernel kernel;
+    const Symbol x("restart_scope_probe");
+
+    {
+        Context ctx(kernel);
+        ctx.assume(gt(Expr(x), Expr(0)));
+        REQUIRE(kernel.eval("is(restart_scope_probe > 0)").value == "T");
+    }
+
+    CHECK_THROWS_AS(kernel.eval("quit()"), mx::KernelError);
+    CHECK(kernel.eval("2 + 2").value == "4");
+    // The scope had ended, so replay must not resurrect it.
+    CHECK(kernel.eval("is(restart_scope_probe > 0)").value != "T");
+}
+
+TEST_CASE("a timeout loses the call, not the session") {
+    mx::Kernel kernel;
+
+    // Tightened after startup, not before: a one-millisecond deadline would
+    // otherwise time out launching Maxima, which is not a computation. That is
+    // also why recovery runs on Config::startupTimeout — the deadline that was
+    // just exceeded must not govern the restart that answers it.
+    kernel.setTimeout(std::chrono::milliseconds(1));
+    // Deliberately something that takes hundreds of milliseconds. An ordinary
+    // integral finishes inside a single poll, so it would race the deadline
+    // rather than reliably exceed it.
+    CHECK_THROWS_AS(kernel.eval("expand((x+y+z)^200)"), mx::TimeoutError);
+
+    kernel.setTimeout(std::chrono::seconds(30));
+    // The restart means the next caller is not left holding a wedged kernel.
+    CHECK(kernel.eval("2 + 2").value == "4");
 }
 
 } // TEST_SUITE("maxima")

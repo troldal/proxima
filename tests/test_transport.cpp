@@ -181,7 +181,80 @@ TEST_CASE("a session whose child has died reports a KernelError") {
 }
 
 TEST_CASE("a null transport is rejected rather than dereferenced") {
-    CHECK_THROWS_AS(MaximaSession(nullptr, mx::Config{}), mx::KernelError);
+    CHECK_THROWS_AS(
+        MaximaSession(std::unique_ptr<mx::detail::ITransport>(), mx::Config{}),
+        mx::KernelError);
+    CHECK_THROWS_AS(MaximaSession(MaximaSession::TransportFactory{}, mx::Config{}),
+                    mx::KernelError);
+}
+
+TEST_CASE("a session that cannot answer restarts and replays its state") {
+    // Two scripted transports: the first dies mid-request, the second answers
+    // the handshake, the replayed statement, and then the retry.
+    //
+    // This is what stops one hung computation costing a whole session. Without
+    // the replay, the restarted kernel would come back *working but wrong* —
+    // missing every assumption the caller had established, which is worse than
+    // an outright failure because nothing announces it.
+    int built = 0;
+    std::vector<std::string> sentToSecond;
+
+    auto factory = [&]() -> std::unique_ptr<mx::detail::ITransport> {
+        ++built;
+        if (built == 1) {
+            // Answers the handshake, then nothing: the child has gone.
+            return std::make_unique<FakeTransport>(handshakeScript());
+        }
+        std::vector<std::string> script = handshakeScript();
+        // The replayed statement, then the caller's retry.
+        script.push_back(frame(2, true, "$DONE"));
+        script.push_back(frame(3, true, "$RECOVERED"));
+        return std::make_unique<FakeTransport>(std::move(script));
+    };
+
+    MaximaSession session(factory, mx::Config{});
+    REQUIRE(built == 1);
+
+    const std::uint64_t handle = session.remember("assume(x > 0)");
+    static_cast<void>(handle);
+
+    // The first transport's script is exhausted, so this call finds a dead
+    // child and fails — but triggers recovery on the way out.
+    CHECK_THROWS_AS(session.eval("1+1"), mx::KernelError);
+    CHECK(built == 2);
+
+    // And the session works again, with the remembered statement replayed.
+    CHECK(session.eval("something").value == "$RECOVERED");
+}
+
+TEST_CASE("a session with no way to build another transport does not restart") {
+    ScriptedSession scripted({});
+    REQUIRE(scripted.transport->scriptExhausted());
+    CHECK_THROWS_AS(scripted.session->eval("1+1"), mx::KernelError);
+    // Still dead, and honestly so, rather than pretending to recover.
+    CHECK_THROWS_AS(scripted.session->eval("1+1"), mx::KernelError);
+}
+
+TEST_CASE("forgetting a statement stops it being replayed") {
+    int built = 0;
+    auto factory = [&]() -> std::unique_ptr<mx::detail::ITransport> {
+        ++built;
+        std::vector<std::string> script = handshakeScript();
+        if (built > 1) {
+            // Only the retry, with no replayed statement before it: if the
+            // forgotten entry were still in the journal it would consume this
+            // frame and the assertion below would see the wrong value.
+            script.push_back(frame(2, true, "$CLEAN"));
+        }
+        return std::make_unique<FakeTransport>(std::move(script));
+    };
+
+    MaximaSession session(factory, mx::Config{});
+    const std::uint64_t handle = session.remember("assume(x > 0)");
+    session.forget(handle);
+
+    CHECK_THROWS_AS(session.eval("1+1"), mx::KernelError);
+    CHECK(session.eval("again").value == "$CLEAN");
 }
 
 TEST_CASE("a failed handshake is reported at construction") {

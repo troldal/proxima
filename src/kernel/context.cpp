@@ -82,7 +82,9 @@ Context::Context(Kernel &kernel) : kernel_(&kernel), name_(nextContextName()) {
 
     // supcontext rather than newcontext: newcontext would parent the new
     // context on `initial` and so lose the enclosing scope's assumptions.
-    evaluateOrThrow(*kernel_, "supcontext(" + name_ + ", " + parent_ + ")");
+    const std::string create = "supcontext(" + name_ + ", " + parent_ + ")";
+    evaluateOrThrow(*kernel_, create);
+    replayHandles_.push_back(kernel_->remember(create));
 }
 
 Context::~Context() {
@@ -90,6 +92,12 @@ Context::~Context() {
     // process, and failing to tidy up a context is not worth that. The next
     // kernel restart clears it regardless.
     try {
+        // Drop the replay entries first: a restart triggered by the teardown
+        // itself must not rebuild a scope that is ending.
+        for (auto handle = replayHandles_.rbegin();
+             handle != replayHandles_.rend(); ++handle) {
+            kernel_->forget(*handle);
+        }
         kernel_->eval("context: " + parent_);
         kernel_->eval("killcontext(" + name_ + ")");
     } catch (...) {
@@ -97,8 +105,8 @@ Context::~Context() {
 }
 
 void Context::assume(const Expr &predicate) {
-    const Expr result
-        = evaluateOrThrow(*kernel_, "assume(" + predicate.str() + ")");
+    const std::string statement = "assume(" + predicate.str() + ")";
+    const Expr result = evaluateOrThrow(*kernel_, statement);
 
     // Maxima answers with a list describing what it did. `inconsistent` means
     // this contradicts something already in force; carrying on would make every
@@ -109,11 +117,14 @@ void Context::assume(const Expr &predicate) {
     }
     // `redundant` is harmless: the fact was already implied.
     assumptions_.push_back(predicate);
+    replayHandles_.push_back(kernel_->remember(statement));
 }
 
 void Context::declare(const Symbol &symbol, Feature feature) {
-    evaluateOrThrow(*kernel_, "declare(" + symbol.name() + ", "
-                                  + std::string(nameOf(feature)) + ")");
+    const std::string statement = "declare(" + symbol.name() + ", "
+                                  + std::string(nameOf(feature)) + ")";
+    evaluateOrThrow(*kernel_, statement);
+    replayHandles_.push_back(kernel_->remember(statement));
 }
 
 std::vector<Expr> Context::facts() const {

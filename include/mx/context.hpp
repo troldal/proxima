@@ -5,6 +5,7 @@
 #include <mx/ops.hpp>
 #include <mx/symbol.hpp>
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -59,10 +60,14 @@ std::string_view nameOf(Feature feature);
 ///
 /// ## State, and what happens if the kernel restarts
 ///
-/// The assumptions are held here as well as in Maxima, so that PLAN.md step
-/// 13's restart-and-replay has something to replay, and so that step 14's cache
-/// key can include them — a result computed under `x > 0` is not the same
-/// result as one computed without it.
+/// Everything done here is registered with the Kernel's replay journal, so a
+/// kernel that dies or hangs mid-session comes back with these assumptions
+/// still in force. Without that, a restart would silently drop them and later
+/// results would be quietly wrong rather than obviously broken.
+///
+/// The assumptions are also kept in C++ so that PLAN.md step 14's cache key can
+/// include them: a result computed under `x > 0` is not the same result as one
+/// computed without it.
 class Context {
 public:
     /// Opens a new Maxima context, nested inside whichever is currently active.
@@ -101,6 +106,10 @@ private:
     std::string name_;
     std::string parent_;
     std::vector<Expr> assumptions_;
+
+    /// Journal handles for this scope's statements, removed on destruction so
+    /// that a later restart does not resurrect a scope that has ended.
+    std::vector<std::uint64_t> replayHandles_;
 };
 
 } // namespace mx

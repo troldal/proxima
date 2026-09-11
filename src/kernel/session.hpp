@@ -11,8 +11,11 @@
 #include <mx/config.hpp>
 #include <mx/reply.hpp>
 
+#include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -57,11 +60,19 @@ namespace mx::detail {
 ///   everything between frames is noise that can simply be discarded.
 class MaximaSession {
 public:
+    /// Produces a transport, and can be asked again after one dies. Holding a
+    /// factory rather than a transport is what makes restarting possible.
+    using TransportFactory = std::function<std::unique_ptr<ITransport>()>;
+
     /// Discovers Maxima under `config.maximaRoot` and launches it.
     explicit MaximaSession(Config config);
 
-    /// Drives an already-constructed transport. The handshake still runs, so a
-    /// scripted transport must answer it. For tests.
+    /// Drives transports from `factory`, which is called again on restart.
+    /// For tests.
+    MaximaSession(TransportFactory factory, Config config);
+
+    /// Drives one already-constructed transport, with no way to make another,
+    /// so a death is final. For tests.
     MaximaSession(std::unique_ptr<ITransport> transport, Config config);
 
     ~MaximaSession();
@@ -76,9 +87,29 @@ public:
     /// expression is substituted into a wrapper that supplies its own. A
     /// Maxima error is reported through Reply::ok rather than thrown.
     ///
-    /// Throws KernelError if the session died, did not answer in time, or
-    /// answered something unintelligible.
+    /// Throws TimeoutError if Maxima did not answer within Config::timeout, or
+    /// KernelError if the session died or answered something unintelligible. In
+    /// either case the kernel is restarted and its remembered state replayed
+    /// first, so only this call is lost.
+    ///
+    /// Serialised: concurrent callers take turns rather than interleaving
+    /// requests on one pipe.
     Reply eval(std::string_view expression);
+
+    /// Records a statement to replay after a restart, and returns a handle for
+    /// removing it again.
+    ///
+    /// The kernel is a separate process holding mutable state — assumptions,
+    /// declarations, bindings — that a restart would otherwise silently lose,
+    /// leaving later results quietly wrong rather than obviously broken. Scoped
+    /// state such as mx::Context registers itself here.
+    std::uint64_t remember(std::string statement);
+
+    /// Stops replaying the statement `handle` names.
+    void forget(std::uint64_t handle);
+
+    /// Changes the per-call deadline. Does not affect Config::startupTimeout.
+    void setTimeout(std::chrono::milliseconds timeout);
 
     /// Builds the argv used to launch Maxima's SBCL image for `install`.
     /// Exposed for testing; touches no filesystem and starts nothing.
@@ -105,17 +136,39 @@ public:
     static std::string frameEnd(std::uint64_t id);
 
 private:
+    struct JournalEntry {
+        std::uint64_t handle;
+        std::string statement;
+    };
+
+    /// The body of eval, with the lock already held.
+    Reply evalLocked(std::string_view expression,
+                     std::chrono::milliseconds timeout);
+
+    /// Discards the dead transport, builds another, and restores the session:
+    /// handshake, then every remembered statement in the order it was made.
+    void recover();
+
     void handshake();
     void writeLine(std::string_view line);
 
     /// Reads until the frame belonging to `id` is complete, discarding
     /// everything before it: banners, prompts, and any stale frame left over
     /// from an earlier request.
-    Reply readFrame(std::uint64_t id);
+    Reply readFrame(std::uint64_t id, std::chrono::milliseconds timeout);
 
+    mutable std::mutex mutex_;
     Config config_;
+    TransportFactory factory_;
     std::unique_ptr<ITransport> transport_;
     std::uint64_t nextRequestId_ = 0;
+
+    std::vector<JournalEntry> journal_;
+    std::uint64_t nextJournalHandle_ = 0;
+
+    /// Set while recovering, so that a failure during the handshake or replay
+    /// does not set off another recovery inside the first.
+    bool recovering_ = false;
 };
 
 } // namespace mx::detail

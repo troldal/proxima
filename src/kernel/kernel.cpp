@@ -19,4 +19,16 @@ Reply Kernel::eval(std::string_view expression) {
     return session_->eval(expression);
 }
 
+std::uint64_t Kernel::remember(std::string statement) {
+    return session_->remember(std::move(statement));
+}
+
+void Kernel::forget(std::uint64_t handle) {
+    session_->forget(handle);
+}
+
+void Kernel::setTimeout(std::chrono::milliseconds timeout) {
+    session_->setTimeout(timeout);
+}
+
 } // namespace mx

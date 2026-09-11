@@ -21,6 +21,18 @@ public:
     using Error::Error;
 };
 
+/// Maxima did not answer within Config::timeout.
+///
+/// A KernelError, because the conversation has broken down rather than the
+/// mathematics having failed: nothing can be said about whether the computation
+/// would ever have finished. The kernel is restarted and its assumption state
+/// replayed before this is thrown, so the *next* call starts from a working
+/// session — only this one is lost.
+class TimeoutError : public KernelError {
+public:
+    using KernelError::KernelError;
+};
+
 /// Maxima signalled an error while evaluating.
 ///
 /// Thrown only by the operations that have no ordinary way to fail — diff,

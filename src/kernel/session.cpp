@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <exception>
 #include <filesystem>
 #include <system_error>
 
@@ -131,8 +132,14 @@ MaximaSession::launchCommand(const MaximaInstall &install) {
         argv.emplace_back("2000");
     }
 
-    argv.insert(argv.end(), {"--end-runtime-options", "--eval", kHelperLisp,
-                             "--end-toplevel-options"});
+    // --disable-debugger is a *toplevel* option, not a runtime one, so it
+    // belongs after --end-runtime-options. Without it, an unhandled Lisp error
+    // drops SBCL into a debugger that reads standard input — over a pipe, a
+    // deadlock. With it, the process exits instead, which recover() can undo.
+    // errcatch is unaffected: it handles the error before the debugger would
+    // ever see it.
+    argv.insert(argv.end(), {"--end-runtime-options", "--disable-debugger",
+                             "--eval", kHelperLisp, "--end-toplevel-options"});
     return argv;
 }
 
@@ -173,12 +180,28 @@ MaximaSession::launchEnvironment(const MaximaInstall &install,
 }
 
 MaximaSession::MaximaSession(Config config)
-    : config_(std::move(config)), transport_(launchMaxima(config_)) {
+    : config_(std::move(config)) {
+    // A factory rather than one transport, so a dead kernel can be replaced.
+    factory_ = [config = config_] { return launchMaxima(config); };
+    transport_ = factory_();
+    handshake();
+}
+
+MaximaSession::MaximaSession(TransportFactory factory, Config config)
+    : config_(std::move(config)), factory_(std::move(factory)) {
+    if (!factory_) {
+        throw KernelError("MaximaSession was given a null transport factory");
+    }
+    transport_ = factory_();
+    if (!transport_) {
+        throw KernelError("the transport factory produced nothing");
+    }
     handshake();
 }
 
 MaximaSession::MaximaSession(std::unique_ptr<ITransport> transport, Config config)
     : config_(std::move(config)), transport_(std::move(transport)) {
+    // No factory, so this session cannot be restarted; a death is final.
     if (!transport_) {
         throw KernelError("MaximaSession was given a null transport");
     }
@@ -205,7 +228,7 @@ void MaximaSession::handshake() {
     // the stream: the startup banner and every prompt printed so far fall
     // before it and are discarded. No prompt markers are needed for this — the
     // frame delimiters already say exactly where a reply begins.
-    const Reply ready = eval("true");
+    const Reply ready = evalLocked("true", config_.startupTimeout);
     if (!ready.ok) {
         throw KernelError("Maxima rejected the startup handshake: "
                           + ready.reason);
@@ -213,26 +236,115 @@ void MaximaSession::handshake() {
 }
 
 Reply MaximaSession::eval(std::string_view expression) {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    try {
+        return evalLocked(expression, config_.timeout);
+    } catch (const KernelError &) {
+        // The conversation broke down. Put the session back on its feet before
+        // reporting, so that only this call is lost rather than every call
+        // after it. Recovery failing is not worth replacing the original
+        // diagnosis with — the next call will try again.
+        if (factory_ && !recovering_) {
+            try {
+                recover();
+            } catch (...) {
+            }
+        }
+        throw;
+    }
+}
+
+Reply MaximaSession::evalLocked(std::string_view expression,
+                                std::chrono::milliseconds timeout) {
     const std::uint64_t id = ++nextRequestId_;
     writeLine(requestFor(id, expression));
-    return readFrame(id);
+    return readFrame(id, timeout);
+}
+
+void MaximaSession::setTimeout(std::chrono::milliseconds timeout) {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    config_.timeout = timeout;
+}
+
+std::uint64_t MaximaSession::remember(std::string statement) {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::uint64_t handle = ++nextJournalHandle_;
+    journal_.push_back({handle, std::move(statement)});
+    return handle;
+}
+
+void MaximaSession::forget(std::uint64_t handle) {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    std::erase_if(journal_, [handle](const JournalEntry &entry) {
+        return entry.handle == handle;
+    });
+}
+
+void MaximaSession::recover() {
+    recovering_ = true;
+    struct Restore {
+        bool &flag;
+        ~Restore() { flag = false; }
+    } restore{recovering_};
+
+    if (transport_) {
+        transport_->kill();
+    }
+    transport_ = factory_();
+    if (!transport_) {
+        throw KernelError("could not restart Maxima: the transport factory "
+                          "produced nothing");
+    }
+
+    // A new process over a new pipe, so no reply from the old one can reach us
+    // and ids can safely start over. Continuing to climb would work equally
+    // well; starting fresh just makes a transcript easier to follow.
+    nextRequestId_ = 0;
+
+    handshake();
+
+    // Replayed in the order it was made, which is what reconstructs nested
+    // assumption scopes correctly: each supcontext activates the scope that the
+    // assumptions after it belong to.
+    for (const JournalEntry &entry : journal_) {
+        const Reply reply = evalLocked(entry.statement, config_.startupTimeout);
+        if (!reply.ok) {
+            throw KernelError("could not restore session state after a restart: "
+                              + entry.statement + " failed: " + reply.reason);
+        }
+    }
 }
 
 void MaximaSession::writeLine(std::string_view line) {
     transport_->send(std::string(line) + "\n");
 }
 
-Reply MaximaSession::readFrame(std::uint64_t id) {
+Reply MaximaSession::readFrame(std::uint64_t id,
+                               std::chrono::milliseconds timeout) {
     const std::string begin = frameBegin(id);
     const std::string separator = frameSeparator(id);
     const std::string end = frameEnd(id);
 
-    const auto deadline = std::chrono::steady_clock::now() + config_.timeout;
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
 
     std::string buffer;
     size_t endAt = std::string::npos;
     while ((endAt = buffer.find(end)) == std::string::npos) {
-        const std::string chunk = transport_->receive(kPollInterval);
+        // Checked every time round, not only when a read comes back empty: a
+        // reply that arrives as a slow but unbroken trickle would otherwise
+        // never test the deadline at all and could run indefinitely.
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= deadline) {
+            throw TimeoutError("Maxima did not respond within the configured "
+                               "timeout");
+        }
+
+        // Never wait past the deadline, so it is honoured to within a poll
+        // rather than overshot by one.
+        const auto remaining
+            = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
+        const std::string chunk
+            = transport_->receive(std::min(kPollInterval, remaining));
         if (!chunk.empty()) {
             buffer += chunk;
             continue;
@@ -241,10 +353,6 @@ Reply MaximaSession::readFrame(std::uint64_t id) {
         // thinking and we have time left to wait.
         if (!transport_->alive()) {
             throw KernelError("Maxima session ended unexpectedly");
-        }
-        if (std::chrono::steady_clock::now() >= deadline) {
-            throw KernelError("Maxima did not respond within the configured "
-                              "timeout");
         }
     }
 
