@@ -11,12 +11,32 @@
 #include <mx/symbol.hpp>
 #include <mx/version.hpp>
 
+#include <atomic>
 #include <cmath>
 #include <numbers>
+#include <span>
 #include <string>
+#include <thread>
+#include <vector>
 
 using mx::Expr;
 using mx::Symbol;
+
+namespace {
+
+/// doctest::Approx cannot compare infinities — its relative-epsilon arithmetic
+/// gives NaN — and `x^-3` at zero is a perfectly ordinary infinity here.
+bool sameNumber(double a, double b) {
+    if (std::isnan(a) || std::isnan(b)) {
+        return std::isnan(a) && std::isnan(b);
+    }
+    if (std::isinf(a) || std::isinf(b)) {
+        return a == b;
+    }
+    return a == doctest::Approx(b);
+}
+
+} // namespace
 
 TEST_CASE("numeric leaves evaluate to themselves") {
     CHECK(mx::evalNumeric(Expr(42)) == doctest::Approx(42.0));
@@ -127,6 +147,151 @@ TEST_CASE("asFunction binds one variable for repeated use") {
 TEST_CASE("the version header reports the project version") {
     CHECK(std::string(mx::version) == "0.1.0");
     CHECK(mx::versionMajor == 0);
+}
+
+// --- the compiled form ----------------------------------------------------
+
+TEST_CASE("a compiled expression agrees with the one-shot evaluator") {
+    // Two implementations, so the risk is that they drift. They share the
+    // function table; this checks the rest.
+    const Symbol x("x");
+    const Symbol y("y");
+
+    for (const char *source : {
+             "x + 1",
+             "x^2 - 3*x + 2",
+             "sin(x)*cos(x) + log(1 + x^2)",
+             "x/(1 + x^2)",
+             "sqrt(abs(x)) + %pi*x",
+             "max(x, 1, 2) + min(x, 0)",
+             "atan2(x, 2) + mod(x, 3)",
+             "(1 + x)^7",
+             "x^(-3)",
+             "2^x",
+         }) {
+        const std::string text = source;
+        CAPTURE(text);
+        const Expr f = Expr::parse(source);
+        const mx::Compiled compiled(f, x);
+
+        for (const double at : {-2.5, -1.0, -0.25, 0.0, 0.5, 1.0, 3.75}) {
+            CAPTURE(at);
+            CHECK(sameNumber(compiled(at), mx::evalNumeric(f, {{"x", at}})));
+        }
+    }
+}
+
+TEST_CASE("integer powers are specialised without changing the answer") {
+    // std::pow is replaced by squaring where the exponent is a small integer.
+    // The results must be indistinguishable, including at the awkward values.
+    const Symbol x("x");
+
+    for (int exponent = -8; exponent <= 8; ++exponent) {
+        CAPTURE(exponent);
+        const Expr f = pow(Expr(x), Expr(exponent));
+        const mx::Compiled compiled(f, x);
+
+        for (const double base : {-3.0, -1.0, -0.5, 0.5, 1.0, 2.0}) {
+            CAPTURE(base);
+            CHECK(sameNumber(compiled(base), std::pow(base, exponent)));
+        }
+    }
+
+    SUBCASE("including the degenerate cases") {
+        CHECK(mx::Compiled(pow(Expr(x), 0), x)(0.0)
+              == doctest::Approx(std::pow(0.0, 0)));
+        CHECK(std::isinf(mx::Compiled(pow(Expr(x), -1), x)(0.0)));
+    }
+
+    SUBCASE("and an exponent too large for the specialisation still works") {
+        const Expr big = pow(Expr(x), 200);
+        CHECK(mx::Compiled(big, x)(1.05)
+              == doctest::Approx(std::pow(1.05, 200)));
+    }
+}
+
+TEST_CASE("several variables, in the order given") {
+    const Symbol x("x");
+    const Symbol y("y");
+    const std::vector<Symbol> variables{x, y};
+
+    const mx::Compiled compiled(Expr::parse("x^2 + 2*y"), variables);
+    REQUIRE(compiled.arity() == 2);
+    CHECK(compiled.variableNames() == std::vector<std::string>{"x", "y"});
+
+    const double point[] = {3.0, 5.0};
+    CHECK(compiled(point) == doctest::Approx(19.0));
+
+    SUBCASE("and the order is the caller's, not the expression's") {
+        const std::vector<Symbol> reversed{y, x};
+        const mx::Compiled swapped(Expr::parse("x^2 + 2*y"), reversed);
+        const double sameValues[] = {5.0, 3.0}; // y, x
+        CHECK(swapped(sameValues) == doctest::Approx(19.0));
+    }
+}
+
+TEST_CASE("what shadows what") {
+    const Symbol x("x");
+    const Symbol e("%e");
+
+    // A variable beats a binding, which beats a named constant.
+    CHECK(mx::Compiled(Expr::symbol("%e"), e)(7.0) == doctest::Approx(7.0));
+    CHECK(mx::Compiled(Expr::symbol("%e"), x, {{"%e", 5.0}})(0.0)
+          == doctest::Approx(5.0));
+    CHECK(mx::Compiled(Expr::symbol("%e"), x)(0.0)
+          == doctest::Approx(std::numbers::e));
+}
+
+TEST_CASE("errors surface at construction, not on every call") {
+    // An unknown function or an unbound symbol is a property of the expression,
+    // not of the point being evaluated, so it should be reported once.
+    const Symbol x("x");
+
+    CHECK_THROWS_AS(mx::Compiled(Expr::symbol("y"), x), mx::EvalError);
+    CHECK_THROWS_AS(
+        mx::Compiled(Expr::function("bessel_j", {Expr(0), Expr(x)}), x),
+        mx::EvalError);
+    CHECK_THROWS_AS(mx::Compiled(eq(Expr(x), Expr(1)), x), mx::EvalError);
+    CHECK_THROWS_AS(mx::Compiled(Expr::opaque("30!"), x), mx::EvalError);
+
+    SUBCASE("and the wrong number of values is refused") {
+        const mx::Compiled compiled(Expr(x), x);
+        const double none[] = {0.0};
+        CHECK_THROWS_AS(compiled(std::span<const double>(none, 0)),
+                        mx::EvalError);
+    }
+}
+
+TEST_CASE("repeated literals share one constant slot") {
+    // Not observable in the answer, only in the size — but it is the sort of
+    // thing that silently stops working, so it is worth pinning.
+    const Symbol x("x");
+    const mx::Compiled compiled(Expr::parse("2*x + 2*x^2 + 2"), x);
+    CHECK(compiled.size() > 0);
+    CHECK(compiled(1.0) == doctest::Approx(6.0));
+}
+
+TEST_CASE("one compiled expression can be shared between threads") {
+    // The working stack is thread-local, so no synchronisation is needed.
+    const Symbol x("x");
+    const mx::Compiled compiled(Expr::parse("sin(x)^2 + cos(x)^2"), x);
+
+    std::vector<std::thread> threads;
+    std::atomic<int> wrong{0};
+    for (int t = 0; t < 4; ++t) {
+        threads.emplace_back([&compiled, &wrong, t] {
+            for (int i = 0; i < 2000; ++i) {
+                const double at = t + i * 1e-3;
+                if (std::fabs(compiled(at) - 1.0) > 1e-9) {
+                    ++wrong;
+                }
+            }
+        });
+    }
+    for (std::thread &thread : threads) {
+        thread.join();
+    }
+    CHECK(wrong == 0);
 }
 
 TEST_SUITE("maxima") {

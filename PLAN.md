@@ -867,6 +867,8 @@ quoting and environment-block tests), 7 integration on both.
 6. ~~**A persistent cache**~~ — built after step 15, via
    `Config::cacheDirectory`. See below; the version stamp turned out to be the
    smaller half of the problem.
+7. ~~**Repeated numeric evaluation**~~ — built after step 15 as `mx::Compiled`,
+   without the third-party evaluator this item had assumed. See below.
 
 ### Two parsers, and how they differ
 
@@ -932,16 +934,43 @@ outlives the build that wrote it.
 Without it the tests could not tell a disk hit from a fresh computation, since
 both end up in the in-memory cache.
 
+### Repeated numeric evaluation
+
+This item assumed the answer was to print the expression and hand it to ExprTk
+or muParser. Measuring first showed a better one, and a dependency-free one.
+
+`evalNumeric` cost ~1.6 µs per point on a middling expression — around 330 ms to
+plot 200,000 points. Most of that was not arithmetic: every symbol *occurrence*
+did a `std::map<std::string, double>` lookup, and every function application a
+linear search by name.
+
+`mx::Compiled` does that work once. The tree is flattened to postfix
+instructions over a small stack, symbols are resolved to positions in the
+caller's argument array, constants are folded into a pool, and function names
+become table indices. Errors move to construction, which is where they belong —
+an unknown function is a property of the expression, not of the point.
+
+Compiling also permits something a tree walk cannot do once: an integer exponent
+known at compile time gets its own opcode and is evaluated by squaring rather
+than `std::pow`. That matters more than it sounds, because `x^2` is everywhere
+and *every division* is a power of -1.
+
+    tree walk   310 ms
+    compiled     53 ms      5.8x, identical answers
+
+The working stack is thread-local, so one `Compiled` can be shared between
+threads without synchronisation.
+
+`evalNumeric` keeps its direct tree walk rather than being routed through
+`Compiled`: compiling costs a traversal and several allocations, which for a
+single evaluation is more work than the evaluation. The two share one function
+table, so they cannot disagree about what `log` means.
+
 ### Decided, but not built
 
 These are known gaps rather than open questions — the approach is settled, the
 work simply is not done. Listed here because a reader scanning this section
 should not have to reconstruct them from the step narratives.
-
-7. **Numeric evaluation walks the tree per call.** Fine until it appears in a
-   profile, at which point the expression can be printed and handed to ExprTk or
-   muParser — a one-way conversion at a leaf, which does not reintroduce the
-   two-canonicalisers problem that shaped this design.
 
 8. **`mx::Integer` is 64-bit.** Values beyond it survive exactly, as `Opaque`
    text, but arithmetic on them has to go through Maxima. Widening means
