@@ -1,0 +1,16 @@
+# Build directories
+build/
+cmake-build-*/
+
+# CPM package cache
+cpm_modules/
+
+# CLion / IntelliJ per-user state
+.idea/workspace.xml
+.idea/usage.statistics.xml
+.idea/shelf/
+.idea/httpRequests/
+
+# OS cruft
+Thumbs.db
+.DS_Store
