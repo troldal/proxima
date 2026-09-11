@@ -10,6 +10,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_library(maxima_cpp
         src/kernel/kernel.cpp
         src/kernel/session.cpp
+        src/transport/child_process_win32.cpp
+        src/transport/fake_transport.cpp
 )
 add_library(mx::maxima_cpp ALIAS maxima_cpp)
 

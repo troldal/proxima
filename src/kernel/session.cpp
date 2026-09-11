@@ -1,47 +1,15 @@
 #include "kernel/session.hpp"
 
+#include "transport/child_process_win32.hpp"
+
 #include <mx/errors.hpp>
 
+#include <chrono>
 #include <filesystem>
 #include <regex>
-#include <vector>
 
 namespace mx::detail {
 namespace {
-
-// Quotes a single argument for use in a Win32 CreateProcess command line,
-// following the escaping rules understood by the standard MSVCRT argv
-// parser (doubling backslashes that precede a quote, escaping embedded
-// quotes). Unlike passing arguments through cmd.exe/_popen, CreateProcess
-// takes one command-line string and hands it straight to the child's argv
-// parser, so this is well-defined and avoids the batch-file quoting bugs
-// we previously hit with `;` and nested quotes.
-std::string quoteArg(const std::string &arg) {
-    if (!arg.empty() && arg.find_first_of(" \t\n\v\"") == std::string::npos) {
-        return arg;
-    }
-    std::string result = "\"";
-    for (auto it = arg.begin();; ++it) {
-        size_t backslashes = 0;
-        while (it != arg.end() && *it == '\\') {
-            ++backslashes;
-            ++it;
-        }
-        if (it == arg.end()) {
-            result.append(backslashes * 2, '\\');
-            break;
-        }
-        if (*it == '"') {
-            result.append(backslashes * 2 + 1, '\\');
-            result.push_back('"');
-        } else {
-            result.append(backslashes, '\\');
-            result.push_back(*it);
-        }
-    }
-    result.push_back('"');
-    return result;
-}
 
 std::string trim(const std::string &s) {
     size_t first = s.find_first_not_of(" \t\r\n");
@@ -53,14 +21,18 @@ std::string trim(const std::string &s) {
 }
 
 // Recursively searches `root` for a file named `filename` and returns the
-// first match. Used to locate sbcl.exe and maxima.core without hard-coding
-// the version-specific "binary-sbcl" subdirectory name.
+// first match. Used to locate sbcl.exe and maxima.core without hard-coding the
+// version-specific "binary-sbcl" subdirectory name.
 //
-// PLAN.md step 5 replaces this with a targeted lookup: the core actually
-// lives at <root>/lib/maxima/<tag>/binary-sbcl/maxima.core, so this walk
-// needlessly descends into gnuplot, vtk, clisp and doc.
+// PLAN.md step 5 replaces this with a targeted lookup: the core actually lives
+// at <root>/lib/maxima/<tag>/binary-sbcl/maxima.core, so this walk needlessly
+// descends into gnuplot, vtk, clisp and doc, and could match the wrong
+// sbcl.exe.
 std::filesystem::path findFile(const std::filesystem::path &root,
                                const std::string &filename) {
+    if (!std::filesystem::is_directory(root)) {
+        throw KernelError("Maxima root is not a directory: " + root.string());
+    }
     for (const auto &entry : std::filesystem::recursive_directory_iterator(
              root, std::filesystem::directory_options::skip_permission_denied)) {
         if (entry.is_regular_file() && entry.path().filename() == filename) {
@@ -70,24 +42,72 @@ std::filesystem::path findFile(const std::filesystem::path &root,
     throw KernelError("Could not find " + filename + " under " + root.string());
 }
 
+// How long to wait for any single chunk of output before checking whether the
+// child is still alive. Not a deadline; see readUntilPrompt.
+constexpr std::chrono::milliseconds kPollInterval{50};
+
 } // namespace
 
-MaximaSession::MaximaSession(Config config) : config_(std::move(config)) {
-    start();
+std::vector<std::string> MaximaSession::launchCommand(const Config &config) {
+    const std::filesystem::path sbclExe = findFile(config.maximaRoot, "sbcl.exe");
+    const std::filesystem::path coreFile
+        = findFile(config.maximaRoot, "maxima.core");
+
+    const std::string evalExpr
+        = "(progn (setf maxima::*prompt-prefix* \"" + std::string(kPromptPrefix)
+          + "\") (setf maxima::*prompt-suffix* \"" + std::string(kPromptSuffix)
+          + "\") (cl-user::run))";
+
+    // Unquoted: quoting for the platform's argv parser is the transport's job.
+    return {
+        sbclExe.string(),
+        "--core", coreFile.string(),
+        "--noinform",
+        "--end-runtime-options",
+        "--eval", evalExpr,
+        "--end-toplevel-options",
+    };
+}
+
+MaximaSession::MaximaSession(Config config)
+    : config_(std::move(config)),
+      transport_(
+          std::make_unique<ChildProcessTransport>(launchCommand(config_))) {
+    handshake();
+}
+
+MaximaSession::MaximaSession(std::unique_ptr<ITransport> transport, Config config)
+    : config_(std::move(config)), transport_(std::move(transport)) {
+    if (!transport_) {
+        throw KernelError("MaximaSession was given a null transport");
+    }
+    handshake();
 }
 
 MaximaSession::~MaximaSession() {
-    stop();
+    if (transport_ && transport_->alive()) {
+        // Ask Maxima to leave on its own; the transport terminates it if it
+        // does not. Errors here are irrelevant, we are tearing down regardless.
+        writeLine("quit();");
+    }
+    if (transport_) {
+        transport_->kill();
+    }
+}
+
+void MaximaSession::handshake() {
+    readUntilPrompt(); // Consume the startup banner up to the first prompt.
+    evaluate("display2d:false$");
 }
 
 std::string MaximaSession::evaluate(const std::string &statement) {
     writeLine(statement);
-    std::string raw = readUntilPrompt();
+    const std::string raw = readUntilPrompt();
 
-    // `raw` holds everything since the previous prompt: the (possibly
-    // empty) result text, followed immediately by the next wrapped
-    // prompt "<prefix>(%iN) <suffix>". Strip the prompt off the end.
-    size_t promptStart = raw.rfind(kPromptPrefix);
+    // `raw` holds everything since the previous prompt: the (possibly empty)
+    // result text, followed immediately by the next wrapped prompt
+    // "<prefix>(%iN) <suffix>". Strip the prompt off the end.
+    const size_t promptStart = raw.rfind(kPromptPrefix);
     std::string content
         = promptStart == std::string::npos ? raw : raw.substr(0, promptStart);
     content = trim(content);
@@ -100,98 +120,34 @@ std::string MaximaSession::evaluate(const std::string &statement) {
     if (std::regex_match(content, match, resultLine)) {
         return trim(match[1].str());
     }
-    // No "(%oN)" label found (e.g. an error message) - return as-is so
-    // callers can surface it.
+    // No "(%oN)" label found (e.g. an error message) - return as-is so callers
+    // can surface it.
     return content;
 }
 
-void MaximaSession::start() {
-    std::filesystem::path sbclExe = findFile(config_.maximaRoot, "sbcl.exe");
-    std::filesystem::path coreFile = findFile(config_.maximaRoot, "maxima.core");
-
-    const std::string evalExpr
-        = "(progn (setf maxima::*prompt-prefix* \"" + std::string(kPromptPrefix)
-          + "\") (setf maxima::*prompt-suffix* \"" + std::string(kPromptSuffix)
-          + "\") (cl-user::run))";
-
-    std::string commandLine = quoteArg(sbclExe.string()) + " --core "
-                              + quoteArg(coreFile.string())
-                              + " --noinform --end-runtime-options --eval "
-                              + quoteArg(evalExpr) + " --end-toplevel-options";
-
-    SECURITY_ATTRIBUTES sa{};
-    sa.nLength = sizeof(sa);
-    sa.bInheritHandle = TRUE;
-
-    HANDLE childStdinRead = nullptr, childStdoutWrite = nullptr;
-    if (!CreatePipe(&childStdinRead, &stdinWrite_, &sa, 0)
-        || !CreatePipe(&stdoutRead_, &childStdoutWrite, &sa, 0)) {
-        throw KernelError("Failed to create pipes for Maxima process");
-    }
-    // The ends we keep must not be inherited by the child.
-    SetHandleInformation(stdinWrite_, HANDLE_FLAG_INHERIT, 0);
-    SetHandleInformation(stdoutRead_, HANDLE_FLAG_INHERIT, 0);
-
-    STARTUPINFOA si{};
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESTDHANDLES;
-    si.hStdInput = childStdinRead;
-    si.hStdOutput = childStdoutWrite;
-    si.hStdError = childStdoutWrite;
-
-    std::vector<char> cmdBuf(commandLine.begin(), commandLine.end());
-    cmdBuf.push_back('\0');
-
-    BOOL ok = CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr, TRUE,
-                             CREATE_NO_WINDOW, nullptr, nullptr, &si, &procInfo_);
-
-    CloseHandle(childStdinRead);
-    CloseHandle(childStdoutWrite);
-
-    if (!ok) {
-        CloseHandle(stdinWrite_);
-        CloseHandle(stdoutRead_);
-        throw KernelError("Failed to start Maxima (sbcl.exe)");
-    }
-
-    // Consume the startup banner up to the first prompt.
-    readUntilPrompt();
-    evaluate("display2d:false$");
-}
-
-void MaximaSession::stop() {
-    if (procInfo_.hProcess) {
-        writeLine("quit();");
-        WaitForSingleObject(procInfo_.hProcess, 2000);
-        TerminateProcess(procInfo_.hProcess, 0);
-        CloseHandle(procInfo_.hProcess);
-        CloseHandle(procInfo_.hThread);
-    }
-    if (stdinWrite_) {
-        CloseHandle(stdinWrite_);
-    }
-    if (stdoutRead_) {
-        CloseHandle(stdoutRead_);
-    }
-}
-
 void MaximaSession::writeLine(const std::string &line) {
-    std::string withNewline = line + "\n";
-    DWORD written = 0;
-    WriteFile(stdinWrite_, withNewline.data(),
-              static_cast<DWORD>(withNewline.size()), &written, nullptr);
+    transport_->send(line + "\n");
 }
 
 std::string MaximaSession::readUntilPrompt() {
+    const auto deadline = std::chrono::steady_clock::now() + config_.timeout;
+
     std::string buffer;
-    char chunk[4096];
     while (buffer.find(kPromptSuffix) == std::string::npos) {
-        DWORD bytesRead = 0;
-        if (!ReadFile(stdoutRead_, chunk, sizeof(chunk), &bytesRead, nullptr)
-            || bytesRead == 0) {
-            break; // Pipe closed / process exited.
+        const std::string chunk = transport_->receive(kPollInterval);
+        if (!chunk.empty()) {
+            buffer += chunk;
+            continue;
         }
-        buffer.append(chunk, bytesRead);
+        // Nothing arrived. Either the child is gone, or it is simply still
+        // thinking and we have time left to wait.
+        if (!transport_->alive()) {
+            throw KernelError("Maxima session ended unexpectedly");
+        }
+        if (std::chrono::steady_clock::now() >= deadline) {
+            throw KernelError("Maxima did not respond within the configured "
+                              "timeout");
+        }
     }
     return buffer;
 }
