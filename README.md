@@ -160,23 +160,30 @@ by default: a library should compute the same answer on every machine.
 ## Requirements
 
 - A C++23 compiler.
-- Boost headers, for `Boost.Multiprecision` — nothing to build or link, but
-  `mx::Integer` exposes it, so consumers need it on their include path too.
-  - Windows: `vcpkg install boost-multiprecision`
-  - openSUSE: `zypper install boost-devel`
-  - Debian/Ubuntu: `apt install libboost-dev`
 - Maxima built on SBCL, found at runtime.
   - Windows: the official installer. `C:\maxima-5.50.0` or wherever you put it.
   - openSUSE: `zypper install maxima maxima-exec-sbcl`
   - Debian/Ubuntu: `apt install maxima maxima-sbcl`
 
-Boost is the only build-time dependency, and it is header-only. Maxima is not
-needed to build at all — it is located when a kernel first starts.
+Nothing else needs installing. The one library dependency —
+Boost.Multiprecision, which backs `mx::Integer` — is fetched by CPM at configure
+time and built as part of the project, so there is no system package to add and
+no version to match. Maxima is not needed to build at all; it is located when a
+kernel first starts.
 
-Boost is found the ordinary way. On Linux the distribution package is on
-CMake's path already; on Windows a vcpkg tree in one of its usual places is
-picked up automatically, and `VCPKG_ROOT` or vcpkg's toolchain file overrides
-that.
+The first configure downloads Boost and takes a minute or so. After that the
+sources live in a **shared CPM cache** rather than in each build tree, so the
+other presets configure in seconds. The cache defaults to `~/.cache/CPM`; set
+`CPM_SOURCE_CACHE`, in the environment or on the command line, to put it
+elsewhere.
+
+`cmake --install` installs Boost's headers into the same prefix as this library.
+That is deliberate rather than untidy: `mx::Integer` holds a `cpp_int` by value,
+so `<mx/integer.hpp>` needs them, and an installed library whose public header
+does not compile would be no use. A consumer's `find_package(maxima_cpp)` then
+resolves Boost from that prefix — the same Boost this library was compiled
+against. Consumers who carry their own Boost should expect it to be found first
+only if their `CMAKE_PREFIX_PATH` says so.
 
 Discovery order: `Config::maximaRoot`, then `$MAXIMA_ROOT`, `$MAXIMA_PREFIX`,
 the parent of any `$PATH` entry named `bin`, then the conventional install

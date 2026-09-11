@@ -1068,10 +1068,37 @@ Writing Knuth's algorithm D instead would have meant *more* hand-written bignum
 code in precisely the spot where hand-written bignum code most often goes
 subtly wrong.
 
-Boost is header-only, so nothing new is linked; it costs about 420 ms of compile
-time per translation unit, and because `<mx/integer.hpp>` reaches every consumer
-through `<mx/expr.hpp>`, consumers pay it too. That is the whole price, and it
-is the right trade.
+Boost costs about 420 ms of compile time per translation unit, and because
+`<mx/integer.hpp>` reaches every consumer through `<mx/expr.hpp>`, consumers pay
+it too. That is the whole price, and it is the right trade.
+
+**Fetched, not found.** Boost comes in through CPM, from the CMake-native
+release tarball, with `BOOST_INCLUDE_LIBRARIES` narrowing the superbuild to
+multiprecision and its dependencies. So there is no system package to install,
+nothing to match versions with, and the same Boost on every machine -- the same
+argument as `Config::exactByDefault`: a library should compute the same answer
+everywhere.
+
+Two details that are easy to get wrong, and were:
+
+`CPM_SOURCE_CACHE` is set to `~/.cache/CPM` when nothing else has set it, so the
+three presets share one copy of the sources. The guard has to be a plain
+falsiness test and not `NOT DEFINED`: CPM declares the variable itself and
+leaves it `OFF`, so from the second configure of a build tree onward it is
+always *defined*, a `NOT DEFINED` guard never fires, and 732 MB of Boost lands
+in `_deps`. With the cache, a second build tree configures in about two seconds
+and its `_deps` is 1.3 MB.
+
+`BOOST_SKIP_INSTALL_RULES` is `OFF`, against the usual advice for a fetched
+dependency, so `cmake --install` puts Boost's headers in the same prefix as this
+library. `mx::Integer` holds a `cpp_int` by value, so `<mx/integer.hpp>` needs
+them; skipping the install rules would produce an installed library whose public
+header does not compile. This is the exact opposite of the `DOCTEST_NO_INSTALL`
+decision in step 3, and for the exact opposite reason: a test framework is our
+business, a type in our public header is the consumer's. The installed config
+prepends its own prefix before `find_dependency(Boost)`, so a consumer resolves
+the Boost this library was compiled against. Verified by installing to a clean
+prefix and building a separate project that never mentions Boost.
 
 Only Linux caught the portability bug: constructors on `int` and `std::int64_t`
 leave `long long` ambiguous wherever `int64_t` is `long`, which is every LP64
