@@ -4,9 +4,30 @@ project(maxima_cpp VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# All symbolic work is delegated to a Maxima child process, so there are no
-# third-party dependencies to build or link. cmake/CPM.cmake is kept for the
-# test framework added later (see PLAN.md step 3).
+# All symbolic work is delegated to a Maxima child process, so nothing here
+# links against a computer algebra library. The one dependency is
+# Boost.Multiprecision, which backs mx::Integer -- header-only, so it is
+# compiled rather than linked, but it appears in a public header and so must
+# reach consumers too. cmake/CPM.cmake is kept for the test framework
+# (see PLAN.md step 3).
+#
+# Boost is found the ordinary way: a system package on Linux, or a toolchain
+# file or CMAKE_PREFIX_PATH anywhere. Windows has no system package to find, so
+# failing that, a vcpkg tree in one of its usual places is used -- which is what
+# lets `cmake --preset windows` work with no further setup. Set VCPKG_ROOT, or
+# pass vcpkg's toolchain file, to point this somewhere else.
+find_package(Boost QUIET)
+if (NOT Boost_FOUND AND WIN32)
+    foreach (vcpkg_root "$ENV{VCPKG_ROOT}" "$ENV{USERPROFILE}/vcpkg" "C:/vcpkg")
+        if (vcpkg_root AND IS_DIRECTORY "${vcpkg_root}/installed")
+            file(GLOB vcpkg_trees "${vcpkg_root}/installed/*")
+            list(APPEND CMAKE_PREFIX_PATH ${vcpkg_trees})
+            break()
+        endif ()
+    endforeach ()
+endif ()
+find_package(Boost REQUIRED)
+
 if (WIN32)
     set(MX_CHILD_PROCESS_SOURCE src/transport/child_process_win32.cpp)
 else ()
@@ -33,6 +54,10 @@ add_library(maxima_cpp
         src/wire/sexpr.cpp
         ${MX_CHILD_PROCESS_SOURCE}
 )
+
+# PUBLIC: include/mx/integer.hpp includes <boost/multiprecision/cpp_int.hpp>,
+# so anything including <mx/expr.hpp> needs Boost's headers on its path.
+target_link_libraries(maxima_cpp PUBLIC Boost::headers)
 
 if (NOT WIN32)
     find_package(Threads REQUIRED)

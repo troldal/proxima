@@ -160,13 +160,23 @@ by default: a library should compute the same answer on every machine.
 ## Requirements
 
 - A C++23 compiler.
+- Boost headers, for `Boost.Multiprecision` — nothing to build or link, but
+  `mx::Integer` exposes it, so consumers need it on their include path too.
+  - Windows: `vcpkg install boost-multiprecision`
+  - openSUSE: `zypper install boost-devel`
+  - Debian/Ubuntu: `apt install libboost-dev`
 - Maxima built on SBCL, found at runtime.
   - Windows: the official installer. `C:\maxima-5.50.0` or wherever you put it.
   - openSUSE: `zypper install maxima maxima-exec-sbcl`
   - Debian/Ubuntu: `apt install maxima maxima-sbcl`
 
-Nothing is needed at build time — there are no third-party dependencies, and
-Maxima is located when a kernel first starts.
+Boost is the only build-time dependency, and it is header-only. Maxima is not
+needed to build at all — it is located when a kernel first starts.
+
+Boost is found the ordinary way. On Linux the distribution package is on
+CMake's path already; on Windows a vcpkg tree in one of its usual places is
+picked up automatically, and `VCPKG_ROOT` or vcpkg's toolchain file overrides
+that.
 
 Discovery order: `Config::maximaRoot`, then `$MAXIMA_ROOT`, `$MAXIMA_PREFIX`,
 the parent of any `$PATH` entry named `bin`, then the conventional install

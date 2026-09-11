@@ -16,6 +16,16 @@ a persistent child process.
 3. **Every step compiles.** Each numbered step below is intended to be one
    commit that builds and passes its tests, so the history stays bisectable.
 
+Note on (1) and (2): both are about who decides the *form* of an expression, not
+about dependencies in general. A second algebra engine would canonicalise
+differently from Maxima, and a third-party infix parser would have to be taught
+Maxima's precedence and then kept in step with it. Neither objection applies to
+a library that does no algebra and decides no form, which is why
+Boost.Multiprecision backs `mx::Integer` — see *Unbounded integers* below. An
+earlier draft of this document read these two constraints as a blanket ban on
+dependencies; that was a misreading, and it cost a few hundred lines of
+hand-written bignum arithmetic.
+
 ---
 
 ## Architecture
@@ -353,6 +363,11 @@ Maxima, just not open to arithmetic on this side. `30!` is the ordinary case,
 and an integration test confirms it satisfies `is(<printed> = 30!)` in Maxima.
 Widening later means changing the `mx::Integer` alias and the two places that
 check for overflow.
+
+> **Superseded.** `mx::Integer` is an unbounded integer over
+> Boost.Multiprecision; there is no `Opaque` fallback for numbers any more. See
+> *Unbounded integers*. The estimate in the last sentence was about right.
+
 
 The same escape hatch covers the one rational that cannot be normalised:
 negating `INT64_MIN` would overflow, so `rational(INT64_MIN, -1)` becomes
@@ -853,8 +868,9 @@ quoting and environment-block tests), 7 integration on both.
 
 ### Settled
 
-1. ~~**Integer type**~~ — step 8: `int64_t` with an `Opaque` fallback, no
-   multiprecision dependency.
+1. ~~**Integer type**~~ — step 8 chose `int64_t` with an `Opaque` fallback.
+   Settled twice since: widened to an unbounded integer after step 15, then
+   re-backed onto Boost.Multiprecision. See *Unbounded integers*.
 2. ~~**POSIX transport**~~ — step 5b: both platforms, one `ITransport`.
 3. ~~**`operator==`**~~ — step 8: structural equality returning `bool`, with
    `eq(lhs, rhs)` building equations.
@@ -969,9 +985,16 @@ table, so they cannot disagree about what `log` means.
 ### Unbounded integers
 
 `mx::Integer` was `std::int64_t` with an `Opaque` fallback. It is now an
-arbitrary-precision integer, written here rather than taken from a
-multiprecision library: this project has no third-party dependencies, and that
-is worth more than the few hundred lines.
+arbitrary-precision integer backed by **Boost.Multiprecision's `cpp_int`**,
+behind a facade that fixes the spelling of the operations and keeps two fast
+paths of its own.
+
+It was first written by hand, on the understanding that the project had no
+third-party dependencies and that this was worth a few hundred lines. That
+understanding was wrong on the premise — the constraint was never "no
+dependencies", only "no SymEngine and no third-party parser", both of which
+were about *canonicalisation* rather than about dependencies as such. Boost
+breaks neither rule: it does no algebra and decides nothing about form.
 
 Step 8 said widening would mean "changing the alias and the two overflow checks
 that guard it". Roughly true, and the pleasant part is how much it *removed*:
@@ -980,10 +1003,11 @@ checked-arithmetic helpers in the normaliser, the fold's give-up path, and the
 `Opaque` fallbacks in the parser and the Maxima mapping. A rational with a
 32-digit numerator is now a rational rather than a blob.
 
-Values that fit in 64 bits are held inline and never allocate. The class
-invariant — `limbs_` is empty *exactly when* the value fits — is what makes the
-fast paths sound: an inline value and a stored one can never be equal, so they
-may be hashed and compared by separate routes.
+Values that fit in 64 bits still never allocate — `cpp_int` holds them within
+the object — and are still parsed, printed and hashed by a 64-bit fast path,
+which is measurably quicker than the general one. What makes those fast paths
+sound is that a value that fits in 64 bits can never equal one that does not, so
+the two may be hashed and compared by entirely separate routes.
 
 **Measured, because a change at this level pays for itself in correctness and
 can easily cost too much elsewhere.** Like for like, both Release:
@@ -1004,6 +1028,50 @@ digits — add, subtract, multiply, truncating divide, remainder and gcd — whi
 is a far better oracle than expectations written by whoever wrote the code. Two
 of the values in those tests were wrong when hand-written, and the library was
 right both times.
+
+Those tests are also what made the switch to `cpp_int` safe to make at all: the
+facade kept the API identical, so the entire suite ran unchanged against the new
+backend and is the evidence the swap was clean. Boost matches every edge case
+this class documents, checked before relying on any of it — truncating division,
+remainder taking the dividend's sign, `gcd` non-negative, and `gcd(0, 0) == 0`.
+The one behaviour not inherited is division by zero, which `cpp_int` reports as
+`std::overflow_error`; it is checked for first, so the error stays `mx::Error`.
+
+### Why the hand-written version went
+
+Two reasons, and the second matters more.
+
+Its division was binary long division, O(bits x limbs) however small the
+divisor, so it did not care that it was dividing a 33-digit number by 7 — it
+ground through bit by bit. `Expr::rational` divides by the gcd after every fold,
+which puts that on a hot path. Measured like for like, both Release:
+
+    30! / 7, 1M times     1228 -> 35 ms
+    30! * 30!, 1M times     77 -> 30 ms
+    600-digit gcd, 20k     1228 -> 35 ms
+    600-digit divide, 2k     59 ->  2 ms
+    small mul, 2M            11 ->  9 ms
+    parse "123456789", 1M     7 ->  7 ms   (fast path, kept)
+    print 123456789, 1M       5 ->  5 ms   (fast path, kept)
+
+Thirty-five times on the case the widening existed to serve. Nothing regressed.
+
+The better reason is that several hundred lines of hand-written carry, borrow
+and division logic fail by returning wrong answers rather than by crashing,
+which is the worst failure mode a computer algebra system can have — and the
+tests that would catch it are exactly the ones nobody thinks to write, since
+random fifty-digit values hit limb-boundary carries and division normalisation
+edges only by luck. `cpp_int` has had two decades of other people finding them.
+The implementation went from 663 lines to 165.
+
+Writing Knuth's algorithm D instead would have meant *more* hand-written bignum
+code in precisely the spot where hand-written bignum code most often goes
+subtly wrong.
+
+Boost is header-only, so nothing new is linked; it costs about 420 ms of compile
+time per translation unit, and because `<mx/integer.hpp>` reaches every consumer
+through `<mx/expr.hpp>`, consumers pay it too. That is the whole price, and it
+is the right trade.
 
 Only Linux caught the portability bug: constructors on `int` and `std::int64_t`
 leave `long long` ambiguous wherever `int64_t` is `long`, which is every LP64

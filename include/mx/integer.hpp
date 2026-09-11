@@ -1,5 +1,7 @@
 #pragma once
 
+#include <boost/multiprecision/cpp_int.hpp>
+
 #include <compare>
 #include <concepts>
 #include <cstddef>
@@ -7,7 +9,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace mx {
 
@@ -15,15 +16,22 @@ namespace mx {
 ///
 /// Maxima produces large integers in ordinary use — `30!` has 33 digits, and a
 /// factored polynomial's coefficients grow quickly — so a fixed width would
-/// mean either wrapping (wrong) or refusing (useless). Values that fit in 64
-/// bits are held inline and never allocate, which is almost all of them; only
-/// the rest reach for storage.
+/// mean either wrapping (wrong) or refusing (useless).
 ///
-/// Written here rather than taken from a multiprecision library because this
-/// library has no third-party dependencies, and that is worth more than the few
-/// hundred lines below. The arithmetic is schoolbook: adequate for the sizes
-/// Maxima hands back, and checked against Maxima itself in the tests, which is
-/// as good an oracle as exists.
+/// The arithmetic is Boost.Multiprecision's `cpp_int`. An earlier version of
+/// this class carried its own schoolbook implementation, on the grounds that
+/// the library had no third-party dependencies. That turned out to be a poor
+/// trade twice over. Its division was binary long division — O(bits × limbs)
+/// however small the divisor — which made `30!/7` some forty-five times slower
+/// than cpp_int, on a hot path, since reducing a rational divides by the gcd
+/// after every fold. And several hundred lines of hand-written carry, borrow
+/// and division logic fail by producing wrong answers rather than by crashing,
+/// which is the worst failure a computer algebra system can have. cpp_int has
+/// had two decades of other people finding those.
+///
+/// This remains a facade rather than an alias: it fixes the spelling of the
+/// operations, keeps the fast paths below, and leaves room to change backend
+/// again without touching a line of consumer code.
 class Integer {
 public:
     Integer() = default;
@@ -35,16 +43,15 @@ public:
     /// platform — it compiles on Windows and not on Linux.
     template <typename T>
         requires std::signed_integral<T> && (!std::same_as<T, char>)
-    Integer(T value) : small_(static_cast<std::int64_t>(value)) {} // NOLINT
+    Integer(T value) : value_(static_cast<std::int64_t>(value)) {} // NOLINT
 
     /// Unsigned values above the signed range still fit, so they are not
     /// quietly truncated into negatives.
     template <typename T>
         requires std::unsigned_integral<T> && (!std::same_as<T, bool>)
                  && (!std::same_as<T, char>)
-    Integer(T value) { // NOLINT
-        assignUnsigned(static_cast<std::uint64_t>(value));
-    }
+    Integer(T value) // NOLINT
+        : value_(static_cast<std::uint64_t>(value)) {}
 
     /// Reads a decimal literal, with an optional sign. Throws mx::ParseError if
     /// `text` is not one.
@@ -55,14 +62,18 @@ public:
 
     /// -1, 0 or 1.
     int sign() const;
-    bool isZero() const { return sign() == 0; }
+    bool isZero() const { return value_.is_zero(); }
     bool isNegative() const { return sign() < 0; }
 
     /// The value, when it fits in 64 bits.
     std::optional<std::int64_t> toInt64() const;
 
-    /// True when no storage is in use, which is the common case.
-    bool isSmall() const { return limbs_.empty(); }
+    /// True when the value fits in 64 bits, which is the common case.
+    ///
+    /// cpp_int holds a value that small within the object, so this also means
+    /// no heap storage is in use — but the guarantee this makes, and the one
+    /// the fast paths below rest on, is about the range and not the allocation.
+    bool isSmall() const;
 
     std::string toString() const;
     double toDouble() const;
@@ -91,26 +102,11 @@ private:
     friend Integer abs(const Integer &value);
     friend Integer gcd(const Integer &a, const Integer &b);
 
-    void assignUnsigned(std::uint64_t value);
+    using Backend = boost::multiprecision::cpp_int;
 
-    /// Ensures the value is held in `limbs_`, so the general routines apply.
-    void promote();
-    /// Returns to the inline form when the value fits again.
-    void demote();
+    explicit Integer(Backend value) : value_(std::move(value)) {}
 
-    // Class invariant, on which several fast paths depend: `limbs_` is empty
-    // *exactly when* the value fits in 64 bits. Every operation calls demote()
-    // before returning, so a value that shrinks back into range returns to the
-    // inline form. Two consequences worth naming, since correctness rests on
-    // them: an inline value and a stored one can never be equal, and so they
-    // may be hashed and compared by entirely separate routes.
-
-    /// The whole value, while `limbs_` is empty.
-    std::int64_t small_ = 0;
-    /// Magnitude, least significant limb first, with no leading zero limb.
-    std::vector<std::uint32_t> limbs_;
-    /// Sign of the magnitude; meaningless while `limbs_` is empty.
-    bool negative_ = false;
+    Backend value_ = 0;
 };
 
 Integer abs(const Integer &value);

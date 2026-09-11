@@ -1,9 +1,30 @@
 @PACKAGE_INIT@
 
-# maxima_cpp drives a Maxima child process over pipes and has no build-time
-# dependencies of its own. On Unix it needs a thread library for the POSIX
-# transport's teardown wait.
+# maxima_cpp drives a Maxima child process over pipes, so it pulls in no
+# computer algebra library. It does need Boost's headers: mx::Integer is backed
+# by Boost.Multiprecision's cpp_int, which appears in <mx/integer.hpp> and
+# therefore in every consumer that includes <mx/expr.hpp>. On Unix it also needs
+# a thread library, for the POSIX transport's teardown wait.
 include(CMakeFindDependencyMacro)
+
+# Same courtesy the library's own build extends: Windows has no system Boost to
+# find, so a vcpkg tree in one of its usual places is used when nothing else has
+# already put Boost on the path. Set VCPKG_ROOT, or pass vcpkg's toolchain file,
+# to point this elsewhere.
+find_package(Boost QUIET)
+if (NOT Boost_FOUND AND WIN32)
+    foreach (_mx_vcpkg "$ENV{VCPKG_ROOT}" "$ENV{USERPROFILE}/vcpkg" "C:/vcpkg")
+        if (_mx_vcpkg AND IS_DIRECTORY "${_mx_vcpkg}/installed")
+            file(GLOB _mx_vcpkg_trees "${_mx_vcpkg}/installed/*")
+            list(APPEND CMAKE_PREFIX_PATH ${_mx_vcpkg_trees})
+            unset(_mx_vcpkg_trees)
+            break()
+        endif ()
+    endforeach ()
+    unset(_mx_vcpkg)
+endif ()
+find_dependency(Boost)
+
 if (NOT WIN32)
     find_dependency(Threads)
 endif ()
