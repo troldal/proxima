@@ -9,14 +9,6 @@
 #include <string>
 #include <vector>
 
-#include <symengine/expression.h>
-#include <symengine/basic.h>
-#include <symengine/derivative.h>
-#include <symengine/simplify.h>
-#include <symengine/parser.h>
-
-using SymEngine::Expression;
-
 // Root of the local Maxima installation. Adjust if Maxima is installed
 // elsewhere.
 static const std::string MAXIMA_ROOT = "C:\\maxima-5.50.0";
@@ -226,55 +218,30 @@ private:
     PROCESS_INFORMATION procInfo_{};
 };
 
-// Asks Maxima to symbolically integrate `expr` with respect to `var`, and
-// parses the resulting expression back into a SymEngine Expression.
-static Expression integrateWithMaxima(MaximaSession &maxima, const std::string &expr,
-                                      const std::string &var) {
-    std::string result = maxima.evaluate("integrate(" + expr + ", " + var + ");");
-    return Expression(SymEngine::parse(result));
-}
-
 int main() {
-    // Build a symbolic expression: f(x) = x^2 + 3*x + 2
-    Expression x("x");
-    Expression f = pow(x, 2) + 3 * x + 2;
+    // Everything symbolic is done by Maxima; this prototype just drives the
+    // session and prints the result text verbatim. Interpreting that text as
+    // a structured expression is the job of the term layer (see PLAN.md).
+    static const std::vector<std::string> statements = {
+        "diff(x^2 + 3*x + 2, x);",
+        "expand((x + 1)^3);",
+        "subst(5, x, x^2 + 3*x + 2);",
+        "subst([x = 1, y = 2], x^2 + 2*x*y + y^2);",
+        "integrate(x^2*sin(x), x);",
+        // Differentiating Maxima's own antiderivative should recover the
+        // original integrand.
+        "trigsimp(diff(integrate(x^2*sin(x), x), x));",
+    };
 
-    std::cout << "f(x)        = " << f << std::endl;
-
-    // Differentiate f with respect to x
-    Expression df = f.diff(x);
-    std::cout << "f'(x)       = " << df << std::endl;
-
-    // Expand (x + 1)^3
-    Expression expanded = expand(pow(x + 1, 3));
-    std::cout << "(x+1)^3     = " << expanded << std::endl;
-
-    // Substitute x = 5 into f(x)
-    Expression f_at_5 = f.subs({{x, Expression(5)}});
-    std::cout << "f(5)        = " << f_at_5 << std::endl;
-
-    // Parse an expression from a string
-    Expression g(SymEngine::parse("x**2 + 2*x*y + y**2"));
-    std::cout << "g           = " << g << std::endl;
-
-    Expression y("y");
-    Expression g_at_1_2 = g.subs({{x, Expression(1)}, {y, Expression(2)}});
-    std::cout << "g(x=1, y=2) = " << g_at_1_2 << std::endl;
-
-    // SymEngine itself has no symbolic integrator, so shell out to a
-    // persistent Maxima session (driven directly via its SBCL Lisp core)
-    // for the integration and bring the result back into SymEngine.
     try {
         MaximaSession maxima;
-        Expression integral = integrateWithMaxima(maxima, "x^2*sin(x)", "x");
-        std::cout << "integral    = " << integral << std::endl;
-
-        // Differentiating Maxima's antiderivative with SymEngine should
-        // recover (a simplified form of) the original integrand.
-        Expression check = expand(integral.diff(x));
-        std::cout << "check       = " << check << std::endl;
+        for (const std::string &statement : statements) {
+            std::cout << statement << "\n    " << maxima.evaluate(statement)
+                      << std::endl;
+        }
     } catch (const std::exception &e) {
         std::cerr << "Maxima call failed: " << e.what() << std::endl;
+        return 1;
     }
 
     return 0;
