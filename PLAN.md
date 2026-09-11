@@ -833,12 +833,45 @@ quoting and environment-block tests), 7 integration on both.
 
 ## Open questions
 
-1. ~~**Integer type**~~ — resolved in step 8: `int64_t` with an `Opaque`
-   fallback, no multiprecision dependency.
-2. ~~**POSIX transport**~~ — done, see step 5b above.
-3. ~~**`operator==`**~~ — resolved in step 8: structural equality returning
-   `bool`, with `eq(lhs, rhs)` building equations.
-4. **Offline `parse()`** — still open. `mx::parse` delegates to Maxima and so
-   needs a running kernel. If constructing expressions from strings without one
-   ever becomes a requirement, a hand-written Pratt parser (~250 lines) is the
-   answer; nothing so far has needed it.
+### Settled
+
+1. ~~**Integer type**~~ — step 8: `int64_t` with an `Opaque` fallback, no
+   multiprecision dependency.
+2. ~~**POSIX transport**~~ — step 5b: both platforms, one `ITransport`.
+3. ~~**`operator==`**~~ — step 8: structural equality returning `bool`, with
+   `eq(lhs, rhs)` building equations.
+
+### Genuinely undecided
+
+4. **Offline `parse()`.** `mx::parse` delegates to Maxima and so needs a running
+   kernel. If constructing expressions from strings without one ever becomes a
+   requirement, a hand-written Pratt parser (~250 lines) is the answer; nothing
+   so far has needed it.
+
+### Decided, but not built
+
+These are known gaps rather than open questions — the approach is settled, the
+work simply is not done. Listed here because a reader scanning this section
+should not have to reconstruct them from the step narratives.
+
+5. **`solve` handles one equation and one unknown.** The step 11 sketch above
+   specified `solve(std::span<const Equation>, std::span<const Symbol>)`; the
+   implementation narrowed it to `solve(equation, unknown)` and that narrowing
+   went unrecorded until now. Systems are the common next need. Maxima's `solve`
+   already accepts them, returning a list of lists, so the work is in the
+   result-shape checking that makes a successful `solve` mean something — see
+   the rejection rules in step 11, which would have to apply per unknown.
+
+6. **A persistent cache would need a Maxima version stamp in its key.** Step 14
+   omits one deliberately: an in-memory cache belongs to one kernel running one
+   Maxima, so the version cannot vary within it. That reasoning stops holding
+   the moment the cache outlives the process.
+
+7. **Numeric evaluation walks the tree per call.** Fine until it appears in a
+   profile, at which point the expression can be printed and handed to ExprTk or
+   muParser — a one-way conversion at a leaf, which does not reintroduce the
+   two-canonicalisers problem that shaped this design.
+
+8. **`mx::Integer` is 64-bit.** Values beyond it survive exactly, as `Opaque`
+   text, but arithmetic on them has to go through Maxima. Widening means
+   changing the alias and the two overflow checks that guard it.
