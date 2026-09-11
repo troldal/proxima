@@ -25,7 +25,19 @@ std::string toMaximaPath(const std::filesystem::path &p) {
     return text;
 }
 
-// The Lisp helper installed at startup, which does the framing.
+// The Lisp helpers installed at startup: one that does the framing, and one
+// that stops Maxima asking questions.
+//
+// Maxima interrogates the user when it needs a fact it has not been told —
+// `integrate(x^n, x)` asks "Is n equal to -1?" — by printing a prompt and
+// reading a line from standard input. Over a pipe that is fatal twice over: the
+// read blocks until the timeout, and then Maxima consumes the *next request* as
+// the answer, leaving every subsequent reply attached to the wrong question.
+//
+// Overriding `retrieve`, the single point all of that goes through, turns a
+// question into an ordinary Maxima error. errcatch then reports it as a Failure
+// carrying the question text, the session stays synchronised, and the caller is
+// told exactly which assumption to supply — see mx::Context.
 //
 // `errcatch` hands `x` back as a Maxima list: empty on failure, one element on
 // success. On failure the message is rendered by calling errormsg() with
@@ -37,6 +49,15 @@ std::string toMaximaPath(const std::filesystem::path &p) {
 // Keep the delimiters here in step with frameBegin/frameSeparator/frameEnd
 // below; a test asserts that they agree.
 constexpr const char *kHelperLisp = R"LISP((progn
+ (defun maxima::retrieve (msg flag &rest more)
+  (declare (ignore flag more))
+  (maxima::merror
+   "this computation needs an assumption that was not supplied. Maxima asked: ~a"
+   (with-output-to-string (s)
+    (dolist (part (cond ((not (listp msg)) (list msg))
+                        ((consp (car msg)) (cdr msg))
+                        (t msg)))
+     (princ (if (stringp part) part (maxima::$sconcat part)) s)))))
  (defun maxima::$cppsend (id x)
   (let ((ok (and (consp x) (cdr x)))
         (reason "")

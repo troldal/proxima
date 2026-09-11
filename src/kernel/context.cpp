@@ -1,0 +1,127 @@
+#include <mx/context.hpp>
+
+#include "wire/from_maxima.hpp"
+#include "wire/sexpr.hpp"
+
+#include <mx/errors.hpp>
+
+#include <atomic>
+#include <utility>
+
+namespace mx {
+namespace {
+
+/// Names have to be unique within the Maxima process, and a Context may be
+/// created in any order or nesting, so they are simply counted.
+std::string nextContextName() {
+    static std::atomic<unsigned long long> counter{0};
+    return "mx_ctx_" + std::to_string(++counter);
+}
+
+Expr evaluateOrThrow(Kernel &kernel, const std::string &source) {
+    const Reply reply = kernel.eval(source);
+    if (!reply.ok) {
+        throw MaximaError(reply.reason);
+    }
+    return detail::fromMaxima(detail::parseSExpr(reply.value));
+}
+
+/// True when Maxima's reply contains the symbol `name` — how it reports
+/// `redundant` and `inconsistent` from an assume.
+bool mentionsSymbol(const Expr &expr, std::string_view name) {
+    if (expr.is(Kind::Symbol)) {
+        return expr.name() == name;
+    }
+    for (const Expr &operand : expr.args()) {
+        if (mentionsSymbol(operand, name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+std::string_view nameOf(Feature feature) {
+    switch (feature) {
+    case Feature::Integer:
+        return "integer";
+    case Feature::NonInteger:
+        return "noninteger";
+    case Feature::Even:
+        return "even";
+    case Feature::Odd:
+        return "odd";
+    case Feature::Rational:
+        return "rational";
+    case Feature::Irrational:
+        return "irrational";
+    case Feature::Real:
+        return "real";
+    case Feature::Imaginary:
+        return "imaginary";
+    case Feature::Complex:
+        return "complex";
+    case Feature::Constant:
+        return "constant";
+    case Feature::Prime:
+        return "prime";
+    case Feature::Increasing:
+        return "increasing";
+    case Feature::Decreasing:
+        return "decreasing";
+    }
+    return "real";
+}
+
+Context::Context(Kernel &kernel) : kernel_(&kernel), name_(nextContextName()) {
+    // Whatever is active now becomes this context's parent, which is what makes
+    // nesting inherit rather than shadow.
+    const Expr current = evaluateOrThrow(*kernel_, "context");
+    parent_ = current.is(Kind::Symbol) ? current.name() : "initial";
+
+    // supcontext rather than newcontext: newcontext would parent the new
+    // context on `initial` and so lose the enclosing scope's assumptions.
+    evaluateOrThrow(*kernel_, "supcontext(" + name_ + ", " + parent_ + ")");
+}
+
+Context::~Context() {
+    // A destructor that throws during stack unwinding would terminate the
+    // process, and failing to tidy up a context is not worth that. The next
+    // kernel restart clears it regardless.
+    try {
+        kernel_->eval("context: " + parent_);
+        kernel_->eval("killcontext(" + name_ + ")");
+    } catch (...) {
+    }
+}
+
+void Context::assume(const Expr &predicate) {
+    const Expr result
+        = evaluateOrThrow(*kernel_, "assume(" + predicate.str() + ")");
+
+    // Maxima answers with a list describing what it did. `inconsistent` means
+    // this contradicts something already in force; carrying on would make every
+    // later result in this scope meaningless.
+    if (mentionsSymbol(result, "inconsistent")) {
+        throw MaximaError("the assumption " + predicate.str()
+                          + " contradicts one already in force");
+    }
+    // `redundant` is harmless: the fact was already implied.
+    assumptions_.push_back(predicate);
+}
+
+void Context::declare(const Symbol &symbol, Feature feature) {
+    evaluateOrThrow(*kernel_, "declare(" + symbol.name() + ", "
+                                  + std::string(nameOf(feature)) + ")");
+}
+
+std::vector<Expr> Context::facts() const {
+    const Expr result = evaluateOrThrow(*kernel_, "facts()");
+    if (result.is(Kind::Function) && result.name() == "list") {
+        return {result.args().begin(), result.args().end()};
+    }
+    return {};
+}
+
+} // namespace mx

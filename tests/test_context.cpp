@@ -1,0 +1,154 @@
+// Assumption scopes, and the interactive-question hazard they exist to answer.
+// All of this needs a real kernel.
+
+#include <doctest/doctest.h>
+
+#include <mx/context.hpp>
+#include <mx/errors.hpp>
+#include <mx/expr.hpp>
+#include <mx/functions.hpp>
+#include <mx/ops.hpp>
+#include <mx/symbol.hpp>
+
+#include <string>
+
+using mx::Context;
+using mx::Expr;
+using mx::Feature;
+using mx::Symbol;
+
+TEST_SUITE("maxima") {
+
+TEST_CASE("an assumption changes what Maxima can conclude") {
+    const Symbol x("x");
+
+    // Without knowing the sign, the best Maxima can do is |x|.
+    CHECK(mx::simplify(mx::sqrt(pow(Expr(x), 2))) == mx::abs(Expr(x)));
+
+    {
+        Context ctx;
+        ctx.assume(gt(Expr(x), Expr(0)));
+        CHECK(mx::simplify(mx::sqrt(pow(Expr(x), 2))) == Expr(x));
+    }
+
+    // And the scope really is a scope.
+    CHECK(mx::simplify(mx::sqrt(pow(Expr(x), 2))) == mx::abs(Expr(x)));
+}
+
+TEST_CASE("a declaration is undone too, which forget would not manage") {
+    const Symbol n("n");
+
+    {
+        Context ctx;
+        ctx.declare(n, Feature::Integer);
+        CHECK(mx::sharedKernel().eval("featurep(n, integer)").value == "T");
+    }
+    CHECK(mx::sharedKernel().eval("featurep(n, integer)").value == "NIL");
+}
+
+TEST_CASE("contexts nest, inheriting the enclosing scope's facts") {
+    const Symbol a("ctx_a");
+    const Symbol b("ctx_b");
+
+    Context outer;
+    outer.assume(gt(Expr(a), Expr(0)));
+
+    {
+        Context inner;
+        inner.assume(gt(Expr(b), Expr(0)));
+        // The inner scope can see both, which is what supcontext buys over
+        // newcontext.
+        CHECK(mx::sharedKernel().eval("is(ctx_a > 0)").value == "T");
+        CHECK(mx::sharedKernel().eval("is(ctx_b > 0)").value == "T");
+    }
+
+    // Leaving the inner scope discards only its own assumption.
+    CHECK(mx::sharedKernel().eval("is(ctx_a > 0)").value == "T");
+    CHECK(mx::sharedKernel().eval("is(ctx_b > 0)").value != "T");
+}
+
+TEST_CASE("facts reports what is in force") {
+    const Symbol x("facts_probe");
+
+    Context ctx;
+    CHECK(ctx.assumptions().empty());
+
+    ctx.assume(gt(Expr(x), Expr(0)));
+    CHECK(ctx.assumptions().size() == 1);
+
+    const std::vector<Expr> facts = ctx.facts();
+    CHECK(facts.size() >= 1);
+    CHECK(facts.front().kind() == mx::Kind::Relation);
+}
+
+TEST_CASE("a contradictory assumption is refused") {
+    // Maxima detects the contradiction; carrying on with an inconsistent set of
+    // facts would make every later result in the scope meaningless.
+    const Symbol x("contradiction_probe");
+
+    Context ctx;
+    ctx.assume(gt(Expr(x), Expr(0)));
+    CHECK_THROWS_AS(ctx.assume(lt(Expr(x), Expr(0))), mx::MaximaError);
+}
+
+TEST_CASE("a redundant assumption is accepted quietly") {
+    const Symbol x("redundant_probe");
+
+    Context ctx;
+    ctx.assume(gt(Expr(x), Expr(0)));
+    CHECK_NOTHROW(ctx.assume(gt(Expr(x), Expr(0))));
+}
+
+// --- the hazard contexts exist to answer -----------------------------------
+
+TEST_CASE("a question Maxima would ask becomes an error, not a deadlock") {
+    // integrate(x^n, x) cannot proceed without knowing whether n is -1, and
+    // Maxima's way of finding out is to print a prompt and read a line. Over a
+    // pipe that blocks until the timeout and then swallows the *next* request
+    // as the answer, desynchronising every reply after it.
+    //
+    // Overriding Maxima's `retrieve` turns the question into an ordinary error.
+    const Symbol x("x");
+    const Symbol n("question_probe_n");
+
+    const auto ambiguous = mx::integrate(pow(Expr(x), Expr(n)), x);
+    REQUIRE_FALSE(ambiguous.has_value());
+
+    // And the message names the missing fact, so it is actionable.
+    CHECK(ambiguous.error().message.find("assumption") != std::string::npos);
+    CHECK(ambiguous.error().message.find("equal to -1") != std::string::npos);
+    // Without the (mtext) marker Maxima wraps its prompts in.
+    CHECK(ambiguous.error().message.find("mtext") == std::string::npos);
+}
+
+TEST_CASE("the session stays synchronised after a suppressed question") {
+    // The real damage a blocking prompt would do is not the one failed call but
+    // every call after it answering the wrong question.
+    const Symbol x("x");
+    const Symbol n("sync_probe_n");
+
+    REQUIRE_FALSE(mx::integrate(pow(Expr(x), Expr(n)), x).has_value());
+
+    CHECK(mx::sharedKernel().eval("2 + 2").value == "4");
+    CHECK(mx::diff(pow(Expr(x), 2), x) == 2 * Expr(x));
+    CHECK(mx::sharedKernel().eval("6*7").value == "42");
+}
+
+TEST_CASE("supplying the assumption lets the computation through") {
+    // The point of the whole mechanism: the error says what is missing, and a
+    // Context supplies it.
+    const Symbol x("x");
+    const Symbol n("supply_probe_n");
+
+    REQUIRE_FALSE(mx::integrate(pow(Expr(x), Expr(n)), x).has_value());
+
+    Context ctx;
+    ctx.assume(gt(Expr(n), Expr(0)));
+
+    const auto integral = mx::integrate(pow(Expr(x), Expr(n)), x);
+    REQUIRE(integral.has_value());
+    // x^(n+1)/(n+1)
+    CHECK(mx::simplify(mx::diff(*integral, x)) == pow(Expr(x), Expr(n)));
+}
+
+} // TEST_SUITE("maxima")

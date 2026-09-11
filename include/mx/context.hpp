@@ -1,0 +1,106 @@
+#pragma once
+
+#include <mx/expr.hpp>
+#include <mx/kernel.hpp>
+#include <mx/ops.hpp>
+#include <mx/symbol.hpp>
+
+#include <string>
+#include <vector>
+
+namespace mx {
+
+/// A property a symbol can be declared to have.
+///
+/// Maxima's `declare`. Distinct from an assumption: an assumption is a relation
+/// that happens to hold (`x > 0`), a declaration is a standing property of the
+/// symbol itself (`n` is an integer).
+enum class Feature {
+    Integer,
+    NonInteger,
+    Even,
+    Odd,
+    Rational,
+    Irrational,
+    Real,
+    Imaginary,
+    Complex,
+    Constant,
+    Prime,
+    Increasing,
+    Decreasing,
+};
+
+/// Maxima's spelling of `feature`.
+std::string_view nameOf(Feature feature);
+
+/// A scope of assumptions and declarations.
+///
+/// Constructing one opens a fresh Maxima context; destroying it discards
+/// everything assumed or declared inside. Maxima's own contexts do the work, so
+/// this really is a scope and not a best-effort undo: `killcontext` removes the
+/// facts *and* the declarations, which a manual `forget` of each assumption
+/// would not.
+///
+/// Contexts nest. A context created while another is active inherits its facts,
+/// so an inner scope can add to an outer one without repeating it.
+///
+/// ## Why assumptions matter more than they look
+///
+/// Without them Maxima asks. `integrate(x^n, x)` cannot proceed without knowing
+/// whether `n` is -1, and over a pipe a question is not something that can be
+/// answered — the kernel turns it into an error naming the missing fact. So an
+/// operation that fails with "needs an assumption" is telling you precisely
+/// what to put in a Context.
+///
+///     mx::Context ctx;
+///     ctx.assume(gt(Expr(n), Expr(-1)));
+///     const auto result = mx::integrate(pow(Expr(x), Expr(n)), x);
+///
+/// ## State, and what happens if the kernel restarts
+///
+/// The assumptions are held here as well as in Maxima, so that PLAN.md step
+/// 13's restart-and-replay has something to replay, and so that step 14's cache
+/// key can include them — a result computed under `x > 0` is not the same
+/// result as one computed without it.
+class Context {
+public:
+    /// Opens a new Maxima context, nested inside whichever is currently active.
+    explicit Context(Kernel &kernel = sharedKernel());
+
+    /// Discards everything assumed or declared in this scope.
+    ~Context();
+
+    Context(const Context &) = delete;
+    Context &operator=(const Context &) = delete;
+    Context(Context &&) = delete;
+    Context &operator=(Context &&) = delete;
+
+    /// Assumes a relation holds, e.g. `gt(Expr(x), Expr(0))`.
+    ///
+    /// Throws mx::MaximaError if the assumption contradicts one already in
+    /// force — Maxima detects that, and silently carrying on with an
+    /// inconsistent set of facts would make every later result meaningless.
+    /// A redundant assumption is accepted quietly.
+    void assume(const Expr &predicate);
+
+    /// Declares a standing property of a symbol.
+    void declare(const Symbol &symbol, Feature feature);
+
+    /// Every assumption in force, this context's and its parents'.
+    std::vector<Expr> facts() const;
+
+    /// What was assumed in *this* scope, in the order it was assumed.
+    const std::vector<Expr> &assumptions() const { return assumptions_; }
+
+    /// The Maxima context name, for diagnostics.
+    const std::string &name() const { return name_; }
+
+private:
+    Kernel *kernel_;
+    std::string name_;
+    std::string parent_;
+    std::vector<Expr> assumptions_;
+};
+
+} // namespace mx

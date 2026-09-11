@@ -2,6 +2,7 @@
 // C++ interface, with Maxima doing the work out of sight. There is no Maxima
 // syntax below, and no strings standing in for expressions.
 
+#include <mx/context.hpp>
 #include <mx/errors.hpp>
 #include <mx/expr.hpp>
 #include <mx/functions.hpp>
@@ -61,6 +62,24 @@ int main() {
                   << (hopeless ? hopeless->str()
                                : "no result: " + hopeless.error().message)
                   << '\n';
+
+        // Some results depend on facts Maxima has not been told. Rather than
+        // asking — impossible over a pipe — it says which fact is missing.
+        const mx::Symbol n("n");
+        const mx::Expr power = pow(mx::Expr(x), mx::Expr(n));
+
+        const auto unknown = mx::integrate(power, x);
+        std::cout << "int x^n          = "
+                  << (unknown ? unknown->str()
+                              : "no result: " + unknown.error().message)
+                  << '\n';
+
+        // Supplying it in a scope, which is discarded on the way out.
+        mx::Context assuming;
+        assuming.assume(gt(mx::Expr(n), mx::Expr(0)));
+        if (const auto known = mx::integrate(power, x)) {
+            std::cout << "  assuming n > 0 = " << known->str() << '\n';
+        }
     } catch (const std::exception &e) {
         std::cerr << "Maxima call failed: " << e.what() << std::endl;
         return 1;

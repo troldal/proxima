@@ -549,10 +549,54 @@ asked.
 
 ### Step 12. `Context` / assumptions
 
-RAII assumption scope (`assume`, `declare`) with a thread-local current context,
-replayed into the kernel and contributing to the step 14 cache key.
+`mx::Context` opens a fresh Maxima context on construction and kills it on
+destruction. Maxima's own contexts do the work, so this really is a scope rather
+than a best-effort undo: `killcontext` discards the assumptions *and* the
+declarations, which forgetting each assumption individually would not.
 
----
+Built on `supcontext(child, parent)` rather than `newcontext`, so contexts nest
+— `newcontext` would parent the new scope on `initial` and lose the enclosing
+one's facts.
+
+A contradictory assumption throws `mx::MaximaError`. Maxima detects it, and
+carrying on with an inconsistent set of facts would make every later result in
+the scope meaningless. A redundant one is accepted quietly.
+
+**Deviation from the sketch: no thread-local current context.** The plan called
+for one, but it would be a mirror of state that already exists — Maxima's own
+`context` variable is the single source of truth, and operations see it without
+being told. A C++-side copy could only go out of step with it.
+
+#### The hazard this step really addresses
+
+A probe turned up something worse than a missing feature. Maxima *interrogates
+the user* when it lacks a fact: `integrate(x^n, x)` asks "Is n equal to -1?" by
+printing a prompt and reading a line from standard input. Over a pipe that is
+fatal twice over — the read blocks until the timeout, and then Maxima consumes
+the **next request** as the answer, leaving every subsequent reply attached to
+the wrong question. A single ambiguous integral would silently corrupt an entire
+session.
+
+Overriding Maxima's `retrieve`, the one function all prompting goes through,
+turns a question into an ordinary error. `errcatch` then reports it as a
+`Failure` carrying the question text, and the session stays synchronised. The
+message names the missing fact, so it says exactly what to put in a `Context`:
+
+    int x^n          = no result: this computation needs an assumption that was
+                       not supplied. Maxima asked: Is n equal to -1?
+      assuming n > 0 = x^(1 + n)*(1 + n)^(-1)
+
+This belongs to the protocol, not to contexts, and is installed in the startup
+helper beside the framing. It is the second time the prompt-driven design of a
+terminal CAS has had to be defused for pipe use — the first was the prompt
+markers in step 6.
+
+- *Verify:* an assumption changes what Maxima concludes (`sqrt(x^2)` is `abs(x)`
+  until `x > 0` is assumed, and `abs(x)` again afterwards); a declaration is
+  undone on scope exit; nested scopes inherit; a contradiction throws. And three
+  tests on the hazard: the question becomes an error, the message is actionable,
+  and — the one that matters most — the *next* several calls still answer their
+  own questions.
 
 ## Phase 4 — Hardening
 

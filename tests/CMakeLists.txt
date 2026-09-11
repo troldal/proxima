@@ -11,6 +11,7 @@ CPMAddPackage(
 add_executable(mx_tests
         test_main.cpp
         test_basics.cpp
+        test_context.cpp
         test_discovery.cpp
         test_expr.cpp
         test_from_maxima.cpp
