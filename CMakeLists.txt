@@ -22,3 +22,11 @@ target_include_directories(maxima_cpp
 
 add_executable(demo examples/demo.cpp)
 target_link_libraries(demo PRIVATE mx::maxima_cpp)
+
+option(MAXIMA_CPP_BUILD_TESTS "Build the maxima_cpp test suite"
+        ${PROJECT_IS_TOP_LEVEL})
+
+if (MAXIMA_CPP_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif ()
