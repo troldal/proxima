@@ -145,11 +145,13 @@ TEST_CASE("uninterpreted applications carry anything Maxima knows") {
     CHECK(bessel.arity() == 2);
     CHECK(bessel.str() == "bessel_j(0, x)");
 
-    // A matrix or a derivative needs no new node type either.
+    // A matrix or a derivative needs no new node type either. Note that
+    // "list" is the one head the printer knows by name, because Maxima has no
+    // textual list(...) constructor — [a, b] is the only spelling.
     const Expr matrix = Expr::function(
         "matrix", {Expr::function("list", {Expr(1), Expr(2)}),
                    Expr::function("list", {Expr(3), Expr(4)})});
-    CHECK(matrix.str() == "matrix(list(1, 2), list(3, 4))");
+    CHECK(matrix.str() == "matrix([1, 2], [3, 4])");
 }
 
 TEST_CASE("relations are built by name, not by operator") {

@@ -158,15 +158,20 @@ std::string render(const Expr &expr, int context) {
         return wrap(expr.arg(0), kPow + 1) + "^" + wrap(expr.arg(1), kPow);
 
     case Kind::Function: {
-        std::string out = expr.name();
-        out += "(";
+        // Maxima has no textual `list(...)` constructor: `[a, b]` is the only
+        // way to write a list. This is the one head the printer knows by name,
+        // and it is here rather than in a typed node because a list otherwise
+        // behaves exactly like any other application.
+        const bool isList = expr.name() == "list";
+
+        std::string out = isList ? "[" : expr.name() + "(";
         for (std::size_t i = 0; i < expr.arity(); ++i) {
             if (i != 0) {
                 out += ", ";
             }
             out += render(expr.arg(i), kLoosest);
         }
-        out += ")";
+        out += isList ? "]" : ")";
         return out;
     }
 

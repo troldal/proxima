@@ -13,6 +13,7 @@ add_executable(mx_tests
         test_basics.cpp
         test_discovery.cpp
         test_expr.cpp
+        test_from_maxima.cpp
         test_process_env.cpp
         test_sexpr.cpp
         test_kernel.cpp

@@ -9,10 +9,36 @@
 #include <mx/kernel.hpp>
 #include <mx/symbol.hpp>
 
+#include "wire/from_maxima.hpp"
 #include "wire/sexpr.hpp"
 
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
+#include <vector>
+
+namespace {
+
+/// Rewrites every head to just its operator, dropping the simplification flags
+/// that follow it. Written against SExpr rather than going through fromMaxima,
+/// so that the round-trip test is not comparing the mapping with itself.
+mx::detail::SExpr stripSimplificationFlags(const mx::detail::SExpr &form) {
+    if (!form.isList() || form.empty()) {
+        return form;
+    }
+    std::vector<mx::detail::SExpr> items;
+    items.reserve(form.size());
+
+    const mx::detail::SExpr &head = form.at(0);
+    items.push_back(head.isList() && !head.empty() ? head.at(0) : head);
+    for (std::size_t i = 1; i < form.size(); ++i) {
+        items.push_back(stripSimplificationFlags(form.at(i)));
+    }
+    return mx::detail::SExpr::list(std::move(items));
+}
+
+} // namespace
 
 TEST_SUITE("maxima") {
 
@@ -206,6 +232,100 @@ TEST_CASE("an oversized integer round-trips through Opaque") {
     const mx::Reply reply = maxima.eval("is(" + bignum.str() + " = 30!)");
     REQUIRE(reply.ok);
     CHECK(reply.value == "T");
+}
+
+TEST_CASE("every recorded expression survives a full round trip") {
+    // The strongest check in the suite, and the one that actually validates the
+    // mapping: for each recorded expression, evaluate it, read the internal
+    // form, map it to an Expr, print that Expr back as Maxima source, evaluate
+    // *that*, and require the two internal forms to be identical.
+    //
+    // Anything the mapping gets wrong — a mis-decoded name, a head with no
+    // valid textual spelling, a lost parenthesis — shows up here as a
+    // difference, or as an outright Maxima error.
+    mx::Kernel maxima;
+
+    std::ifstream golden(std::string(MX_GOLDEN_DIR) + "/internal_forms.tsv");
+    REQUIRE_MESSAGE(golden.is_open(), "cannot open the golden transcript file");
+
+    int cases = 0;
+    std::string line;
+    while (std::getline(golden, line)) {
+        if (line.empty() || line.front() == '#') {
+            continue;
+        }
+        std::istringstream fields(line);
+        std::string expression, status, form;
+        std::getline(fields, expression, '\t');
+        std::getline(fields, status, '\t');
+        std::getline(fields, form);
+        if (status != "OK") {
+            continue;
+        }
+        // A bigfloat deliberately comes back as the exact rational it equals,
+        // so its form changes by design. Its value is checked separately below.
+        if (expression.rfind("bfloat", 0) == 0) {
+            continue;
+        }
+
+        CAPTURE(expression);
+
+        const mx::Reply first = maxima.eval(expression);
+        REQUIRE(first.ok);
+
+        const mx::Expr roundTripped
+            = mx::detail::fromMaxima(mx::detail::parseSExpr(first.value));
+        const std::string printed = roundTripped.str();
+        CAPTURE(printed);
+
+        const mx::Reply second = maxima.eval(printed);
+        REQUIRE_MESSAGE(second.ok, printed << " -> " << second.reason);
+
+        // Compared with the simplification flags removed. A head carries which
+        // simplifiers have already touched the term — (MEXPT SIMP RATSIMP)
+        // rather than (MEXPT SIMP) — which is bookkeeping about how a value was
+        // reached, not part of the value. Maxima's own integrate leaves RATSIMP
+        // behind where re-reading the same expression from source does not, so
+        // requiring the flags to match would fail on a correct round trip.
+        CHECK(stripSimplificationFlags(mx::detail::parseSExpr(second.value))
+              == stripSimplificationFlags(mx::detail::parseSExpr(first.value)));
+        ++cases;
+    }
+    CHECK(cases >= 30);
+}
+
+TEST_CASE("a bigfloat keeps its value exactly, though not its type") {
+    // Mapped to the exact rational it equals, since there is no
+    // arbitrary-precision float here to hold it. Nothing is rounded, so Maxima
+    // agrees the two are equal even though the forms differ.
+    mx::Kernel maxima;
+
+    const mx::Reply original = maxima.eval("bfloat(%pi)");
+    REQUIRE(original.ok);
+    const mx::Expr asRational
+        = mx::detail::fromMaxima(mx::detail::parseSExpr(original.value));
+
+    const mx::Reply same
+        = maxima.eval("is(equal(" + asRational.str() + ", bfloat(%pi)))");
+    REQUIRE(same.ok);
+    CHECK(same.value == "T");
+}
+
+TEST_CASE("symbol case survives the round trip in both directions") {
+    // Maxima inverts case: x becomes $X and X becomes $x. A decoder that got
+    // this wrong would silently rename every variable, and would look correct
+    // for all-lowercase names.
+    mx::Kernel maxima;
+    for (const char *name : {"x", "X", "xY", "alpha", "x_1"}) {
+        CAPTURE(name);
+        const mx::Reply reply = maxima.eval(name);
+        REQUIRE(reply.ok);
+
+        const mx::Expr mapped
+            = mx::detail::fromMaxima(mx::detail::parseSExpr(reply.value));
+        CHECK(mapped.kind() == mx::Kind::Symbol);
+        CHECK(mapped.name() == std::string(name));
+    }
 }
 
 TEST_CASE("two kernels are independent") {

@@ -21,6 +21,7 @@ add_library(maxima_cpp
         src/kernel/session.cpp
         src/transport/fake_transport.cpp
         src/transport/process_env.cpp
+        src/wire/from_maxima.cpp
         src/wire/sexpr.cpp
         ${MX_CHILD_PROCESS_SOURCE}
 )

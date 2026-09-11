@@ -394,17 +394,62 @@ usable before the normaliser exists. Everything else is step 10.
 
 ### Step 9. Translation, both directions
 
-- `to_maxima.cpp` — `Expr` -> Maxima source with correct precedence and
-  parenthesisation.
-- `from_maxima.cpp` — `SExpr` -> `Expr`: `MPLUS`->Add, `MTIMES`->Mul,
-  `MEXPT`->Pow, `RAT`->Rational, `%SIN`->`Function("sin")`, `$X`->`Symbol("x")`,
-  `$FOO`->`Function("foo")`, `%E`/`%PI`/`%I`->constants, anything unrecognised
-  -> `Function` or `Opaque`.
+The outbound half already existed: `Expr::str()` (`src/core/printer.cpp`) emits
+Maxima infix, and step 8 validated it against live Maxima on cases where
+dropping a parenthesis still parses but changes the value. Step 9 is the inbound
+half, `src/wire/from_maxima.cpp`.
 
-- *Verify:* round-trip tests against the step 6 golden transcripts — these run
-  without Maxima.
+**Maxima inverts symbol case.** `x` is stored as `$X`, but `X` as `|$x|` and
+`xY` as `|$xY|`: a uniformly-cased name is case-inverted, a mixed-case one is
+bar-quoted and left alone. Decoding is the same inversion applied again, which
+makes it its own inverse. Getting this wrong would silently rename every
+variable in the library — and would look perfectly correct for all-lowercase
+names, which is most test data. An integration test round-trips `x`, `X`, `xY`,
+`alpha` and `x_1` through a live kernel.
 
----
+**Head spellings.** `%SIN` and `$F` differ only in sigil — `%` for Maxima's own
+operators and nouns, `$` for user names — and neither sigil is part of the name.
+A *symbol* keeps any `%`, because the constant `%pi` really is called that and
+arrives as `$%PI`.
+
+Three heads need an explicit table, for two different reasons:
+
+- `%DERIVATIVE` displays as `'diff`. Printing `derivative(f(x), x)` would be an
+  undefined function rather than a derivative, and dropping the quote would ask
+  Maxima to evaluate it.
+- `MABS`, `MFACTORIAL`, `MNOT` carry no sigil at all, so the general rule would
+  produce `mabs`. Only heads with a `name(args...)` spelling can go in this
+  table; Maxima's infix operators (MAND, MOR, MNCTIMES) have none, and are noted
+  at the fallback.
+
+`MMINUS` and `MQUOTIENT` are handled structurally rather than by name, since
+they map onto negation and division.
+
+**Lists are the one head the printer knows by name.** `MLIST` becomes
+`Function("list", …)`, and the printer renders that head as `[a, b]` because
+Maxima has no textual `list(...)` constructor — the bracket syntax is the only
+spelling. Everything else, matrices and derivatives included, is an ordinary
+application.
+
+**Bigfloats keep their value, not their type.** A bigfloat is
+`mantissa * 2^(exponent - bits(mantissa))`; with no arbitrary-precision float to
+map onto, it becomes the exact rational it equals, as `Opaque` text. Nothing is
+rounded, and Maxima agrees the two are equal — but sending it back gives a
+rational rather than a bfloat. Verified with `is(equal(…, bfloat(%pi)))`.
+
+- *Verify:* unit tests over recorded forms, plus the strongest check in the
+  suite — for every recorded expression: evaluate, read the internal form, map
+  it, print it back as Maxima source, evaluate *that*, and require the two
+  internal forms to match.
+
+  That comparison ignores **simplification flags**. A head records which
+  simplifiers have touched the term — `(MEXPT SIMP RATSIMP)` rather than
+  `(MEXPT SIMP)` — which is bookkeeping about how a value was reached, not part
+  of the value. Maxima's own `integrate` leaves `RATSIMP` behind where
+  re-reading the same expression from source does not, so requiring the flags to
+  match would fail on a correct round trip. The test strips them by walking the
+  s-expression directly rather than going through `fromMaxima`, so it is not
+  comparing the mapping with itself.
 
 ## Phase 3 — Public API
 
