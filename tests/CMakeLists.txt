@@ -13,6 +13,7 @@ add_executable(mx_tests
         test_basics.cpp
         test_discovery.cpp
         test_process_env.cpp
+        test_sexpr.cpp
         test_kernel.cpp
         test_transport.cpp
 )
@@ -21,6 +22,10 @@ target_link_libraries(mx_tests PRIVATE mx::maxima_cpp doctest::doctest)
 # White-box access: the transport and session layers are internal, but they are
 # exactly what the Maxima-free tests exercise.
 target_include_directories(mx_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+# The recorded Maxima replies the reader and mapping layers are tested against.
+target_compile_definitions(mx_tests PRIVATE
+        MX_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden")
 
 # Two CTest entries over one binary, split by doctest test suite. Tests that
 # need a working Maxima installation are labelled so they can be excluded:

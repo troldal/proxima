@@ -301,12 +301,40 @@ no terminator, since it is substituted into a wrapper that supplies its own.
 
 ### Step 7. S-expression reader
 
-`SExpr` as a generic variant (`Int`, `Float`, `Symbol`, `String`, `List`) plus a
-tokenizer and a stack-based reader. Pure, no I/O, no Maxima knowledge. `Kernel`
-gains `SExpr eval(...)` alongside `evalRaw`.
+`SExpr` as a variant (`Integer`, `Real`, `Symbol`, `String`, `List`) plus a
+tokeniser and a stack-based reader. Pure, no I/O, no Maxima knowledge.
 
-- *Compiles:* yes.
-- *Verify:* unit tests built entirely from string literals, no kernel needed.
+**Deviation from the original sketch.** The plan said `Kernel` would gain
+`SExpr eval(...)`. It did not: `SExpr` stays internal, in `src/wire/`, and the
+public API is unchanged. Exposing it would publish a type that steps 9 and 11
+then retract once `mx::Expr` arrives — a breaking change for no gain, since
+`Expr`'s `Opaque` node already covers the escape-hatch case `SExpr` would have
+served. The reader is exercised instead by tests on three fronts: string
+literals, the recorded golden file, and live Maxima replies.
+
+**Integers are stored as digits, not as an integer type.** `30!` is
+`265252859812191058636308480000000`, so the reader cannot pick a fixed width
+without losing values. Keeping the text makes the reader lossless and leaves the
+numeric-representation choice to step 8, which is where it belongs; `asInt64()`
+returns `nullopt` rather than wrapping when the value does not fit.
+
+**Deliberate rejections.** Dotted pairs throw rather than being read as a symbol
+named `.` — Maxima's term representation is proper lists throughout, so one
+appearing means something unmodelled arrived, and quietly mis-reading it would
+corrupt the tree. Input containing two expressions throws too, since that means
+the frame was mis-split. Nesting is capped at `kMaxSExprDepth` so a pathological
+reply cannot overflow the stack when the tree is destroyed.
+
+Lisp's alternative exponent markers (`1.5d0`, `1.5s0`) are accepted. Maxima sets
+`*read-default-float-format*` to double-float so `e` is what arrives in
+practice, but the others are legal Common Lisp and would otherwise fail to parse
+mystifyingly.
+
+- *Verify:* unit tests from string literals; every one of the 39 recorded golden
+  forms parses **and** re-renders to something that reads back identically,
+  which catches a reader that accepts input but silently loses part of it; and
+  the same round-trip against live replies, which is what catches the recording
+  going stale after a Maxima upgrade.
 
 ### Step 8. The `Expr` value type
 

@@ -21,4 +21,15 @@ public:
     using Error::Error;
 };
 
+/// Text that should have been a Maxima reply could not be read as one.
+///
+/// Distinct from KernelError because the causes differ: a KernelError means the
+/// conversation broke down, a ParseError means it carried something this
+/// library cannot interpret. In practice the latter means either a Maxima
+/// construct the reader does not yet handle, or a genuine protocol bug.
+class ParseError : public Error {
+public:
+    using Error::Error;
+};
+
 } // namespace mx

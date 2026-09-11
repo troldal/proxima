@@ -7,6 +7,8 @@
 #include <mx/errors.hpp>
 #include <mx/kernel.hpp>
 
+#include "wire/sexpr.hpp"
+
 #include <filesystem>
 #include <string>
 
@@ -101,6 +103,57 @@ TEST_CASE("an explicitly wrong Maxima root fails loudly") {
     config.maximaRoot
         = std::filesystem::temp_directory_path() / "no_such_maxima_install";
     CHECK_THROWS_AS(mx::Kernel{config}, mx::KernelError);
+}
+
+TEST_CASE("live replies parse as s-expressions") {
+    // The golden file checks the reader against recorded output; this checks it
+    // against output produced right now, which is what catches the recording
+    // going stale after a Maxima upgrade.
+    mx::Kernel maxima;
+    for (const char *expression : {
+             "1/3 + 2/5",
+             "integrate(x^2*sin(x), x)",
+             "solve(x^2 - 1 = 0, x)",
+             "expand((x + 1)^3)",
+             "matrix([1,2],[3,4])",
+             "30!",
+             "bfloat(%pi)",
+             "f(x, y)",
+             "[a, b, c]",
+         }) {
+        CAPTURE(expression);
+        const mx::Reply reply = maxima.eval(expression);
+        REQUIRE(reply.ok);
+
+        mx::detail::SExpr parsed;
+        REQUIRE_NOTHROW(parsed = mx::detail::parseSExpr(reply.value));
+        // Re-rendering must read back identically, which catches a reader that
+        // accepts input but quietly loses part of it.
+        CHECK(mx::detail::parseSExpr(parsed.toString()) == parsed);
+    }
+}
+
+TEST_CASE("a live rational keeps its exact numerator and denominator") {
+    mx::Kernel maxima;
+    const mx::detail::SExpr rational
+        = mx::detail::parseSExpr(maxima.eval("1/3 + 2/5").value);
+
+    REQUIRE(rational.isList());
+    CHECK(rational.at(0).at(0).isSymbol("RAT"));
+    CHECK(rational.at(1).asInt64() == 11);
+    CHECK(rational.at(2).asInt64() == 15);
+}
+
+TEST_CASE("a live bignum survives as digits") {
+    // 30! does not fit in int64, so the reader must keep it as text rather than
+    // wrap or truncate.
+    mx::Kernel maxima;
+    const mx::detail::SExpr value
+        = mx::detail::parseSExpr(maxima.eval("30!").value);
+
+    REQUIRE(value.isInteger());
+    CHECK(value.digits() == "265252859812191058636308480000000");
+    CHECK_FALSE(value.asInt64().has_value());
 }
 
 TEST_CASE("two kernels are independent") {
