@@ -15,8 +15,8 @@ Kernel::Kernel(Kernel &&) noexcept = default;
 
 Kernel &Kernel::operator=(Kernel &&) noexcept = default;
 
-std::string Kernel::evalRaw(std::string_view statement) {
-    return session_->evaluate(std::string(statement));
+Reply Kernel::eval(std::string_view expression) {
+    return session_->eval(expression);
 }
 
 } // namespace mx

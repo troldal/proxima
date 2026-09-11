@@ -8,23 +8,13 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
-#include <regex>
 #include <system_error>
 
 namespace mx::detail {
 namespace {
 
-std::string trim(const std::string &s) {
-    size_t first = s.find_first_not_of(" \t\r\n");
-    size_t last = s.find_last_not_of(" \t\r\n");
-    if (first == std::string::npos) {
-        return "";
-    }
-    return s.substr(first, last - first + 1);
-}
-
 // How long to wait for any single chunk of output before checking whether the
-// child is still alive. Not a deadline; see readUntilPrompt.
+// child is still alive. Not a deadline; see readFrame.
 constexpr std::chrono::milliseconds kPollInterval{50};
 
 // Maxima expects Windows paths with forward slashes; upstream's maxima.bat
@@ -35,6 +25,34 @@ std::string toMaximaPath(const std::filesystem::path &p) {
     return text;
 }
 
+// The Lisp helper installed at startup, which does the framing.
+//
+// `errcatch` hands `x` back as a Maxima list: empty on failure, one element on
+// success. On failure the message is rendered by calling errormsg() with
+// *standard-output* bound to a string, which is what keeps it inside the frame
+// instead of loose in the stream. The request id appears in all three
+// delimiters, so a frame can only ever be matched to the request that asked
+// for it.
+//
+// Keep the delimiters here in step with frameBegin/frameSeparator/frameEnd
+// below; a test asserts that they agree.
+constexpr const char *kHelperLisp = R"LISP((progn
+ (defun maxima::$cppsend (id x)
+  (let ((ok (and (consp x) (cdr x)))
+        (reason "")
+        (*print-circle* nil)
+        (*print-pretty* nil)
+        (*print-readably* nil))
+   (unless ok
+    (let ((sink (make-string-output-stream)))
+     (let ((*standard-output* sink)) (ignore-errors (maxima::$errormsg)))
+     (setf reason (string-trim (list #\Space #\Newline #\Tab)
+                               (get-output-stream-string sink)))))
+   (format t "~&@@B~a@@~a@@S~a@@~s@@S~a@@~a@@E~a@@~%"
+           id (if ok "T" "NIL") id (if ok (cadr x) nil) id reason id))
+  (quote maxima::$done))
+ (cl-user::run)))LISP";
+
 std::unique_ptr<ITransport> launchMaxima(const Config &config) {
     const MaximaInstall install = discoverMaxima(config, systemEnv());
     return std::make_unique<ChildProcessTransport>(
@@ -44,14 +62,44 @@ std::unique_ptr<ITransport> launchMaxima(const Config &config) {
 
 } // namespace
 
+std::string MaximaSession::frameBegin(std::uint64_t id) {
+    return "@@B" + std::to_string(id) + "@@";
+}
+
+std::string MaximaSession::frameSeparator(std::uint64_t id) {
+    return "@@S" + std::to_string(id) + "@@";
+}
+
+std::string MaximaSession::frameEnd(std::uint64_t id) {
+    return "@@E" + std::to_string(id) + "@@";
+}
+
+std::vector<std::string> MaximaSession::setupStatements() {
+    return {
+        // Results as one-dimensional text rather than ASCII art. Irrelevant to
+        // the framed values themselves, but it keeps anything Maxima prints
+        // outside a frame from becoming a wall of layout.
+        "display2d:false$",
+        // Maxima otherwise retains every %i/%o label for the life of the
+        // session, which for a long-lived kernel is an unbounded leak.
+        "nolabels:true$",
+        // Errors are rendered into the frame by the helper instead; without
+        // this they would also be printed loose in the stream.
+        "errormsg:false$",
+    };
+}
+
+std::string MaximaSession::requestFor(std::uint64_t id,
+                                      std::string_view expression) {
+    // errcatch turns a Maxima error into an empty list rather than an error
+    // prompt; ratdisrep keeps canonical rational (MRAT) forms from coming back
+    // in place of general ones.
+    return "cppsend(" + std::to_string(id) + ", errcatch(ratdisrep("
+           + std::string(expression) + ")))$";
+}
+
 std::vector<std::string>
 MaximaSession::launchCommand(const MaximaInstall &install) {
-    const std::string evalExpr
-        = "(progn (setf maxima::*prompt-prefix* \"" + std::string(kPromptPrefix)
-          + "\") (setf maxima::*prompt-suffix* \"" + std::string(kPromptSuffix)
-          + "\") (cl-user::run))";
-
-    // Unquoted: quoting for the platform's argv parser is the transport's job.
     std::vector<std::string> argv{install.sbclExe.string(), "--core",
                                   install.maximaCore.string(), "--noinform"};
 
@@ -62,15 +110,15 @@ MaximaSession::launchCommand(const MaximaInstall &install) {
         argv.emplace_back("2000");
     }
 
-    argv.insert(argv.end(), {"--end-runtime-options", "--eval", evalExpr,
+    argv.insert(argv.end(), {"--end-runtime-options", "--eval", kHelperLisp,
                              "--end-toplevel-options"});
     return argv;
 }
 
-std::vector<std::pair<std::string, std::string>>
+std::vector<EnvOverride>
 MaximaSession::launchEnvironment(const MaximaInstall &install,
                                  const Config &config) {
-    std::vector<std::pair<std::string, std::string>> env;
+    std::vector<EnvOverride> env;
 
     // Correct even where the image already has a prefix compiled in, which
     // matters for a relocated or portable installation whose baked-in path no
@@ -128,44 +176,41 @@ MaximaSession::~MaximaSession() {
 }
 
 void MaximaSession::handshake() {
-    readUntilPrompt(); // Consume the startup banner up to the first prompt.
-    evaluate("display2d:false$");
-}
-
-std::string MaximaSession::evaluate(const std::string &statement) {
-    writeLine(statement);
-    const std::string raw = readUntilPrompt();
-
-    // `raw` holds everything since the previous prompt: the (possibly empty)
-    // result text, followed immediately by the next wrapped prompt
-    // "<prefix>(%iN) <suffix>". Strip the prompt off the end.
-    const size_t promptStart = raw.rfind(kPromptPrefix);
-    std::string content
-        = promptStart == std::string::npos ? raw : raw.substr(0, promptStart);
-    content = trim(content);
-    if (content.empty()) {
-        return "";
+    for (const std::string &statement : setupStatements()) {
+        writeLine(statement);
     }
 
-    static const std::regex resultLine(R"(\(%o\d+\)\s*([\s\S]*))");
-    std::smatch match;
-    if (std::regex_match(content, match, resultLine)) {
-        return trim(match[1].str());
+    // A framed probe. Reading until *its* frame arrives is what synchronises
+    // the stream: the startup banner and every prompt printed so far fall
+    // before it and are discarded. No prompt markers are needed for this — the
+    // frame delimiters already say exactly where a reply begins.
+    const Reply ready = eval("true");
+    if (!ready.ok) {
+        throw KernelError("Maxima rejected the startup handshake: "
+                          + ready.reason);
     }
-    // No "(%oN)" label found (e.g. an error message) - return as-is so callers
-    // can surface it.
-    return content;
 }
 
-void MaximaSession::writeLine(const std::string &line) {
-    transport_->send(line + "\n");
+Reply MaximaSession::eval(std::string_view expression) {
+    const std::uint64_t id = ++nextRequestId_;
+    writeLine(requestFor(id, expression));
+    return readFrame(id);
 }
 
-std::string MaximaSession::readUntilPrompt() {
+void MaximaSession::writeLine(std::string_view line) {
+    transport_->send(std::string(line) + "\n");
+}
+
+Reply MaximaSession::readFrame(std::uint64_t id) {
+    const std::string begin = frameBegin(id);
+    const std::string separator = frameSeparator(id);
+    const std::string end = frameEnd(id);
+
     const auto deadline = std::chrono::steady_clock::now() + config_.timeout;
 
     std::string buffer;
-    while (buffer.find(kPromptSuffix) == std::string::npos) {
+    size_t endAt = std::string::npos;
+    while ((endAt = buffer.find(end)) == std::string::npos) {
         const std::string chunk = transport_->receive(kPollInterval);
         if (!chunk.empty()) {
             buffer += chunk;
@@ -181,7 +226,45 @@ std::string MaximaSession::readUntilPrompt() {
                               "timeout");
         }
     }
-    return buffer;
+
+    const size_t beginAt = buffer.rfind(begin, endAt);
+    if (beginAt == std::string::npos) {
+        throw KernelError("Maxima produced a malformed reply: the closing "
+                          "delimiter for request "
+                          + std::to_string(id) + " arrived without its opening "
+                          + "delimiter");
+    }
+
+    // Everything before `beginAt` is banner text, prompts, or a frame belonging
+    // to some earlier request; none of it is our answer.
+    const size_t bodyAt = beginAt + begin.size();
+    const std::string body = buffer.substr(bodyAt, endAt - bodyAt);
+
+    const size_t firstSeparator = body.find(separator);
+    if (firstSeparator == std::string::npos) {
+        throw KernelError("Maxima produced a malformed reply for request "
+                          + std::to_string(id) + ": missing field separator");
+    }
+    const size_t secondSeparator
+        = body.find(separator, firstSeparator + separator.size());
+    if (secondSeparator == std::string::npos) {
+        throw KernelError("Maxima produced a malformed reply for request "
+                          + std::to_string(id) + ": missing second field "
+                          + "separator");
+    }
+
+    Reply reply;
+    reply.ok = body.compare(0, firstSeparator, "T") == 0;
+
+    const size_t valueAt = firstSeparator + separator.size();
+    const size_t reasonAt = secondSeparator + separator.size();
+
+    if (reply.ok) {
+        reply.value = body.substr(valueAt, secondSeparator - valueAt);
+    } else {
+        reply.reason = body.substr(reasonAt);
+    }
+    return reply;
 }
 
 } // namespace mx::detail

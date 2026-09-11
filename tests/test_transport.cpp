@@ -1,14 +1,15 @@
 // Protocol tests driven by a scripted transport. No Maxima installation, no
-// child process — these are the tests step 4 exists to make possible.
+// child process — these are the tests step 4 exists to make possible, now
+// covering the framed protocol introduced in step 6.
 
 #include <doctest/doctest.h>
 
 #include "kernel/session.hpp"
-#include "transport/child_process.hpp"
 #include "transport/fake_transport.hpp"
 
 #include <mx/errors.hpp>
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -18,30 +19,35 @@ using mx::detail::MaximaSession;
 
 namespace {
 
-/// A wrapped prompt exactly as Maxima's *prompt-prefix*/*prompt-suffix* hooks
-/// produce it.
-std::string prompt(int n) {
-    return std::string(MaximaSession::kPromptPrefix) + "(%i" + std::to_string(n)
-           + ") " + MaximaSession::kPromptSuffix;
+/// A complete reply frame, exactly as the Lisp helper formats one.
+std::string frame(std::uint64_t id, bool ok, const std::string &value,
+                  const std::string &reason = "") {
+    return MaximaSession::frameBegin(id) + (ok ? "T" : "NIL")
+           + MaximaSession::frameSeparator(id) + value
+           + MaximaSession::frameSeparator(id) + reason
+           + MaximaSession::frameEnd(id) + "\n";
 }
 
-/// A result line followed by the next prompt.
-std::string reply(int n, const std::string &text) {
-    return "(%o" + std::to_string(n) + ") " + text + "\n" + prompt(n + 1);
+/// The banner Maxima prints before anything else, plus the prompts that appear
+/// between statements. All of it is noise the frame delimiters let us discard.
+std::string noise(int promptNumber) {
+    return "(%i" + std::to_string(promptNumber) + ") ";
 }
 
-/// The two responses every session consumes before it is usable: the startup
-/// banner up to the first prompt, and the answer to `display2d:false$`.
-std::vector<std::string> handshake() {
-    return {"Maxima 5.50.0 https://maxima.sourceforge.io\n" + prompt(1),
-            prompt(2)};
+/// The one response a session consumes during construction: the banner, then
+/// the frame answering the handshake probe (request 1).
+std::vector<std::string> handshakeScript() {
+    return {"Maxima 5.50.0 https://maxima.sourceforge.io\n"
+            "using Lisp SBCL 2.6.8\n"
+            + noise(1) + noise(2) + noise(3) + noise(4)
+            + frame(1, true, "$TRUE")};
 }
 
 /// Builds a session over a scripted transport, keeping a borrowed pointer to
 /// the transport so tests can inspect what was sent.
 struct ScriptedSession {
     explicit ScriptedSession(std::vector<std::string> afterHandshake) {
-        std::vector<std::string> script = handshake();
+        std::vector<std::string> script = handshakeScript();
         script.insert(script.end(), afterHandshake.begin(), afterHandshake.end());
 
         auto owned = std::make_unique<FakeTransport>(std::move(script));
@@ -55,52 +61,115 @@ struct ScriptedSession {
 
 } // namespace
 
-TEST_CASE("handshake consumes the banner and disables 2-D display") {
+TEST_CASE("the handshake makes the session machine-readable and deterministic") {
     const ScriptedSession scripted({});
 
-    // Exactly one statement should have gone out during construction, and it
-    // must be the one that makes results machine-readable at all.
-    REQUIRE(scripted.transport->sent().size() == 1);
-    CHECK(scripted.transport->sent().front() == "display2d:false$\n");
+    const std::string sent = scripted.transport->sentText();
+    // Without these three the protocol does not work at all: display2d turns
+    // off ASCII art, nolabels stops an unbounded leak of %i/%o labels, and
+    // errormsg keeps error text out of the stream.
+    CHECK(sent.find("display2d:false$") != std::string::npos);
+    CHECK(sent.find("nolabels:true$") != std::string::npos);
+    CHECK(sent.find("errormsg:false$") != std::string::npos);
+
+    // And a framed probe, which is what synchronises the stream.
+    CHECK(sent.find(MaximaSession::requestFor(1, "true")) != std::string::npos);
 }
 
-TEST_CASE("a result line is stripped of its (%oN) label") {
-    ScriptedSession scripted({reply(2, "2*x+3")});
-    CHECK(scripted.session->evaluate("diff(x^2+3*x+2, x);") == "2*x+3");
+TEST_CASE("a request carries its own correlation id") {
+    ScriptedSession scripted({frame(2, true, "((MPLUS SIMP) 1 $X)")});
+    scripted.session->eval("x+1");
+
+    // Request 1 was the handshake probe, so the first real request is 2.
+    CHECK(scripted.transport->sent().back()
+          == MaximaSession::requestFor(2, "x+1") + "\n");
 }
 
-TEST_CASE("the statement reaches the transport verbatim, newline-terminated") {
-    ScriptedSession scripted({reply(2, "42")});
-    scripted.session->evaluate("subst(5, x, x^2+3*x+2);");
-    CHECK(scripted.transport->sent().back() == "subst(5, x, x^2+3*x+2);\n");
-}
-
-TEST_CASE("a statement producing no output yields an empty string") {
-    // A `$`-terminated statement prints nothing between the two prompts.
-    ScriptedSession scripted({prompt(3)});
-    CHECK(scripted.session->evaluate("a: 7$") == "");
-}
-
-TEST_CASE("output split across several reads is reassembled") {
-    // The transport hands back short reads; the session must accumulate until
-    // it sees the prompt marker rather than assuming one read per reply.
-    ScriptedSession scripted({"(%o2) 2*x*sin(x)", "+(2-x^2)*cos(x)\n", prompt(3)});
-    CHECK(scripted.session->evaluate("integrate(x^2*sin(x), x);")
-          == "2*x*sin(x)+(2-x^2)*cos(x)");
-}
-
-TEST_CASE("a multi-line result keeps its interior newlines") {
-    ScriptedSession scripted({reply(2, "first\nsecond")});
-    CHECK(scripted.session->evaluate("something;") == "first\nsecond");
-}
-
-TEST_CASE("text with no (%oN) label is passed through unchanged") {
-    // Maxima error text arrives without a result label. Callers need to see it
-    // rather than have it silently discarded.
+TEST_CASE("a successful reply yields the internal s-expression") {
     ScriptedSession scripted(
-        {"integrate: variable must not be a number; found: 5\n" + prompt(3)});
-    CHECK(scripted.session->evaluate("integrate(x, 5);")
-          == "integrate: variable must not be a number; found: 5");
+        {frame(2, true, "((MTIMES SIMP) 2 $X ((%SIN SIMP) $X))")});
+
+    const mx::Reply reply = scripted.session->eval("2*x*sin(x)");
+    CHECK(reply.ok);
+    CHECK(reply.value == "((MTIMES SIMP) 2 $X ((%SIN SIMP) $X))");
+    CHECK(reply.reason.empty());
+}
+
+TEST_CASE("a Maxima error is a value, not an exception") {
+    // Failing to integrate something is an ordinary outcome. Only
+    // infrastructure failures throw.
+    ScriptedSession scripted(
+        {frame(2, false, "NIL",
+               "integrate: variable must not be a number; found: 5")});
+
+    const mx::Reply reply = scripted.session->eval("integrate(x, 5)");
+    CHECK_FALSE(reply.ok);
+    CHECK(reply.reason == "integrate: variable must not be a number; found: 5");
+    CHECK(reply.value.empty());
+}
+
+TEST_CASE("exact rationals survive the round trip") {
+    // The whole reason for using the internal form rather than display output:
+    // 1/3 stays a rational instead of becoming 0.333...
+    ScriptedSession scripted({frame(2, true, "((RAT SIMP) 11 15)")});
+    CHECK(scripted.session->eval("1/3 + 2/5").value == "((RAT SIMP) 11 15)");
+}
+
+TEST_CASE("prompts and banner text between frames are discarded") {
+    ScriptedSession scripted({noise(5) + "\n" + frame(2, true, "42")});
+    CHECK(scripted.session->eval("6*7").value == "42");
+}
+
+TEST_CASE("a reply split across several reads is reassembled") {
+    // The transport hands back short reads; the session must accumulate until
+    // the closing delimiter arrives rather than assume one read per reply.
+    const std::string whole = frame(2, true, "((MPLUS SIMP) 1 $X)");
+    const size_t third = whole.size() / 3;
+
+    ScriptedSession scripted({whole.substr(0, third),
+                              whole.substr(third, third),
+                              whole.substr(2 * third)});
+    CHECK(scripted.session->eval("x+1").value == "((MPLUS SIMP) 1 $X)");
+}
+
+TEST_CASE("a delimiter split across two reads is still recognised") {
+    // The nastiest reassembly case: the closing delimiter itself straddles a
+    // read boundary, so neither half contains it.
+    const std::string whole = frame(2, true, "7");
+    const size_t cut = whole.size() - 4;
+
+    ScriptedSession scripted({whole.substr(0, cut), whole.substr(cut)});
+    CHECK(scripted.session->eval("7").value == "7");
+}
+
+TEST_CASE("a stale frame from an earlier request is skipped") {
+    // This is what the correlation id buys. Without it a leftover reply would
+    // be returned as the answer to the wrong question — silently, and with a
+    // perfectly plausible-looking value.
+    ScriptedSession scripted({frame(1, true, "$STALE_ANSWER")
+                              + frame(2, true, "$CORRECT_ANSWER")});
+
+    CHECK(scripted.session->eval("something").value == "$CORRECT_ANSWER");
+}
+
+TEST_CASE("a value containing delimiter-like text is not truncated") {
+    // Maxima strings are printed readably, so a result can legitimately contain
+    // text resembling a delimiter for *another* id. Only this request's own id
+    // may terminate its frame.
+    const std::string tricky = R"("contains @@E99@@ and @@B3@@ inside")";
+    ScriptedSession scripted({frame(2, true, tricky)});
+    CHECK(scripted.session->eval("\"...\"").value == tricky);
+}
+
+TEST_CASE("a closing delimiter with no opening one is a protocol error") {
+    ScriptedSession scripted({MaximaSession::frameEnd(2) + "\n"});
+    CHECK_THROWS_AS(scripted.session->eval("x"), mx::KernelError);
+}
+
+TEST_CASE("a frame missing its field separators is a protocol error") {
+    ScriptedSession scripted({MaximaSession::frameBegin(2) + "T"
+                              + MaximaSession::frameEnd(2)});
+    CHECK_THROWS_AS(scripted.session->eval("x"), mx::KernelError);
 }
 
 TEST_CASE("a session whose child has died reports a KernelError") {
@@ -108,10 +177,18 @@ TEST_CASE("a session whose child has died reports a KernelError") {
     // signal a real transport gives when the child exits.
     ScriptedSession scripted({});
     REQUIRE(scripted.transport->scriptExhausted());
-    CHECK_THROWS_AS(scripted.session->evaluate("1+1;"), mx::KernelError);
+    CHECK_THROWS_AS(scripted.session->eval("1+1"), mx::KernelError);
 }
 
 TEST_CASE("a null transport is rejected rather than dereferenced") {
     CHECK_THROWS_AS(MaximaSession(nullptr, mx::Config{}), mx::KernelError);
 }
 
+TEST_CASE("a failed handshake is reported at construction") {
+    // If the session cannot be made machine-readable there is no point letting
+    // the caller discover that one query later.
+    auto transport = std::make_unique<FakeTransport>(
+        std::vector<std::string>{frame(1, false, "NIL", "something went wrong")});
+    CHECK_THROWS_AS(MaximaSession(std::move(transport), mx::Config{}),
+                    mx::KernelError);
+}

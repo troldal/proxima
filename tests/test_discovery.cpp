@@ -10,11 +10,13 @@
 #include <mx/config.hpp>
 #include <mx/errors.hpp>
 
+#include <cstdint>
 #include <filesystem>
 #include <initializer_list>
 #include <map>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 using mx::detail::candidateRoots;
@@ -192,7 +194,7 @@ TEST_CASE("discovery with nothing configured names the locations it tried") {
     }
 }
 
-TEST_CASE("launch command wires the core and the prompt markers") {
+TEST_CASE("launch command wires the core and installs the Lisp helper") {
     const std::vector<std::string> argv
         = MaximaSession::launchCommand(fakeInstall());
 
@@ -204,9 +206,47 @@ TEST_CASE("launch command wires the core and the prompt markers") {
     CHECK(text.find("--noinform") != std::string::npos);
     CHECK(text.find("--end-toplevel-options") != std::string::npos);
 
-    // The markers the protocol layer later splits on must actually be installed.
-    CHECK(text.find(MaximaSession::kPromptPrefix) != std::string::npos);
-    CHECK(text.find(MaximaSession::kPromptSuffix) != std::string::npos);
+    // The Lisp helper that does the framing must actually be installed, and it
+    // must run Maxima's toplevel afterwards.
+    CHECK(text.find("$cppsend") != std::string::npos);
+    CHECK(text.find("cl-user::run") != std::string::npos);
+}
+
+TEST_CASE("the Lisp helper's delimiters agree with the ones C++ looks for") {
+    // The format string lives in Lisp and the matching lives in C++, so they
+    // can drift apart silently — the symptom would be every reply timing out.
+    // Both sides derive from the same literal shape, and this pins that down.
+    const std::string lisp = joined(MaximaSession::launchCommand(fakeInstall()));
+
+    // The helper formats the id with ~a, so strip the id from each delimiter
+    // and look for the surrounding literal text.
+    const auto stripId = [](std::string delimiter, std::uint64_t id) {
+        const std::string idText = std::to_string(id);
+        const size_t at = delimiter.find(idText);
+        REQUIRE(at != std::string::npos);
+        return std::pair{delimiter.substr(0, at), delimiter.substr(at + idText.size())};
+    };
+
+    for (const auto &[prefix, suffix] :
+         {stripId(MaximaSession::frameBegin(7), 7),
+          stripId(MaximaSession::frameSeparator(7), 7),
+          stripId(MaximaSession::frameEnd(7), 7)}) {
+        CHECK(lisp.find(prefix + "~a" + suffix) != std::string::npos);
+    }
+}
+
+TEST_CASE("a request is wrapped so errors become values") {
+    const std::string request = MaximaSession::requestFor(42, "integrate(x, 5)");
+
+    CHECK(request.find("cppsend(42,") != std::string::npos);
+    // errcatch is what stops a Maxima error leaving the stream in an error
+    // prompt; ratdisrep keeps canonical rational (MRAT) forms from coming back.
+    CHECK(request.find("errcatch(") != std::string::npos);
+    CHECK(request.find("ratdisrep(") != std::string::npos);
+    CHECK(request.find("integrate(x, 5)") != std::string::npos);
+    // '$' rather than ';': the wrapper prints the frame itself and Maxima
+    // should print nothing of its own.
+    CHECK(request.back() == '$');
 }
 
 TEST_CASE("the heap adjustment tracks the install rather than being hard-coded") {

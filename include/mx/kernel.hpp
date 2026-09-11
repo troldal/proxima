@@ -1,9 +1,9 @@
 #pragma once
 
 #include <mx/config.hpp>
+#include <mx/reply.hpp>
 
 #include <memory>
-#include <string>
 #include <string_view>
 
 namespace mx {
@@ -18,9 +18,9 @@ class MaximaSession;
 /// single Kernel serves many queries without paying process startup each time.
 ///
 /// This is the whole public surface for now. It still speaks Maxima's own
-/// syntax and returns its result text verbatim; structured expressions arrive
-/// with the term layer (PLAN.md steps 7-9), at which point evalRaw becomes an
-/// escape hatch rather than the main entry point.
+/// syntax and hands back the text of Maxima's internal s-expressions;
+/// structured expressions arrive with the term layer (PLAN.md steps 7-9), at
+/// which point eval becomes an escape hatch rather than the main entry point.
 ///
 /// Not thread-safe. Serialisation, timeouts and transparent restart after a
 /// hang are PLAN.md step 13.
@@ -35,12 +35,14 @@ public:
     Kernel(const Kernel &) = delete;
     Kernel &operator=(const Kernel &) = delete;
 
-    /// Evaluates one Maxima statement, which must end in ';' or '$'.
+    /// Evaluates one Maxima *expression* — `integrate(x^2, x)`, with no
+    /// trailing `;` or `$`, since the expression is substituted into a wrapper
+    /// that supplies its own terminator.
     ///
-    /// Returns the text of the result, or an empty string for a statement that
-    /// produces no output (one terminated by '$'). Throws KernelError if the
-    /// session could not be reached.
-    std::string evalRaw(std::string_view statement);
+    /// A Maxima error comes back as a Reply with `ok == false` and a reason,
+    /// because failing to integrate something is an ordinary outcome. Only
+    /// infrastructure failures throw: see mx::KernelError.
+    Reply eval(std::string_view expression);
 
 private:
     std::unique_ptr<detail::MaximaSession> session_;
