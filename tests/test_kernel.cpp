@@ -5,7 +5,9 @@
 
 #include <mx/config.hpp>
 #include <mx/errors.hpp>
+#include <mx/expr.hpp>
 #include <mx/kernel.hpp>
+#include <mx/symbol.hpp>
 
 #include "wire/sexpr.hpp"
 
@@ -154,6 +156,56 @@ TEST_CASE("a live bignum survives as digits") {
     REQUIRE(value.isInteger());
     CHECK(value.digits() == "265252859812191058636308480000000");
     CHECK_FALSE(value.asInt64().has_value());
+}
+
+TEST_CASE("printed expressions are valid Maxima meaning the same thing") {
+    // Expr::str() claims to emit Maxima-compatible infix. That claim is only
+    // worth anything if Maxima agrees, so each case below is one where dropping
+    // the parentheses would still *parse* but quietly mean something else.
+    mx::Kernel maxima;
+    const mx::Symbol x("x");
+    const mx::Symbol y("y");
+
+    const auto agreesWith = [&maxima](const mx::Expr &expr,
+                                      const std::string &reference) {
+        const mx::Reply printed = maxima.eval("ratsimp(" + expr.str() + ")");
+        const mx::Reply expected = maxima.eval("ratsimp(" + reference + ")");
+        REQUIRE_MESSAGE(printed.ok, expr.str() << " -> " << printed.reason);
+        REQUIRE(expected.ok);
+        return printed.value == expected.value;
+    };
+
+    // -3^2 is -9 in Maxima; the base needs its own parentheses.
+    CHECK(agreesWith(pow(mx::Expr(-3), 2), "9"));
+    // 3/2^2 is 3/4; (3/2)^2 is 9/4.
+    CHECK(agreesWith(pow(mx::Expr::rational(3, 2), 2), "9/4"));
+    // ^ is right-associative, so x^2^3 is x^8.
+    CHECK(agreesWith(pow(pow(mx::Expr(x), 2), 3), "x^6"));
+    // x+1*y is x+y.
+    CHECK(agreesWith((mx::Expr(x) + 1) * mx::Expr(y), "(x+1)*y"));
+    // x*-2 is not valid Maxima at all, so this one tests that it parses.
+    CHECK(agreesWith(mx::Expr::mul({mx::Expr(x), mx::Expr(-2)}), "-2*x"));
+    // A leading negative factor needs no parentheses, and must not gain any
+    // that change its meaning.
+    CHECK(agreesWith(-mx::Expr(x) + 1, "1-x"));
+    CHECK(agreesWith(mx::Expr(x) - 3 * mx::Expr(x), "-2*x"));
+    // Exact division stays exact rather than becoming a float.
+    CHECK(agreesWith(mx::Expr(1) / mx::Expr(3), "1/3"));
+    // Relations and uninterpreted applications survive the trip.
+    CHECK(agreesWith(mx::Expr::function("bessel_j", {mx::Expr(0), mx::Expr(x)}),
+                     "bessel_j(0, x)"));
+}
+
+TEST_CASE("an oversized integer round-trips through Opaque") {
+    // 30! does not fit in mx::Integer, so it is carried as Opaque text. It must
+    // still print as something Maxima reads back as the same number.
+    mx::Kernel maxima;
+    const mx::Expr bignum
+        = mx::Expr::opaque("265252859812191058636308480000000");
+
+    const mx::Reply reply = maxima.eval("is(" + bignum.str() + " = 30!)");
+    REQUIRE(reply.ok);
+    CHECK(reply.value == "T");
 }
 
 TEST_CASE("two kernels are independent") {

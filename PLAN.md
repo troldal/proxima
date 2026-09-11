@@ -339,20 +339,58 @@ mystifyingly.
 ### Step 8. The `Expr` value type
 
 ```
-Kind: Integer | Rational | Real | Symbol | Add | Mul | Pow | Function | Opaque
+Kind: Integer | Rational | Real | Symbol | Add | Mul | Pow | Function
+      | Relation | Opaque
 ```
 
 Immutable, `shared_ptr<const Node>`, hash cached at construction. Operators
 `+ - * /`, unary minus, `pow()`, and a `str()` infix printer.
 
-**Open decision — integer type.** To keep this step dependency-free, define
-`using Integer = std::int64_t;` in one header and overflow-check at
-construction, falling back to `Opaque` holding the digit string. One typedef to
-swap for Boost.Multiprecision or GMP later. Flagged because Maxima *will* hand
-back bignums as soon as anything interesting is factored.
+**Integer type — decided: `int64_t` with an `Opaque` fallback.** No
+multiprecision dependency. A value that does not fit becomes an `Opaque` node
+carrying its digits: still exact, still printable, still round-trips through
+Maxima, just not open to arithmetic on this side. `30!` is the ordinary case,
+and an integration test confirms it satisfies `is(<printed> = 30!)` in Maxima.
+Widening later means changing the `mx::Integer` alias and the two places that
+check for overflow.
 
-- *Compiles:* yes; nothing consumes it yet.
-- *Verify:* construction and hashing tests, no kernel.
+The same escape hatch covers the one rational that cannot be normalised:
+negating `INT64_MIN` would overflow, so `rational(INT64_MIN, -1)` becomes
+`Opaque` rather than wrapping silently.
+
+**Representation — decided: a tagged struct**, not `std::variant` and not a
+class hierarchy. No vtable and no visitor machinery, so reading a tree — the
+thing this library does constantly — is a switch on an enum. It wastes a few
+bytes per node on fields the kind does not use, which is a deliberate trade
+against recursive-variant and cross-casting complexity. `Node` never appears in
+the public API, so the representation can change without breaking anyone.
+
+**Open question 3 — resolved: `operator==` is structural equality returning
+`bool`.** `eq(a, b)` builds an equation. This follows SymPy rather than GiNaC,
+and for SymPy's reason: an `==` returning something other than `bool` silently
+breaks `std::find`, `std::unordered_map`, and every test assertion. Equations
+are rare enough to name explicitly; container lookups are not. Tests exercise
+`Expr` in `unordered_set`, `unordered_map` and `std::find` to keep that honest.
+
+Structural means what it says: nothing is simplified and nothing consults
+Maxima, so `(x+1)^2` and `x^2+2x+1` are different expressions, and until the
+normaliser (step 10) orders operands, so are `x+1` and `1+x`.
+
+**Relations are a typed node**, not `Function("=", …)`, because `solve` has to
+destructure them and step 11 should not be comparing head strings to `"="`.
+Maxima's spelling of inequality is `#`, not `!=`.
+
+Construction applies only two structural rules: a sum or product of one operand
+is that operand, of none is the identity. Exact division of exact integers gives
+a `Rational`, and negating a literal gives a literal — both so that the type is
+usable before the normaliser exists. Everything else is step 10.
+
+- *Compiles:* yes.
+- *Verify:* construction, reduction, equality and hashing tests, no kernel. Plus
+  an integration test that each printed expression is **valid Maxima meaning the
+  same thing**, using cases where dropping the parentheses would still parse but
+  quietly change the value: `-3^2` is `-9`, `3/2^2` is `3/4`, `x^2^3` is `x^8`,
+  `x+1*y` is `x+y`, and `x*-2` is not valid Maxima at all.
 
 ### Step 9. Translation, both directions
 
@@ -527,12 +565,11 @@ quoting and environment-block tests), 7 integration on both.
 
 ## Open questions
 
-1. **Integer type** (step 8) — `int64_t` with an `Opaque` fallback now, or take
-   the Boost.Multiprecision / GMP dependency up front?
+1. ~~**Integer type**~~ — resolved in step 8: `int64_t` with an `Opaque`
+   fallback, no multiprecision dependency.
 2. ~~**POSIX transport**~~ — done, see step 5b above.
-3. **`operator==`** — return `Equation` (CAS-idiomatic, ergonomic, but breaks
-   `std::find` and generic algorithms) or keep it boolean and require
-   `eq(lhs, rhs)` to build equations?
+3. ~~**`operator==`**~~ — resolved in step 8: structural equality returning
+   `bool`, with `eq(lhs, rhs)` building equations.
 4. **Offline `parse()`** — is there a requirement to construct expressions from
    strings without a running kernel? If so, a hand-written Pratt parser
    (~250 lines) is needed; otherwise delegation to Maxima is sufficient.
