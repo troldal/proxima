@@ -86,7 +86,7 @@ bool negativeTerm(const Expr &term, std::string &rendered) {
         const Expr positive = -term.arg(0);
 
         // -1*x reads better as just x, with the sign carried by the operator.
-        if (positive.is(Kind::Integer) && positive.integerValue() == 1) {
+        if (positive.is(Kind::Integer) && positive.integerValue() == Integer(1)) {
             rendered = wrap(Expr::mul(std::move(factors)), kAdd);
         } else {
             factors.insert(factors.begin(), positive);
@@ -100,11 +100,11 @@ bool negativeTerm(const Expr &term, std::string &rendered) {
 std::string render(const Expr &expr, int context) {
     switch (expr.kind()) {
     case Kind::Integer:
-        return std::to_string(expr.integerValue());
+        return expr.integerValue().toString();
 
     case Kind::Rational:
-        return std::to_string(expr.numerator()) + "/"
-               + std::to_string(expr.denominator());
+        return expr.numerator().toString() + "/"
+               + expr.denominator().toString();
 
     case Kind::Real:
         return renderReal(expr.realValue());

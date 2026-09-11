@@ -110,26 +110,31 @@ TEST_CASE("the identities of exponentiation apply") {
     }
 }
 
-TEST_CASE("folding refuses to wrap") {
-    // Exact arithmetic that would overflow mx::Integer is abandoned rather than
-    // silently producing a wrong number. The terms simply stay unfolded.
-    constexpr mx::Integer max = std::numeric_limits<mx::Integer>::max();
+TEST_CASE("folding cannot overflow, so it never gives up") {
+    // This used to abandon the fold and leave the terms unevaluated, because
+    // the sum did not fit in 64 bits. mx::Integer is unbounded now, so the
+    // arithmetic simply happens.
+    const mx::Integer max("9223372036854775807");
 
     const Expr sum = Expr(max) + Expr(max);
-    REQUIRE(sum.kind() == Kind::Add);
-    CHECK(sum.arity() == 2);
+    REQUIRE(sum.kind() == Kind::Integer);
+    CHECK(sum.str() == "18446744073709551614");
 
     const Expr product = Expr(max) * Expr(max);
-    REQUIRE(product.kind() == Kind::Mul);
-    CHECK(product.arity() == 2);
+    REQUIRE(product.kind() == Kind::Integer);
+    CHECK(product.str() == "85070591730234615847396907784232501249");
 
-    SUBCASE("a long sum of fractions does not overflow on denominators") {
-        // Reducing after every step is what keeps this in range.
+    SUBCASE("a long sum of fractions stays exact and stays small") {
+        // Reducing after every step keeps the denominators from ballooning —
+        // which matters more now that nothing stops them.
         Expr total = Expr(0);
         for (int i = 1; i <= 40; ++i) {
-            total = total + Expr::rational(1, i);
+            total = total + Expr::rational(mx::Integer(1), mx::Integer(i));
         }
-        CHECK(total.isNumber());
+        REQUIRE(total.kind() == Kind::Rational);
+        // The 40th harmonic number, exactly, and in lowest terms.
+        CHECK(total.numerator().toString() == "2078178381193813");
+        CHECK(total.denominator().toString() == "485721041551200");
     }
 }
 

@@ -37,10 +37,14 @@ TEST_CASE("exactness is preserved") {
     CHECK(Expr::parse("1.0/3").kind() == Kind::Real);
 }
 
-TEST_CASE("an integer too large for mx::Integer is kept as text") {
+TEST_CASE("an integer of any size is read exactly") {
     const Expr big = Expr::parse("265252859812191058636308480000000");
-    CHECK(big.kind() == Kind::Opaque);
+    CHECK(big.kind() == Kind::Integer);
     CHECK(big.str() == "265252859812191058636308480000000");
+
+    // And it is a number, so arithmetic on it works rather than being
+    // deferred to Maxima.
+    CHECK((big * Expr(2)).str() == "530505719624382117272616960000000");
 }
 
 TEST_CASE("arithmetic and precedence") {

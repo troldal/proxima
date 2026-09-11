@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mx/integer.hpp>
+
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -20,17 +22,6 @@ struct Node;
 /// one directly.
 Expr makeExpr(std::shared_ptr<const Node> node);
 } // namespace detail
-
-/// The integer type exact whole numbers are held in.
-///
-/// A deliberate, and deliberately revisable, choice. Maxima produces bignums in
-/// ordinary use — `30!` is 265252859812191058636308480000000 — and those do not
-/// fit here. Rather than take a multiprecision dependency up front, a value
-/// that does not fit becomes an Opaque node carrying its digits: still exact,
-/// still printable, still round-trips through Maxima, just not open to
-/// arithmetic on this side. Widening later means changing this alias and the
-/// two places that check for overflow.
-using Integer = std::int64_t;
 
 enum class Kind {
     Integer,  ///< An exact whole number that fits in mx::Integer.
@@ -86,6 +77,9 @@ public:
                  && (!std::same_as<T, char>)
     Expr(T value) : Expr(makeInteger(static_cast<Integer>(value))) {}
 
+    /// Implicit from an exact integer of any size.
+    Expr(Integer value) : Expr(makeInteger(std::move(value))) {} // NOLINT
+
     /// Implicit from double, producing an inexact Real. Note that `Expr(0.5)`
     /// and `Expr::rational(1, 2)` are different values, as they are to any CAS.
     Expr(double value);
@@ -105,7 +99,9 @@ public:
     ///
     /// Exactness is preserved — `1/3` is a Rational, not 0.333… — and an
     /// integer too large for mx::Integer becomes an Opaque node holding its
-    /// digits rather than wrapping.
+    ///
+    /// Integers of any size are read exactly — `mx::Integer` is unbounded —
+    /// so a factorial pasted in as text is a number rather than a blob.
     ///
     /// **This parses; it does not evaluate.** `Expr::parse("5!")` is
     /// `factorial(5)` and `Expr::parse("2^3")` is `2^3`, normalised but not
@@ -132,8 +128,7 @@ public:
     static Expr relation(RelOp op, Expr lhs, Expr rhs);
 
     /// Maxima source text this library does not model. The last resort that
-    /// keeps every result representable, including integers too large for
-    /// mx::Integer.
+    /// keeps every result representable.
     static Expr opaque(std::string text);
 
     /// Builds a sum. One term returns that term; no terms returns zero.

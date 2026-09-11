@@ -133,10 +133,9 @@ double integerPower(double base, std::int32_t exponent) {
 double numericValueOf(const Expr &expr) {
     switch (expr.kind()) {
     case Kind::Integer:
-        return static_cast<double>(expr.integerValue());
+        return expr.integerValue().toDouble();
     case Kind::Rational:
-        return static_cast<double>(expr.numerator())
-               / static_cast<double>(expr.denominator());
+        return expr.numerator().toDouble() / expr.denominator().toDouble();
     default:
         return expr.realValue();
     }
@@ -293,12 +292,13 @@ public:
             // evaluation. The bound keeps the squaring loop short; beyond it
             // std::pow is the better bet anyway.
             const Expr &exponent = expr.arg(1);
-            if (exponent.is(Kind::Integer)
-                && exponent.integerValue() >= -64
-                && exponent.integerValue() <= 64) {
+            const std::optional<std::int64_t> small
+                = exponent.is(Kind::Integer) ? exponent.integerValue().toInt64()
+                                             : std::nullopt;
+            if (small && *small >= -64 && *small <= 64) {
                 append({Instruction::Op::IntegerPower,
                         static_cast<std::uint32_t>(
-                            static_cast<std::int32_t>(exponent.integerValue())),
+                            static_cast<std::int32_t>(*small)),
                         1},
                        1);
                 return;

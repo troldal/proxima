@@ -15,6 +15,7 @@ endif ()
 
 add_library(maxima_cpp
         src/core/expr.cpp
+        src/core/integer.cpp
         src/core/normalize.cpp
         src/core/numeric.cpp
         src/core/parser.cpp

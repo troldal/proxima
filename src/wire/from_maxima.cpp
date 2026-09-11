@@ -88,22 +88,22 @@ std::string decodeHead(std::string_view raw) {
 }
 
 Expr mapInteger(const SExpr &form) {
-    if (const auto value = form.asInt64()) {
-        return Expr::integer(*value);
+    // Any size: mx::Integer is unbounded, so a factorial arrives as a number
+    // rather than as a blob of text.
+    if (auto value = Integer::parse(form.digits())) {
+        return Expr::integer(std::move(*value));
     }
-    // Beyond mx::Integer. Kept exactly, as text, rather than wrapped — the
-    // fallback mx::Integer's documentation promises.
     return Expr::opaque(form.digits());
 }
 
 Expr mapRational(const SExpr &form) {
-    const auto numerator = form.at(1).asInt64();
-    const auto denominator = form.at(2).asInt64();
-    if (numerator && denominator) {
-        return Expr::rational(*numerator, *denominator);
+    auto numerator = Integer::parse(form.at(1).digits());
+    auto denominator = Integer::parse(form.at(2).digits());
+    if (numerator && denominator && !denominator->isZero()) {
+        return Expr::rational(std::move(*numerator), std::move(*denominator));
     }
-    // A rational whose parts do not fit. Parenthesised because Opaque is
-    // treated as an atom by the printer and this content is not one.
+    // Parenthesised because Opaque is treated as an atom by the printer and
+    // this content is not one.
     return Expr::opaque("(" + form.at(1).digits() + "/" + form.at(2).digits()
                         + ")");
 }

@@ -75,10 +75,33 @@ TEST_CASE("exact rationals stay exact") {
     CHECK(value.str() == "11/15");
 }
 
-TEST_CASE("an integer beyond mx::Integer is kept as text, not truncated") {
+TEST_CASE("a large integer arrives as a number, exactly") {
+    // 30!. mx::Integer is unbounded, so this is an Integer node rather than
+    // the Opaque text it used to become.
     const Expr value = mapExpr("265252859812191058636308480000000");
-    CHECK(value.kind() == Kind::Opaque);
+    CHECK(value.kind() == Kind::Integer);
     CHECK(value.str() == "265252859812191058636308480000000");
+}
+
+TEST_CASE("a rational with large parts is still a rational") {
+    // Previously this degenerated into an Opaque blob as soon as either part
+    // exceeded 64 bits, which made the result unusable for anything but
+    // printing.
+    // 31 rather than 3: 30! is divisible by 3, so that would reduce away and
+    // test the wrong thing. 31 is prime and larger than 30, so it does not.
+    const Expr value = mapExpr(
+        "((RAT SIMP) 265252859812191058636308480000000 31)");
+    CHECK(value.kind() == Kind::Rational);
+    CHECK(value.numerator().toString() == "265252859812191058636308480000000");
+    CHECK(value.denominator() == mx::Integer(31));
+
+    SUBCASE("and a reducible one is reduced") {
+        const Expr reducible = mapExpr(
+            "((RAT SIMP) 265252859812191058636308480000000 3)");
+        CHECK(reducible.numerator().toString()
+              == "88417619937397019545436160000000");
+        CHECK(reducible.denominator() == mx::Integer(1));
+    }
 }
 
 TEST_CASE("operators map to typed nodes") {

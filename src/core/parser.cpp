@@ -393,16 +393,13 @@ private:
 
     static Expr number(const Token &token) {
         if (token.isInteger) {
-            Integer value = 0;
-            const char *first = token.text.data();
-            const char *last = first + token.text.size();
-            const auto [stopped, error] = std::from_chars(first, last, value);
-            if (error == std::errc{} && stopped == last) {
-                return Expr::integer(value);
+            // Any size: mx::Integer is unbounded, so a literal factorial reads
+            // as a number rather than as opaque text.
+            if (auto value = Integer::parse(token.text)) {
+                return Expr::integer(std::move(*value));
             }
-            // Beyond mx::Integer. Kept exactly, as text — the same fallback the
-            // Maxima mapping uses for a bignum.
-            return Expr::opaque(token.text);
+            throw ParseError("malformed integer " + token.text + " at offset "
+                             + std::to_string(token.at));
         }
 
         double value = 0.0;

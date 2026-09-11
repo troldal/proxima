@@ -16,99 +16,49 @@
 namespace mx::detail {
 namespace {
 
-constexpr Integer kMin = std::numeric_limits<Integer>::min();
-constexpr Integer kMax = std::numeric_limits<Integer>::max();
-
-bool addOverflows(Integer a, Integer b, Integer &out) {
-    if (b > 0 && a > kMax - b) {
-        return true;
-    }
-    if (b < 0 && a < kMin - b) {
-        return true;
-    }
-    out = a + b;
-    return false;
-}
-
-bool mulOverflows(Integer a, Integer b, Integer &out) {
-    if (a == 0 || b == 0) {
-        out = 0;
-        return false;
-    }
-    // Handled separately because kMin has no positive counterpart.
-    if (a == -1) {
-        if (b == kMin) {
-            return true;
-        }
-        out = -b;
-        return false;
-    }
-    if (b == -1) {
-        if (a == kMin) {
-            return true;
-        }
-        out = -a;
-        return false;
-    }
-    if (a > 0 ? (b > 0 ? a > kMax / b : b < kMin / a)
-              : (b > 0 ? a < kMin / b : a < kMax / b)) {
-        return true;
-    }
-    out = a * b;
-    return false;
-}
-
-/// An exact rational accumulator that refuses to wrap.
+/// An exact rational accumulator.
+///
+/// Nothing here checks for overflow, because mx::Integer has none. Before it
+/// was unbounded this was three checked helpers and a failure path that left
+/// the terms unfolded.
 struct Exact {
-    Integer numerator = 0;
-    Integer denominator = 1;
+    Integer numerator{0};
+    Integer denominator{1};
 
-    bool add(Integer n, Integer d) {
-        Integer left = 0, right = 0, sum = 0, product = 0;
-        if (mulOverflows(numerator, d, left) || mulOverflows(n, denominator, right)
-            || addOverflows(left, right, sum)
-            || mulOverflows(denominator, d, product)) {
-            return false;
-        }
-        numerator = sum;
-        denominator = product;
+    void add(const Integer &n, const Integer &d) {
+        numerator = numerator * d + n * denominator;
+        denominator = denominator * d;
         reduce();
-        return true;
     }
 
-    bool multiply(Integer n, Integer d) {
-        Integer top = 0, bottom = 0;
-        if (mulOverflows(numerator, n, top)
-            || mulOverflows(denominator, d, bottom)) {
-            return false;
-        }
-        numerator = top;
-        denominator = bottom;
+    void multiply(const Integer &n, const Integer &d) {
+        numerator = numerator * n;
+        denominator = denominator * d;
         reduce();
-        return true;
     }
 
     void reduce() {
-        // Keeps the accumulator small, which is what stops a long sum of
-        // fractions overflowing on the denominators alone.
-        const Integer divisor = std::gcd(numerator, denominator);
-        if (divisor > 1) {
-            numerator /= divisor;
-            denominator /= divisor;
+        // Keeps the accumulator small, which matters more now that it *can*
+        // grow without bound: a long sum of fractions would otherwise carry an
+        // ever-larger product of denominators.
+        const Integer divisor = gcd(numerator, denominator);
+        if (divisor > Integer(1)) {
+            numerator = numerator / divisor;
+            denominator = denominator / divisor;
         }
     }
 
     double approx() const {
-        return static_cast<double>(numerator) / static_cast<double>(denominator);
+        return numerator.toDouble() / denominator.toDouble();
     }
 };
 
 bool isExactZero(const Expr &expr) {
-    return expr.is(Kind::Integer) && expr.integerValue() == 0;
+    return expr.is(Kind::Integer) && expr.integerValue().isZero();
 }
 
 bool isExactOne(const Expr &expr) {
-    return expr.is(Kind::Integer) && expr.integerValue() == 1;
+    return expr.is(Kind::Integer) && expr.integerValue() == Integer(1);
 }
 
 int rankOf(Kind kind) {
@@ -155,10 +105,9 @@ int compareArgs(const Expr &lhs, const Expr &rhs) {
 double approxValue(const Expr &number) {
     switch (number.kind()) {
     case Kind::Integer:
-        return static_cast<double>(number.integerValue());
+        return number.integerValue().toDouble();
     case Kind::Rational:
-        return static_cast<double>(number.numerator())
-               / static_cast<double>(number.denominator());
+        return number.numerator().toDouble() / number.denominator().toDouble();
     default:
         return number.realValue();
     }
@@ -194,15 +143,12 @@ std::vector<Expr> partitionNumbers(std::vector<Expr> &operands) {
     return numbers;
 }
 
-/// Folds sorted numeric operands into one.
-///
-/// Returns nullopt if exact arithmetic would overflow mx::Integer, in which
-/// case the caller keeps the numbers unfolded — correct, if less tidy, and far
-/// better than wrapping.
-std::optional<Expr> fold(const std::vector<Expr> &numbers, bool isProduct) {
+/// Folds sorted numeric operands into one. Always succeeds: exact arithmetic
+/// cannot fail now that mx::Integer is unbounded.
+Expr fold(const std::vector<Expr> &numbers, bool isProduct) {
     Exact exact;
     if (isProduct) {
-        exact.numerator = 1;
+        exact.numerator = Integer(1);
     }
 
     bool sawReal = false;
@@ -218,13 +164,10 @@ std::optional<Expr> fold(const std::vector<Expr> &numbers, bool isProduct) {
             }
             continue;
         }
-        const bool ok = isProduct
-                            ? exact.multiply(number.numerator(),
-                                             number.denominator())
-                            : exact.add(number.numerator(),
-                                        number.denominator());
-        if (!ok) {
-            return std::nullopt;
+        if (isProduct) {
+            exact.multiply(number.numerator(), number.denominator());
+        } else {
+            exact.add(number.numerator(), number.denominator());
         }
     }
 
@@ -248,25 +191,18 @@ std::vector<Expr> normalize(std::vector<Expr> operands, Kind kind) {
 
     std::vector<Expr> numbers = partitionNumbers(flat);
 
-    std::optional<Expr> constant;
     if (!numbers.empty()) {
-        constant = fold(numbers, isProduct);
-    }
-
-    if (constant) {
-        if (isProduct && isExactZero(*constant)) {
+        const Expr constant = fold(numbers, isProduct);
+        if (isProduct && isExactZero(constant)) {
             return {Expr::integer(0)}; // Absorbing, so nothing else matters.
         }
         const bool isIdentity
-            = isProduct ? isExactOne(*constant) : isExactZero(*constant);
+            = isProduct ? isExactOne(constant) : isExactZero(constant);
         // The identity is dropped, unless it is all that is left — `0` has to
         // remain `0`.
         if (!isIdentity || flat.empty()) {
-            flat.push_back(*constant);
+            flat.push_back(constant);
         }
-    } else {
-        // Folding overflowed; keep the numbers as they were.
-        flat.insert(flat.end(), numbers.begin(), numbers.end());
     }
 
     std::sort(flat.begin(), flat.end(),

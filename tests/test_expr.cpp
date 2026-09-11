@@ -53,22 +53,27 @@ TEST_CASE("numeric leaves") {
     }
 }
 
-TEST_CASE("integers too large for mx::Integer fall back to Opaque") {
-    // The decision this step makes concrete: no multiprecision dependency, and
-    // an oversized value is kept exactly as text rather than wrapped. 30! comes
-    // up in ordinary use, so this path is real.
-    const Expr bignum = Expr::opaque("265252859812191058636308480000000");
-    CHECK(bignum.kind() == Kind::Opaque);
+TEST_CASE("large integers are numbers, not text") {
+    // mx::Integer is unbounded, so 30! is an Integer node that arithmetic
+    // works on — it used to become Opaque text that could only be printed.
+    const Expr bignum = Expr(mx::Integer("265252859812191058636308480000000"));
+    CHECK(bignum.kind() == Kind::Integer);
     CHECK(bignum.str() == "265252859812191058636308480000000");
-    // It is still a value: comparable, hashable, printable.
-    CHECK(bignum == Expr::opaque("265252859812191058636308480000000"));
+    CHECK(bignum == Expr(mx::Integer("265252859812191058636308480000000")));
+
+    SUBCASE("and can be computed with") {
+        CHECK((bignum + Expr(1)).str() == "265252859812191058636308480000001");
+        CHECK((bignum - bignum) == Expr(0));
+    }
 }
 
-TEST_CASE("the one rational that cannot be normalised becomes Opaque") {
-    // Negating the extreme negative value would overflow, so rather than wrap
-    // silently it takes the same escape hatch bignums use.
-    constexpr mx::Integer min = std::numeric_limits<mx::Integer>::min();
-    CHECK(Expr::rational(min, -1).kind() == Kind::Opaque);
+TEST_CASE("the extreme 64-bit value is no longer a special case") {
+    // This used to become Opaque, because negating it overflowed. Nothing
+    // overflows now.
+    const Expr value = Expr::rational(mx::Integer("-9223372036854775808"),
+                                      mx::Integer(-1));
+    CHECK(value.kind() == Kind::Integer);
+    CHECK(value.str() == "9223372036854775808");
 }
 
 TEST_CASE("symbols") {

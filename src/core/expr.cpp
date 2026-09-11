@@ -94,44 +94,23 @@ Expr Expr::integer(Integer value) {
 }
 
 Expr Expr::rational(Integer numerator, Integer denominator) {
-    if (denominator == 0) {
+    if (denominator.isZero()) {
         throw Error("rational with zero denominator");
     }
 
-    // Negating the extreme negative value overflows, so the one case that
-    // cannot be normalised in mx::Integer becomes Opaque rather than silently
-    // wrapping. The same escape hatch bignums use.
-    constexpr Integer kMin = std::numeric_limits<Integer>::min();
-    if ((numerator == kMin && denominator == -1)
-        || (denominator == kMin && numerator == -1)) {
-        return opaque("9223372036854775808");
+    // No overflow cases to guard: mx::Integer is unbounded, so reduction is
+    // simply reduction. This used to need three special cases for the extreme
+    // negative value alone.
+    const Integer divisor = gcd(numerator, denominator);
+    if (!divisor.isZero()) {
+        numerator = numerator / divisor;
+        denominator = denominator / divisor;
     }
-    if (denominator == kMin || numerator == kMin) {
-        // Can still be reduced safely only if the gcd removes the extreme.
-        const Integer divisor = static_cast<Integer>(
-            std::gcd(static_cast<std::uint64_t>(numerator < 0 ? -(numerator + 1) + 1
-                                                              : numerator),
-                     static_cast<std::uint64_t>(denominator < 0
-                                                    ? -(denominator + 1) + 1
-                                                    : denominator)));
-        if (divisor <= 1) {
-            return opaque(std::to_string(numerator) + "/"
-                          + std::to_string(denominator));
-        }
-        numerator /= divisor;
-        denominator /= divisor;
-    }
-
-    const Integer divisor = std::gcd(numerator, denominator);
-    if (divisor != 0) {
-        numerator /= divisor;
-        denominator /= divisor;
-    }
-    if (denominator < 0) {
+    if (denominator.isNegative()) {
         numerator = -numerator;
         denominator = -denominator;
     }
-    if (denominator == 1) {
+    if (denominator == Integer(1)) {
         return makeInteger(numerator);
     }
 
@@ -234,7 +213,7 @@ bool Expr::isNegativeNumber() const {
     switch (node_->kind) {
     case Kind::Integer:
     case Kind::Rational:
-        return node_->integer < 0; // Denominator is always positive.
+        return node_->integer.isNegative(); // Denominator is always positive.
     case Kind::Real:
         return node_->real < 0.0;
     default:
@@ -261,7 +240,7 @@ Integer Expr::numerator() const {
 
 Integer Expr::denominator() const {
     if (node_->kind == Kind::Integer) {
-        return 1;
+        return Integer(1);
     }
     if (node_->kind != Kind::Rational) {
         wrongKind("a rational", node_->kind);
@@ -370,7 +349,7 @@ Expr operator/(const Expr &lhs, const Expr &rhs) {
     // coefficient, not a negative power. Without this the two spell the same
     // value differently and never compare equal.
     if (rhs.is(Kind::Integer) || rhs.is(Kind::Rational)) {
-        if (rhs.numerator() != 0) {
+        if (!rhs.numerator().isZero()) {
             return lhs * Expr::rational(rhs.denominator(), rhs.numerator());
         }
     } else if (rhs.is(Kind::Real) && rhs.realValue() != 0.0) {
@@ -388,10 +367,7 @@ Expr operator-(const Expr &operand) {
     // Maxima represents negation internally too.
     switch (operand.kind()) {
     case Kind::Integer:
-        if (operand.integerValue() != std::numeric_limits<Integer>::min()) {
-            return Expr::integer(-operand.integerValue());
-        }
-        break;
+        return Expr::integer(-operand.integerValue());
     case Kind::Rational:
         return Expr::rational(-operand.numerator(), operand.denominator());
     case Kind::Real:

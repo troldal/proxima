@@ -43,9 +43,10 @@ everything else. `Function(head, args)` is an *uninterpreted* application, so
 holds Maxima source for whatever is not an application at all. A result from
 Maxima is never unrepresentable.
 
-**Arithmetic is exact.** `1/3 + 2/5` is `11/15`, not `0.7333…`, and `2` is not
-`2.0`. An integer beyond `int64_t` — `30!`, say — keeps every digit as `Opaque`
-text rather than wrapping.
+**Arithmetic is exact, and unbounded.** `1/3 + 2/5` is `11/15`, not `0.7333…`,
+and `2` is not `2.0`. `mx::Integer` has no fixed width, so `30!` is a number you
+can compute with rather than a value that wraps or has to be handed back to
+Maxima. Values that fit in 64 bits never allocate.
 
 Expressions are **normalised at construction**: nested sums flattened, numeric
 terms folded, identities dropped, operands canonically ordered. So `x + 1` and

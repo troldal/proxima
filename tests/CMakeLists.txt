@@ -22,6 +22,7 @@ add_executable(mx_tests
         test_discovery.cpp
         test_expr.cpp
         test_from_maxima.cpp
+        test_integer.cpp
         test_normalize.cpp
         test_numeric.cpp
         test_ops.cpp

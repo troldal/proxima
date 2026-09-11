@@ -966,12 +966,52 @@ threads without synchronisation.
 single evaluation is more work than the evaluation. The two share one function
 table, so they cannot disagree about what `log` means.
 
+### Unbounded integers
+
+`mx::Integer` was `std::int64_t` with an `Opaque` fallback. It is now an
+arbitrary-precision integer, written here rather than taken from a
+multiprecision library: this project has no third-party dependencies, and that
+is worth more than the few hundred lines.
+
+Step 8 said widening would mean "changing the alias and the two overflow checks
+that guard it". Roughly true, and the pleasant part is how much it *removed*:
+three special cases in `Expr::rational` for the extreme negative value, the
+checked-arithmetic helpers in the normaliser, the fold's give-up path, and the
+`Opaque` fallbacks in the parser and the Maxima mapping. A rational with a
+32-digit numerator is now a rational rather than a blob.
+
+Values that fit in 64 bits are held inline and never allocate. The class
+invariant — `limbs_` is empty *exactly when* the value fits — is what makes the
+fast paths sound: an inline value and a stored one can never be equal, so they
+may be hashed and compared by separate routes.
+
+**Measured, because a change at this level pays for itself in correctness and
+can easily cost too much elsewhere.** Like for like, both Release:
+
+    building 200k expressions   188 -> 204 ms
+    parsing 50k expressions     104 -> 120 ms
+    evaluating 200k points       27 ->  27 ms
+
+An honest 13–15% on expression construction, nothing on evaluation. Two
+mistakes on the way to those numbers are worth recording. The first comparison
+showed a 9x regression and sent me optimising — it was a Debug build measured
+against a Release one. And `Integer::parse` originally ran the limb machinery
+for every literal, including "2"; a fast path for anything up to eighteen digits
+took parsing from 41% slower to 15%.
+
+The arithmetic is checked against **Maxima itself** on random values up to fifty
+digits — add, subtract, multiply, truncating divide, remainder and gcd — which
+is a far better oracle than expectations written by whoever wrote the code. Two
+of the values in those tests were wrong when hand-written, and the library was
+right both times.
+
+Only Linux caught the portability bug: constructors on `int` and `std::int64_t`
+leave `long long` ambiguous wherever `int64_t` is `long`, which is every LP64
+platform. It compiled on Windows. Constrained templates take any integral type
+now, with unsigned values above the signed range widened rather than truncated.
+
 ### Decided, but not built
 
-These are known gaps rather than open questions — the approach is settled, the
-work simply is not done. Listed here because a reader scanning this section
-should not have to reconstruct them from the step narratives.
+Nothing outstanding.
 
-8. **`mx::Integer` is 64-bit.** Values beyond it survive exactly, as `Opaque`
-   text, but arithmetic on them has to go through Maxima. Widening means
-   changing the alias and the two overflow checks that guard it.
+
