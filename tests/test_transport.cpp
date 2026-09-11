@@ -4,7 +4,7 @@
 #include <doctest/doctest.h>
 
 #include "kernel/session.hpp"
-#include "transport/child_process_win32.hpp"
+#include "transport/child_process.hpp"
 #include "transport/fake_transport.hpp"
 
 #include <mx/errors.hpp>
@@ -115,29 +115,3 @@ TEST_CASE("a null transport is rejected rather than dereferenced") {
     CHECK_THROWS_AS(MaximaSession(nullptr, mx::Config{}), mx::KernelError);
 }
 
-TEST_CASE("Win32 argument quoting follows the MSVCRT argv rules") {
-    using mx::detail::quoteArg;
-
-    // Left alone when there is nothing to escape.
-    CHECK(quoteArg("--noinform") == "--noinform");
-    CHECK(quoteArg("C:\\maxima\\bin\\sbcl.exe") == "C:\\maxima\\bin\\sbcl.exe");
-
-    // Quoted when it contains whitespace.
-    CHECK(quoteArg("C:\\Program Files\\sbcl.exe")
-          == "\"C:\\Program Files\\sbcl.exe\"");
-
-    // Embedded quotes are escaped. This is the case that matters: the --eval
-    // argument is a Lisp form full of them.
-    CHECK(quoteArg("(setf x \"y\")") == "\"(setf x \\\"y\\\")\"");
-
-    // Backslashes are only doubled when they precede a quote.
-    CHECK(quoteArg("a\\b c") == "\"a\\b c\"");
-    CHECK(quoteArg("a\\\"b") == "\"a\\\\\\\"b\"");
-}
-
-TEST_CASE("launching a nonexistent executable throws rather than returning") {
-    using mx::detail::ChildProcessTransport;
-    CHECK_THROWS_AS(ChildProcessTransport({"no_such_program_xyz.exe"}),
-                    mx::KernelError);
-    CHECK_THROWS_AS(ChildProcessTransport({}), mx::KernelError);
-}

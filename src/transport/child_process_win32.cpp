@@ -1,10 +1,18 @@
-#include "transport/child_process_win32.hpp"
+#include "transport/child_process.hpp"
+
+#include "transport/win32_process_utils.hpp"
 
 #include <mx/errors.hpp>
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+
 #include <algorithm>
-#include <cctype>
-#include <cstring>
 
 namespace mx::detail {
 
@@ -35,81 +43,7 @@ std::string quoteArg(const std::string &arg) {
     return result;
 }
 
-namespace {
-
-bool equalsIgnoreCase(std::string_view a, std::string_view b) {
-    if (a.size() != b.size()) {
-        return false;
-    }
-    for (size_t i = 0; i < a.size(); ++i) {
-        const unsigned char lhs = static_cast<unsigned char>(a[i]);
-        const unsigned char rhs = static_cast<unsigned char>(b[i]);
-        if (std::tolower(lhs) != std::tolower(rhs)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-} // namespace
-
-std::vector<char> buildEnvironmentBlock(
-    const std::vector<ChildProcessTransport::EnvOverride> &overrides) {
-    std::vector<char> block;
-    std::vector<bool> applied(overrides.size(), false);
-
-    const auto append = [&block](std::string_view entry) {
-        block.insert(block.end(), entry.begin(), entry.end());
-        block.push_back('\0');
-    };
-
-    if (const char *environment = GetEnvironmentStringsA()) {
-        for (const char *entry = environment; *entry != '\0';
-             entry += std::strlen(entry) + 1) {
-            const std::string_view text(entry);
-
-            // Entries beginning with '=' are the per-drive working directories
-            // ("=C:=C:\work"). They are not user variables and must be passed
-            // through untouched.
-            const size_t equals
-                = text.empty() ? std::string_view::npos : text.find('=', 1);
-            if (text.front() == '=' || equals == std::string_view::npos) {
-                append(text);
-                continue;
-            }
-
-            const std::string_view name = text.substr(0, equals);
-            auto override_ = std::find_if(
-                overrides.begin(), overrides.end(),
-                [&name](const auto &o) { return equalsIgnoreCase(o.first, name); });
-
-            if (override_ == overrides.end()) {
-                append(text);
-            } else {
-                applied[static_cast<size_t>(override_ - overrides.begin())] = true;
-                append(override_->first + "=" + override_->second);
-            }
-        }
-        FreeEnvironmentStringsA(const_cast<LPCH>(environment));
-    }
-
-    // Overrides that did not replace anything inherited.
-    for (size_t i = 0; i < overrides.size(); ++i) {
-        if (!applied[i]) {
-            append(overrides[i].first + "=" + overrides[i].second);
-        }
-    }
-
-    block.push_back('\0'); // Blocks are terminated by a second NUL.
-    return block;
-}
-
-ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &argv,
-                                             const std::vector<EnvOverride> &env) {
-    if (argv.empty()) {
-        throw KernelError("ChildProcessTransport requires at least an executable");
-    }
-
+std::string buildCommandLine(const std::vector<std::string> &argv) {
     std::string commandLine;
     for (const std::string &arg : argv) {
         if (!commandLine.empty()) {
@@ -117,19 +51,46 @@ ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &arg
         }
         commandLine += quoteArg(arg);
     }
+    return commandLine;
+}
+
+std::vector<char>
+buildEnvironmentBlock(const std::vector<EnvOverride> &overrides) {
+    std::vector<char> block;
+    for (const std::string &entry : mergeEnvironment(overrides)) {
+        block.insert(block.end(), entry.begin(), entry.end());
+        block.push_back('\0');
+    }
+    block.push_back('\0'); // Blocks are terminated by a second NUL.
+    return block;
+}
+
+struct ChildProcessTransport::Impl {
+    HANDLE stdinWrite = nullptr;
+    HANDLE stdoutRead = nullptr;
+    PROCESS_INFORMATION procInfo{};
+    bool closed = false;
+};
+
+ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &argv,
+                                             const std::vector<EnvOverride> &env)
+    : impl_(std::make_unique<Impl>()) {
+    if (argv.empty()) {
+        throw KernelError("ChildProcessTransport requires at least an executable");
+    }
 
     SECURITY_ATTRIBUTES sa{};
     sa.nLength = sizeof(sa);
     sa.bInheritHandle = TRUE;
 
     HANDLE childStdinRead = nullptr, childStdoutWrite = nullptr;
-    if (!CreatePipe(&childStdinRead, &stdinWrite_, &sa, 0)
-        || !CreatePipe(&stdoutRead_, &childStdoutWrite, &sa, 0)) {
+    if (!CreatePipe(&childStdinRead, &impl_->stdinWrite, &sa, 0)
+        || !CreatePipe(&impl_->stdoutRead, &childStdoutWrite, &sa, 0)) {
         throw KernelError("Failed to create pipes for child process");
     }
     // The ends we keep must not be inherited by the child.
-    SetHandleInformation(stdinWrite_, HANDLE_FLAG_INHERIT, 0);
-    SetHandleInformation(stdoutRead_, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(impl_->stdinWrite, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(impl_->stdoutRead, HANDLE_FLAG_INHERIT, 0);
 
     STARTUPINFOA si{};
     si.cb = sizeof(si);
@@ -138,6 +99,7 @@ ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &arg
     si.hStdOutput = childStdoutWrite;
     si.hStdError = childStdoutWrite;
 
+    const std::string commandLine = buildCommandLine(argv);
     std::vector<char> cmdBuf(commandLine.begin(), commandLine.end());
     cmdBuf.push_back('\0');
 
@@ -148,10 +110,10 @@ ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &arg
         envBlock = buildEnvironmentBlock(env);
     }
 
-    BOOL ok = CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr, TRUE,
-                             CREATE_NO_WINDOW,
-                             envBlock.empty() ? nullptr : envBlock.data(),
-                             nullptr, &si, &procInfo_);
+    const BOOL ok = CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr, TRUE,
+                                   CREATE_NO_WINDOW,
+                                   envBlock.empty() ? nullptr : envBlock.data(),
+                                   nullptr, &si, &impl_->procInfo);
 
     // The child owns its ends now; holding them open would keep the pipe from
     // ever reporting end-of-stream.
@@ -159,9 +121,9 @@ ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &arg
     CloseHandle(childStdoutWrite);
 
     if (!ok) {
-        CloseHandle(stdinWrite_);
-        CloseHandle(stdoutRead_);
-        stdinWrite_ = stdoutRead_ = nullptr;
+        CloseHandle(impl_->stdinWrite);
+        CloseHandle(impl_->stdoutRead);
+        impl_->stdinWrite = impl_->stdoutRead = nullptr;
         throw KernelError("Failed to start child process: " + argv.front());
     }
 }
@@ -171,28 +133,30 @@ ChildProcessTransport::~ChildProcessTransport() {
 }
 
 void ChildProcessTransport::send(std::string_view bytes) {
-    if (closed_ || !stdinWrite_) {
+    if (impl_->closed || !impl_->stdinWrite) {
         return;
     }
     DWORD written = 0;
-    WriteFile(stdinWrite_, bytes.data(), static_cast<DWORD>(bytes.size()),
+    WriteFile(impl_->stdinWrite, bytes.data(), static_cast<DWORD>(bytes.size()),
               &written, nullptr);
 }
 
 std::string ChildProcessTransport::receive(std::chrono::milliseconds timeout) {
-    if (closed_ || !stdoutRead_) {
+    if (impl_->closed || !impl_->stdoutRead) {
         return {};
     }
 
     // PeekNamedPipe rather than a bare blocking ReadFile: a blocking read on an
     // anonymous pipe cannot be abandoned, so honouring the caller's deadline
-    // means polling for availability. Step 13 replaces this with a dedicated
-    // reader thread feeding a bounded queue.
+    // means polling for availability. The POSIX transport needs no equivalent —
+    // poll() takes the deadline directly. Step 13 replaces this with a
+    // dedicated reader thread feeding a bounded queue.
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     for (;;) {
         DWORD available = 0;
-        if (!PeekNamedPipe(stdoutRead_, nullptr, 0, nullptr, &available, nullptr)) {
-            closed_ = true; // Write end gone: the child has exited.
+        if (!PeekNamedPipe(impl_->stdoutRead, nullptr, 0, nullptr, &available,
+                           nullptr)) {
+            impl_->closed = true; // Write end gone: the child has exited.
             return {};
         }
 
@@ -201,9 +165,9 @@ std::string ChildProcessTransport::receive(std::chrono::milliseconds timeout) {
             const DWORD wanted
                 = std::min<DWORD>(available, static_cast<DWORD>(sizeof(chunk)));
             DWORD bytesRead = 0;
-            if (!ReadFile(stdoutRead_, chunk, wanted, &bytesRead, nullptr)
+            if (!ReadFile(impl_->stdoutRead, chunk, wanted, &bytesRead, nullptr)
                 || bytesRead == 0) {
-                closed_ = true;
+                impl_->closed = true;
                 return {};
             }
             return std::string(chunk, bytesRead);
@@ -217,32 +181,32 @@ std::string ChildProcessTransport::receive(std::chrono::milliseconds timeout) {
 }
 
 bool ChildProcessTransport::alive() const {
-    if (closed_ || !procInfo_.hProcess) {
+    if (impl_->closed || !impl_->procInfo.hProcess) {
         return false;
     }
-    return WaitForSingleObject(procInfo_.hProcess, 0) == WAIT_TIMEOUT;
+    return WaitForSingleObject(impl_->procInfo.hProcess, 0) == WAIT_TIMEOUT;
 }
 
 void ChildProcessTransport::kill() {
-    if (procInfo_.hProcess) {
+    if (impl_->procInfo.hProcess) {
         // Give a child that has already been asked to quit a moment to leave on
         // its own, so it can flush and clean up; terminate only if it does not.
-        if (WaitForSingleObject(procInfo_.hProcess, 2000) != WAIT_OBJECT_0) {
-            TerminateProcess(procInfo_.hProcess, 0);
+        if (WaitForSingleObject(impl_->procInfo.hProcess, 2000) != WAIT_OBJECT_0) {
+            TerminateProcess(impl_->procInfo.hProcess, 0);
         }
-        CloseHandle(procInfo_.hProcess);
-        CloseHandle(procInfo_.hThread);
-        procInfo_ = PROCESS_INFORMATION{};
+        CloseHandle(impl_->procInfo.hProcess);
+        CloseHandle(impl_->procInfo.hThread);
+        impl_->procInfo = PROCESS_INFORMATION{};
     }
-    if (stdinWrite_) {
-        CloseHandle(stdinWrite_);
-        stdinWrite_ = nullptr;
+    if (impl_->stdinWrite) {
+        CloseHandle(impl_->stdinWrite);
+        impl_->stdinWrite = nullptr;
     }
-    if (stdoutRead_) {
-        CloseHandle(stdoutRead_);
-        stdoutRead_ = nullptr;
+    if (impl_->stdoutRead) {
+        CloseHandle(impl_->stdoutRead);
+        impl_->stdoutRead = nullptr;
     }
-    closed_ = true;
+    impl_->closed = true;
 }
 
 } // namespace mx::detail

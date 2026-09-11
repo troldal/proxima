@@ -1,0 +1,5 @@
+# The repository is built on both Windows and Linux, so normalise line endings
+# in the repository and let each checkout use its platform's convention.
+* text=auto eol=lf
+*.sln text eol=crlf
+*.vcxproj text eol=crlf

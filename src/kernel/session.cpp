@@ -1,7 +1,7 @@
 #include "kernel/session.hpp"
 
 #include "kernel/discovery.hpp"
-#include "transport/child_process_win32.hpp"
+#include "transport/child_process.hpp"
 
 #include <mx/errors.hpp>
 
@@ -55,7 +55,7 @@ MaximaSession::launchCommand(const MaximaInstall &install) {
     std::vector<std::string> argv{install.sbclExe.string(), "--core",
                                   install.maximaCore.string(), "--noinform"};
 
-    if (install.is64Bit) {
+    if (install.raiseDynamicSpaceSize) {
         // What maxima.bat does on 64-bit builds, and for the same reason:
         // without the larger heap, load("lapack") runs out of dynamic space.
         argv.emplace_back("--dynamic-space-size");
@@ -77,9 +77,14 @@ MaximaSession::launchEnvironment(const MaximaInstall &install,
     // longer exists.
     env.emplace_back("MAXIMA_PREFIX", toMaximaPath(install.root));
 
-    // maxima.bat sets this when the crosscompiled installer has not; SBCL needs
-    // it to locate its contribs.
+#ifdef _WIN32
+    // Windows only, and deliberately so. The Windows bundle keeps sbcl.core
+    // beside sbcl.exe and maxima.bat sets SBCL_HOME to that directory because
+    // the crosscompiled installer does not. A distribution SBCL has its home
+    // compiled in (/usr/lib/sbcl on openSUSE), which is *not* <root>/bin —
+    // overriding it there would break contrib loading rather than fix it.
     env.emplace_back("SBCL_HOME", toMaximaPath(install.root / "bin"));
+#endif
 
     if (!config.loadUserInit) {
         // Point Maxima's user directory somewhere we control so it does not

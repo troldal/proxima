@@ -10,6 +10,7 @@
 #include <mx/errors.hpp>
 #include <mx/kernel.hpp>
 
+#include <filesystem>
 #include <string>
 
 TEST_SUITE("maxima") {
@@ -47,15 +48,20 @@ TEST_CASE("the launch environment reaches the child process") {
     // This is also what keeps the user's own maxima-init.mac out of the
     // picture, so it is worth asserting rather than assuming.
     mx::Config config;
-    config.userDir = "C:\\mx_test_userdir";
+    config.userDir = std::filesystem::temp_directory_path() / "mx_test_userdir";
+
+    // Maxima reports the directory with forward slashes, which is how the
+    // launch environment exports it on both platforms.
+    const std::string expected = "\"" + config.userDir.generic_string() + "\"";
 
     mx::Kernel maxima(config);
-    CHECK(maxima.evalRaw("maxima_userdir;") == "\"C:/mx_test_userdir\"");
+    CHECK(maxima.evalRaw("maxima_userdir;") == expected);
 }
 
 TEST_CASE("an explicitly wrong Maxima root fails loudly") {
     mx::Config config;
-    config.maximaRoot = "C:\\no\\such\\maxima";
+    config.maximaRoot
+        = std::filesystem::temp_directory_path() / "no_such_maxima_install";
     CHECK_THROWS_AS(mx::Kernel{config}, mx::KernelError);
 }
 

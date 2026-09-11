@@ -393,12 +393,75 @@ Steps 1–6 take the prototype to a trustworthy wire protocol and are worth doin
 in one sitting. Steps 7–11 are the library proper. Steps 12–15 can lag behind
 real usage.
 
+## Step 5b — Linux support (done, out of original order)
+
+Taken before step 6 rather than after, because the transport is
+protocol-agnostic by construction: it moves bytes and knows nothing of prompts
+or markers. A POSIX transport written against the current protocol therefore
+keeps working unchanged when step 6 replaces the wire format, and step 6 then
+lands on both platforms at once.
+
+**Which Lisp.** On openSUSE: `maxima` plus `maxima-exec-sbcl`. SBCL compiles to
+native code where CLISP is a bytecode VM, and in a library where Maxima does all
+the mathematics the Lisp's speed *is* the performance. It also keeps one launch
+shape across both platforms — `sbcl --core … --eval …` is identical on Windows
+and Linux, where CLISP would need `-M image.mem` and `-x form` — and `sbcl`'s
+`--disable-debugger` is what step 13 assumes. CLISP's genuine advantage is
+bignum arithmetic; it does not apply to symbolic calculus. Note that
+`maxima-exec-sbcl` requires an *exact* SBCL version (`sbcl = 2.6.8-1.1`), since
+cores are locked to the runtime that dumped them.
+
+**Layout differences, all measured on openSUSE Tumbleweed:**
+
+| | Windows | Linux |
+|---|---|---|
+| runtime | `<root>/bin/sbcl.exe` | `/usr/bin/sbcl` |
+| core | `<root>/lib/maxima/<tag>/binary-sbcl/` | `/usr/lib64/maxima/5.50.0/binary-sbcl/` |
+| version tag | `branch_5_50_base_9_gf03405fbf_dirty` | `5.50.0` |
+| `SBCL_HOME` | set to `<root>/bin` | **must not be set** |
+| `--dynamic-space-size` | set on 64-bit | not set |
+| PATH separator | `;` | `:` |
+| install root | its own directory | an existing prefix (`/usr`) |
+
+`SBCL_HOME` is the trap. Upstream's `maxima.bat` sets it because the Windows
+bundle keeps `sbcl.core` beside `sbcl.exe`; a distribution SBCL has its home
+compiled in (`/usr/lib/sbcl` on openSUSE), which is *not* `<root>/bin`.
+Overriding it on Linux would break contrib loading rather than fix anything, so
+it is `#ifdef`-ed to Windows and a test asserts its absence on Unix.
+
+**What changed:**
+
+- `ChildProcessTransport` is now a pimpl, so `<windows.h>` appears in no header
+  at all. Exactly one of `child_process_win32.cpp` / `child_process_posix.cpp`
+  is compiled.
+- The POSIX transport uses `poll()`, which takes the deadline directly — no
+  polling loop and no sleep, unlike the Windows side, where a blocking read on
+  an anonymous pipe cannot be abandoned.
+- A failed `exec` is reported synchronously through a close-on-exec status pipe,
+  matching `CreateProcess`'s behaviour, rather than surfacing later as a child
+  that mysteriously exits with 127.
+- Environment merging moved to `mergeEnvironment`, shared but **not** uniform:
+  case-insensitive name matching on Windows, case-sensitive on POSIX, because
+  that is how the two platforms actually compare variable names.
+- Discovery gained `lib64`, the platform's PATH separator, `sbcl` vs
+  `sbcl.exe`, and Unix prefixes (`/usr/local` before `/usr`, plus `/opt/maxima*`).
+
+`quoteArg` turned out to be unnecessary on POSIX: `execve` takes the array
+directly. Step 4's choice to pass **argv as a vector rather than a command-line
+string** is what made that free.
+
+`CMakePresets.json` provides `windows`, `linux` and `wsl` presets; the `wsl` one
+keeps the build tree on the Linux filesystem, since building under `/mnt/c`
+crosses the 9P bridge for every file operation.
+
+Tests: 32 Maxima-free on Windows, 29 on Linux (the difference is the Win32
+quoting and environment-block tests), 7 integration on both.
+
 ## Open questions
 
 1. **Integer type** (step 8) — `int64_t` with an `Opaque` fallback now, or take
    the Boost.Multiprecision / GMP dependency up front?
-2. **POSIX transport** — Windows only initially, or build `sbcl_posix.cpp`
-   alongside `sbcl_win32.cpp` from the start?
+2. ~~**POSIX transport**~~ — done, see step 5b above.
 3. **`operator==`** — return `Equation` (CAS-idiomatic, ergonomic, but breaks
    `std::find` and generic algorithms) or keep it boolean and require
    `eq(lhs, rhs)` to build equations?

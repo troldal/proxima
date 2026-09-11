@@ -1,0 +1,109 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 22,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "windows",
+      "inherits": "base",
+      "displayName": "Windows",
+      "description": "Native Windows build; uses the Win32 child-process transport.",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "linux",
+      "inherits": "base",
+      "displayName": "Linux",
+      "description": "Native Linux build; uses the POSIX child-process transport.",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "wsl",
+      "inherits": "linux",
+      "displayName": "Linux (WSL)",
+      "description": "Same build as `linux`, but with the build tree kept on the Linux filesystem. Building into a directory under /mnt/c is markedly slower, since every file operation crosses the 9P filesystem bridge to Windows.",
+      "binaryDir": "/tmp/maxima_cpp-build/${presetName}"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows",
+      "configurePreset": "windows"
+    },
+    {
+      "name": "linux",
+      "configurePreset": "linux"
+    },
+    {
+      "name": "wsl",
+      "configurePreset": "wsl"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows",
+      "inherits": "base",
+      "configurePreset": "windows"
+    },
+    {
+      "name": "linux",
+      "inherits": "base",
+      "configurePreset": "linux"
+    },
+    {
+      "name": "wsl",
+      "inherits": "base",
+      "configurePreset": "wsl"
+    },
+    {
+      "name": "windows-no-maxima",
+      "inherits": "base",
+      "configurePreset": "windows",
+      "displayName": "Windows, excluding tests that need Maxima",
+      "filter": {
+        "exclude": {
+          "label": "maxima"
+        }
+      }
+    },
+    {
+      "name": "linux-no-maxima",
+      "inherits": "base",
+      "configurePreset": "linux",
+      "displayName": "Linux, excluding tests that need Maxima",
+      "filter": {
+        "exclude": {
+          "label": "maxima"
+        }
+      }
+    }
+  ]
+}

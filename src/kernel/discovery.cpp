@@ -11,6 +11,19 @@ namespace {
 
 namespace fs = std::filesystem;
 
+#ifdef _WIN32
+constexpr const char *kSbclName = "sbcl.exe";
+constexpr char kSearchPathSeparator = ';';
+#else
+constexpr const char *kSbclName = "sbcl";
+constexpr char kSearchPathSeparator = ':';
+#endif
+
+// Where a distribution may place the Lisp images. Debian and Windows use
+// "lib"; openSUSE, Fedora and other multilib layouts use "lib64". Both are
+// tried everywhere: the one that does not apply simply will not exist.
+constexpr const char *kLibDirNames[] = {"lib64", "lib"};
+
 bool isRegularFile(const fs::path &p) {
     std::error_code ec;
     return fs::is_regular_file(p, ec);
@@ -32,12 +45,12 @@ std::vector<fs::path> sortedChildren(const fs::path &dir) {
     return children;
 }
 
-/// Splits a PATH-style variable on ';'.
+/// Splits a PATH-style variable on the platform's separator.
 std::vector<fs::path> splitSearchPath(const std::string &value) {
     std::vector<fs::path> entries;
     size_t start = 0;
     while (start <= value.size()) {
-        const size_t end = value.find(';', start);
+        const size_t end = value.find(kSearchPathSeparator, start);
         const std::string piece
             = value.substr(start, end == std::string::npos ? std::string::npos
                                                            : end - start);
@@ -52,21 +65,17 @@ std::vector<fs::path> splitSearchPath(const std::string &value) {
     return entries;
 }
 
-/// Locates maxima.core under <root>/lib, preferring the documented layout.
+/// Locates maxima.core under <root>/lib64 or <root>/lib, preferring the
+/// documented layout.
 ///
 /// Returns the core path and the version tag naming its directory.
 std::optional<std::pair<fs::path, std::string>>
 findCore(const fs::path &root) {
-    const fs::path libDir = root / "lib";
-    if (!isDirectory(libDir)) {
-        return std::nullopt;
-    }
-
-    // The documented layout: <root>/lib/maxima/<tag>/binary-sbcl/maxima.core.
     // Several version tags can coexist; take the last by name so the choice is
     // deterministic rather than dependent on directory order.
-    const fs::path packageDir = libDir / "maxima";
-    if (isDirectory(packageDir)) {
+    const auto newestCoreIn
+        = [](const fs::path &packageDir) -> std::optional<
+                                             std::pair<fs::path, std::string>> {
         const std::vector<fs::path> versions = sortedChildren(packageDir);
         for (auto it = versions.rbegin(); it != versions.rend(); ++it) {
             const fs::path core = *it / "binary-sbcl" / "maxima.core";
@@ -74,19 +83,32 @@ findCore(const fs::path &root) {
                 return std::pair{core, it->filename().string()};
             }
         }
-    }
+        return std::nullopt;
+    };
 
-    // Fallback for a non-standard package name, still bounded to <root>/lib
-    // rather than walking the whole installation.
-    for (const fs::path &package : sortedChildren(libDir)) {
-        if (!isDirectory(package)) {
+    for (const char *libName : kLibDirNames) {
+        const fs::path libDir = root / libName;
+        if (!isDirectory(libDir)) {
             continue;
         }
-        const std::vector<fs::path> versions = sortedChildren(package);
-        for (auto it = versions.rbegin(); it != versions.rend(); ++it) {
-            const fs::path core = *it / "binary-sbcl" / "maxima.core";
-            if (isRegularFile(core)) {
-                return std::pair{core, it->filename().string()};
+
+        // The documented layout:
+        // <root>/lib[64]/maxima/<tag>/binary-sbcl/maxima.core
+        const fs::path packageDir = libDir / "maxima";
+        if (isDirectory(packageDir)) {
+            if (auto core = newestCoreIn(packageDir)) {
+                return core;
+            }
+        }
+
+        // Fallback for a non-standard package name, still bounded to the lib
+        // directory rather than walking the whole installation.
+        for (const fs::path &package : sortedChildren(libDir)) {
+            if (!isDirectory(package)) {
+                continue;
+            }
+            if (auto core = newestCoreIn(package)) {
+                return core;
             }
         }
     }
@@ -141,6 +163,9 @@ std::vector<fs::path> candidateRoots(const Config &config, const EnvLookup &env)
 
 std::vector<fs::path> knownInstallRoots() {
     std::vector<fs::path> roots;
+
+#ifdef _WIN32
+    // Windows installs into a versioned directory of its own.
     const fs::path searchIn[] = {"C:\\", "C:\\Program Files",
                                  "C:\\Program Files (x86)"};
     for (const fs::path &parent : searchIn) {
@@ -153,6 +178,23 @@ std::vector<fs::path> knownInstallRoots() {
     }
     // Newest-looking last-by-name first, so 5.50 beats 5.47.
     std::reverse(roots.begin(), roots.end());
+#else
+    // On Unix a distribution package puts Maxima under an existing prefix
+    // rather than a directory of its own, so the prefixes themselves are the
+    // candidates. /usr/local first: a hand-built Maxima there is a deliberate
+    // choice and should win over the distribution's.
+    roots.emplace_back("/usr/local");
+    roots.emplace_back("/usr");
+
+    // Self-contained installs under /opt still get their own directory.
+    for (const fs::path &child : sortedChildren("/opt")) {
+        const std::string name = child.filename().string();
+        if (name.rfind("maxima", 0) == 0 || name.rfind("Maxima", 0) == 0) {
+            roots.push_back(child);
+        }
+    }
+#endif
+
     return roots;
 }
 
@@ -164,7 +206,7 @@ std::optional<MaximaInstall> inspectRoot(const fs::path &root) {
     MaximaInstall install;
     install.root = root;
 
-    install.sbclExe = root / "bin" / "sbcl.exe";
+    install.sbclExe = root / "bin" / kSbclName;
     if (!isRegularFile(install.sbclExe)) {
         return std::nullopt;
     }
@@ -176,9 +218,17 @@ std::optional<MaximaInstall> inspectRoot(const fs::path &root) {
     install.maximaCore = std::move(core->first);
     install.versionTag = std::move(core->second);
 
-    // Upstream's own 64-bit test, reproduced so the dynamic-space-size
+#ifdef _WIN32
+    // Upstream's maxima.bat raises SBCL's dynamic space on 64-bit builds so
+    // that load("lapack") works, detecting them by this DLL. Reproduced so the
     // adjustment is applied under exactly the same conditions.
-    install.is64Bit = isRegularFile(root / "bin" / "libgcc_s_seh-1.dll");
+    install.raiseDynamicSpaceSize
+        = isRegularFile(root / "bin" / "libgcc_s_seh-1.dll");
+#else
+    // The Unix launcher leaves the heap alone, exposing it through
+    // MAXIMA_LISP_OPTIONS instead. Match that rather than invent a default.
+    install.raiseDynamicSpaceSize = false;
+#endif
 
     return install;
 }

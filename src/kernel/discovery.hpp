@@ -13,18 +13,20 @@ namespace mx::detail {
 
 /// A validated Maxima installation: everything needed to launch it.
 struct MaximaInstall {
-    /// Installation prefix, e.g. C:\maxima-5.50.0
+    /// Installation prefix: C:\maxima-5.50.0 on Windows, /usr on a Unix
+    /// distribution package.
     std::filesystem::path root;
-    /// <root>/bin/sbcl.exe
+    /// <root>/bin/sbcl[.exe]
     std::filesystem::path sbclExe;
-    /// <root>/lib/maxima/<tag>/binary-sbcl/maxima.core
+    /// <root>/lib[64]/maxima/<tag>/binary-sbcl/maxima.core
     std::filesystem::path maximaCore;
-    /// The <tag> above, e.g. "branch_5_50_base_9_gf03405fbf_dirty".
+    /// The <tag> above: "branch_5_50_base_9_gf03405fbf_dirty" on the Windows
+    /// installer, plain "5.50.0" on a distribution package.
     std::string versionTag;
-    /// True when this looks like a 64-bit build, which upstream's maxima.bat
-    /// detects by the presence of libgcc_s_seh-1.dll and responds to by raising
-    /// SBCL's dynamic space size so that load("lapack") works.
-    bool is64Bit = false;
+    /// Whether to pass --dynamic-space-size, which upstream's maxima.bat does
+    /// on 64-bit Windows builds so that load("lapack") works. The Unix launcher
+    /// does not, leaving it to MAXIMA_LISP_OPTIONS.
+    bool raiseDynamicSpaceSize = false;
 };
 
 /// Reads an environment variable; absent means unset.
