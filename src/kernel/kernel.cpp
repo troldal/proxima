@@ -19,6 +19,19 @@ Reply Kernel::eval(std::string_view expression) {
     return session_->eval(expression);
 }
 
+Reply Kernel::evalPure(std::string_view expression) {
+    return session_->evalPure(expression);
+}
+
+void Kernel::invalidateCache() {
+    session_->invalidateCache();
+}
+
+Kernel::CacheStats Kernel::cacheStats() const {
+    const detail::MaximaSession::CacheStats stats = session_->cacheStats();
+    return {stats.hits, stats.misses, stats.entries};
+}
+
 std::uint64_t Kernel::remember(std::string statement) {
     return session_->remember(std::move(statement));
 }

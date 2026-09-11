@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <filesystem>
 
 namespace mx {
@@ -33,6 +34,14 @@ struct Config {
     /// timeout leave recovery unable to run because the very deadline that was
     /// just exceeded also governs the restart.
     std::chrono::milliseconds startupTimeout{std::chrono::seconds{30}};
+
+    /// How many replies to remember.
+    ///
+    /// A round trip costs milliseconds and a cache hit costs nanoseconds, and
+    /// symbolic work asks the same questions repeatedly — the same derivative
+    /// while searching, the same subexpression from two callers. Zero disables
+    /// caching entirely.
+    std::size_t cacheEntries = 4096;
 
     /// Whether to let Maxima load the user's maxima-init.mac at startup.
     ///

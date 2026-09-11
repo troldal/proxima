@@ -17,7 +17,11 @@ namespace {
 /// below is a one-line wrapper around this, which is what keeps the dispatch
 /// layer from accumulating protocol knowledge.
 std::expected<Expr, Failure> evaluate(Kernel &kernel, const std::string &source) {
-    const Reply reply = kernel.eval(source);
+    // evalPure, not eval: every operation here is a question rather than an
+    // instruction, so the answer can be remembered. The promise that goes with
+    // evalPure is exactly what these functions are — nothing below assigns,
+    // assumes or defines anything.
+    const Reply reply = kernel.evalPure(source);
     if (!reply.ok) {
         return std::unexpected(Failure{reply.reason});
     }

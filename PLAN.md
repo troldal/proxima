@@ -657,9 +657,48 @@ deadline, so the thread would buy no cancellation either.
 
 ### Step 14. Memo cache
 
-LRU keyed on `(operation, argument hashes, context hash)` plus a Maxima version
-stamp. Nearly free given immutable hashed expressions, and symbolic workloads
-re-ask the same questions constantly.
+An LRU of replies, sized by `Config::cacheEntries` (4096; zero disables). A
+round trip costs milliseconds and a hit costs nanoseconds, and symbolic work
+asks the same questions repeatedly.
+
+**Keyed on the Maxima source text**, not on `(operation, argument hashes)` as
+originally sketched. The two are equivalent here, because the source is rendered
+from canonical expressions: two calls that should share an answer produce
+identical text, and two that should not cannot. Keying on text is simpler and
+also catches repetition the operation layer cannot see — the same subexpression
+arriving from two different callers.
+
+#### Invalidation is the part that has to be right
+
+A cache that returns a stale answer is a correctness bug; a cache emptied too
+eagerly is merely slower. So the rule is to assume the worst:
+
+- **Any `Kernel::eval` discards the cache.** That entry point can evaluate
+  anything, and nothing in the text of `a: 7` marks it as an instruction rather
+  than a question.
+- **`Kernel::evalPure` is the cached path**, and carries an explicit promise:
+  the expression only asks. Every operation in `ops.hpp` satisfies it.
+- **Adding or dropping an assumption discards the cache**, through the same
+  `remember`/`forget` calls `mx::Context` already made for the replay journal.
+  That one matters most: `sqrt(x^2)` is `abs(x)` until `x > 0` is assumed and
+  `x` afterwards, so a cache surviving the assumption would keep handing back
+  `abs(x)` — confidently, and wrongly. A test asserts exactly that, in both
+  directions.
+
+Failures are cached too. "Maxima cannot integrate this" is as stable an answer
+as any other, and re-asking costs the same round trip.
+
+**Deviation: no Maxima version stamp in the key.** The plan called for one. It
+earns its place only in a cache that outlives the process — an in-memory cache
+belongs to one kernel running one Maxima, so the version cannot vary within it.
+Adding it would mean an extra startup query and re-recording the scripted
+transport tests, for nothing. Anyone persisting this cache must add it.
+
+- *Verify:* the LRU on its own (eviction order, replacement, zero capacity),
+  then against a real kernel: a repeated question is a hit; a failure is a hit;
+  an assumption entering *and* leaving scope changes the answer; a raw `eval`
+  empties the cache; a binding changed through `eval` cannot leave a stale
+  answer behind; and the warm call is faster than the cold one.
 
 ### Step 15. Numeric evaluation and packaging
 

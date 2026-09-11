@@ -180,7 +180,7 @@ MaximaSession::launchEnvironment(const MaximaInstall &install,
 }
 
 MaximaSession::MaximaSession(Config config)
-    : config_(std::move(config)) {
+    : config_(std::move(config)), cache_(config_.cacheEntries) {
     // A factory rather than one transport, so a dead kernel can be replaced.
     factory_ = [config = config_] { return launchMaxima(config); };
     transport_ = factory_();
@@ -188,7 +188,8 @@ MaximaSession::MaximaSession(Config config)
 }
 
 MaximaSession::MaximaSession(TransportFactory factory, Config config)
-    : config_(std::move(config)), factory_(std::move(factory)) {
+    : config_(std::move(config)), factory_(std::move(factory)),
+      cache_(config_.cacheEntries) {
     if (!factory_) {
         throw KernelError("MaximaSession was given a null transport factory");
     }
@@ -200,7 +201,8 @@ MaximaSession::MaximaSession(TransportFactory factory, Config config)
 }
 
 MaximaSession::MaximaSession(std::unique_ptr<ITransport> transport, Config config)
-    : config_(std::move(config)), transport_(std::move(transport)) {
+    : config_(std::move(config)), transport_(std::move(transport)),
+      cache_(config_.cacheEntries) {
     // No factory, so this session cannot be restarted; a death is final.
     if (!transport_) {
         throw KernelError("MaximaSession was given a null transport");
@@ -237,6 +239,11 @@ void MaximaSession::handshake() {
 
 Reply MaximaSession::eval(std::string_view expression) {
     const std::lock_guard<std::mutex> lock(mutex_);
+    // This entry point can evaluate anything, including a statement that
+    // changes Maxima's state, and nothing in the text says which. Assuming the
+    // worst is the only safe default: a stale cached answer is a correctness
+    // bug, an emptied cache is merely slower.
+    cache_.clear();
     try {
         return evalLocked(expression, config_.timeout);
     } catch (const KernelError &) {
@@ -261,6 +268,43 @@ Reply MaximaSession::evalLocked(std::string_view expression,
     return readFrame(id, timeout);
 }
 
+Reply MaximaSession::evalPure(std::string_view expression) {
+    const std::lock_guard<std::mutex> lock(mutex_);
+
+    const std::string key(expression);
+    if (const Reply *cached = cache_.find(key)) {
+        return *cached;
+    }
+
+    Reply reply;
+    try {
+        reply = evalLocked(expression, config_.timeout);
+    } catch (const KernelError &) {
+        if (factory_ && !recovering_) {
+            try {
+                recover();
+            } catch (...) {
+            }
+        }
+        throw;
+    }
+
+    // Failures are cached too: "Maxima cannot integrate this" is as stable an
+    // answer as any other, and re-asking costs the same round trip.
+    cache_.insert(key, reply);
+    return reply;
+}
+
+void MaximaSession::invalidateCache() {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    cache_.clear();
+}
+
+MaximaSession::CacheStats MaximaSession::cacheStats() const {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    return {cache_.hits(), cache_.misses(), cache_.size()};
+}
+
 void MaximaSession::setTimeout(std::chrono::milliseconds timeout) {
     const std::lock_guard<std::mutex> lock(mutex_);
     config_.timeout = timeout;
@@ -268,6 +312,9 @@ void MaximaSession::setTimeout(std::chrono::milliseconds timeout) {
 
 std::uint64_t MaximaSession::remember(std::string statement) {
     const std::lock_guard<std::mutex> lock(mutex_);
+    // Remembering a statement means Maxima's state is about to change, or just
+    // has: every cached answer was computed under the old one.
+    cache_.clear();
     const std::uint64_t handle = ++nextJournalHandle_;
     journal_.push_back({handle, std::move(statement)});
     return handle;
@@ -275,6 +322,9 @@ std::uint64_t MaximaSession::remember(std::string statement) {
 
 void MaximaSession::forget(std::uint64_t handle) {
     const std::lock_guard<std::mutex> lock(mutex_);
+    // An assumption going out of scope invalidates just as much as one coming
+    // into it.
+    cache_.clear();
     std::erase_if(journal_, [handle](const JournalEntry &entry) {
         return entry.handle == handle;
     });

@@ -4,6 +4,7 @@
 // includes no platform headers. It speaks the Maxima protocol over an
 // ITransport and nothing else.
 
+#include "kernel/cache.hpp"
 #include "kernel/discovery.hpp"
 #include "transport/itransport.hpp"
 #include "transport/process_env.hpp"
@@ -96,6 +97,20 @@ public:
     /// requests on one pipe.
     Reply eval(std::string_view expression);
 
+    /// Evaluates a pure expression, consulting and filling the reply cache.
+    /// The caller guarantees the expression changes nothing in Maxima.
+    Reply evalPure(std::string_view expression);
+
+    /// Discards every cached reply.
+    void invalidateCache();
+
+    struct CacheStats {
+        std::size_t hits = 0;
+        std::size_t misses = 0;
+        std::size_t entries = 0;
+    };
+    CacheStats cacheStats() const;
+
     /// Records a statement to replay after a restart, and returns a handle for
     /// removing it again.
     ///
@@ -162,6 +177,8 @@ private:
     TransportFactory factory_;
     std::unique_ptr<ITransport> transport_;
     std::uint64_t nextRequestId_ = 0;
+
+    ReplyCache cache_;
 
     std::vector<JournalEntry> journal_;
     std::uint64_t nextJournalHandle_ = 0;

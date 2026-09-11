@@ -4,6 +4,7 @@
 #include <mx/reply.hpp>
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -51,7 +52,40 @@ public:
     /// A Maxima error comes back as a Reply with `ok == false` and a reason,
     /// because failing to integrate something is an ordinary outcome. Only
     /// infrastructure failures throw: see mx::KernelError.
+    ///
+    /// **Discards the reply cache.** This entry point can evaluate anything,
+    /// including statements that change Maxima's state — an assignment, a new
+    /// assumption, a redefined function — and there is no way to tell from the
+    /// text which. Assuming the worst is the only safe default: a cache that
+    /// returns a stale answer is a correctness bug, and a needlessly emptied
+    /// cache is merely slower. Use evalPure for anything known to be a
+    /// question rather than an instruction.
     Reply eval(std::string_view expression);
+
+    /// Evaluates a *pure* expression, consulting and filling the reply cache.
+    ///
+    /// The caller promises `expression` only asks a question: it must not
+    /// assign, assume, declare, define, or otherwise leave Maxima different
+    /// from how it found it. Break that promise and later callers will be
+    /// handed answers computed under conditions that no longer hold.
+    ///
+    /// Cached answers are still answers to *this* kernel's current state. The
+    /// cache is discarded whenever that state might have changed: any eval(),
+    /// any assumption added or dropped through mx::Context.
+    Reply evalPure(std::string_view expression);
+
+    /// Forgets every cached reply. Rarely needed directly — state changes made
+    /// through this library already do it — but the escape hatch if Maxima has
+    /// been changed some other way.
+    void invalidateCache();
+
+    /// Hits, misses and current size, for tuning and for tests.
+    struct CacheStats {
+        std::size_t hits = 0;
+        std::size_t misses = 0;
+        std::size_t entries = 0;
+    };
+    CacheStats cacheStats() const;
 
     /// Records a statement to replay if the kernel has to be restarted, and
     /// returns a handle for removing it again.
