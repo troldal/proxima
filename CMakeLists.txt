@@ -19,6 +19,7 @@ add_library(maxima_cpp
         src/core/printer.cpp
         src/kernel/discovery.cpp
         src/kernel/kernel.cpp
+        src/kernel/ops.cpp
         src/kernel/session.cpp
         src/transport/fake_transport.cpp
         src/transport/process_env.cpp

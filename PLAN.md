@@ -498,32 +498,54 @@ display-only concession — a *negative* leading constant is moved to the end, s
 
 ### Step 11. Operations and shared kernel
 
-```cpp
-Expr diff(const Expr&, const Symbol&, unsigned n = 1);
-std::expected<Expr, Reason> integrate(const Expr&, const Symbol&);
-std::expected<Expr, Reason> limit(const Expr&, const Symbol&, const Expr& to);
-std::vector<Solution> solve(std::span<const Equation>, std::span<const Symbol>);
-Expr expand(const Expr&), factor(const Expr&), simplify(const Expr&);
-```
+`include/mx/ops.hpp` and `include/mx/functions.hpp`. A lazily-started
+`sharedKernel()` is the default last argument of every operation, so the common
+case needs no ceremony and an explicit kernel is still available.
 
-A lazily-started process-wide `Kernel::shared()`, plus explicit `Kernel`
-construction for callers who want control. `Expr::parse()` delegates to Maxima's
-`parse_string` — zero parser code, and the accepted syntax cannot drift from the
-backend's.
+**The failure split, as implemented.** Three outcomes, not two:
 
-Errors split two ways: infrastructure failures (`mx::KernelError`,
-`mx::TimeoutError`) throw; mathematical failure ("no closed form") returns
-`std::expected`, because that is an ordinary outcome rather than an exception.
-C++23 is already enabled in this project.
+| | |
+|---|---|
+| `mx::KernelError` (thrown) | the conversation broke down — kernel died, nothing answered in time |
+| `mx::MaximaError` (thrown) | Maxima objected to an operation that has no ordinary way to fail: `diff`, `expand`, `factor`, `simplify`, `subst` |
+| `mx::Failure` (returned) | an ordinary mathematical outcome: no closed form, no solution, unparseable source |
 
-- *Verify:* the demo becomes pure C++ — no strings, no Maxima syntax:
+`std::expected` is used only where failure is an answer. Making `diff` return one
+would force `.value()` on every call for a case that means the caller made a
+mistake.
 
-```cpp
-mx::Symbol x("x");
-auto I = mx::integrate(x*x*mx::sin(x), x);
-std::cout << I->str() << '\n';
-std::cout << mx::expand(mx::diff(*I, x)).str() << '\n';   // recovers x^2*sin(x)
-```
+**Maxima does not report "I cannot do this" as an error**, which a probe was
+needed to discover and which shapes two of these signatures:
+
+- `integrate(exp(sin(x)), x)` succeeds, returning the integral *unevaluated* as
+  `((%INTEGRATE SIMP) …)`. That noun form is the failure signal.
+- `solve` returns something that is not a solution: `[x = sin(x)]` for
+  `sin(x) = x`, or `[0 = x^5-x-1]` for the quintic. Both are rejected here — an
+  equation still mentioning the unknown on both sides, or one never rearranged
+  at all — so a successful `solve` really is a solution. An empty result means
+  no solutions, which is itself an answer.
+
+**`parse` is a free function, not `Expr::parse`.** `Expr` belongs to a layer
+that knows nothing about the kernel, and parsing needs one. It also only parses:
+`parse("a: 7")` yields the assignment as a term and does not perform it.
+
+**A construction rule this step forced.** `x^3/3` was building `x^3 * 3^-1`
+while Maxima returns `(1/3)*x^3` — the same value spelled two ways, never
+comparing equal. `operator/` now multiplies by the reciprocal when the divisor
+is a number, which keeps exact division exact and puts results in the same shape
+Maxima uses. Dividing by anything else still becomes a negative power, as it is
+in Maxima.
+
+`functions.hpp` supplies `sin`, `cos`, `log`, `abs` and friends as
+uninterpreted applications, plus `exp` and `sqrt` built as `%e^x` and `x^(1/2)`
+— because that is what they are inside Maxima too, so the representations stay
+in step. Nothing is evaluated locally: `sin(0)` stays `sin(0)` until Maxima is
+asked.
+
+- *Verify:* the demo is now pure C++ with no Maxima syntax and no strings
+  standing in for expressions. Tests cover each operation, both failure
+  mechanisms, and chaining — `expand(factor(diff(...)))` — which is the real
+  claim: what comes back is an expression, not text.
 
 ### Step 12. `Context` / assumptions
 
@@ -650,6 +672,7 @@ quoting and environment-block tests), 7 integration on both.
 2. ~~**POSIX transport**~~ — done, see step 5b above.
 3. ~~**`operator==`**~~ — resolved in step 8: structural equality returning
    `bool`, with `eq(lhs, rhs)` building equations.
-4. **Offline `parse()`** — is there a requirement to construct expressions from
-   strings without a running kernel? If so, a hand-written Pratt parser
-   (~250 lines) is needed; otherwise delegation to Maxima is sufficient.
+4. **Offline `parse()`** — still open. `mx::parse` delegates to Maxima and so
+   needs a running kernel. If constructing expressions from strings without one
+   ever becomes a requirement, a hand-written Pratt parser (~250 lines) is the
+   answer; nothing so far has needed it.

@@ -15,6 +15,7 @@ add_executable(mx_tests
         test_expr.cpp
         test_from_maxima.cpp
         test_normalize.cpp
+        test_ops.cpp
         test_process_env.cpp
         test_sexpr.cpp
         test_kernel.cpp

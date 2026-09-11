@@ -364,13 +364,21 @@ Expr operator*(const Expr &lhs, const Expr &rhs) {
 }
 
 Expr operator/(const Expr &lhs, const Expr &rhs) {
-    // Exact division of exact integers stays exact. Without this, `Expr(1)/3`
-    // would be 1*3^-1, which is correct but a poor thing to hand a user before
-    // the normaliser exists.
-    if (lhs.is(Kind::Integer) && rhs.is(Kind::Integer)
-        && rhs.integerValue() != 0) {
-        return Expr::rational(lhs.integerValue(), rhs.integerValue());
+    // Dividing by a number multiplies by its reciprocal, which keeps exact
+    // division exact (`1/3` is a Rational, not `1*3^-1`) and puts the result in
+    // the same shape Maxima uses: it returns x^3/3 as (1/3)*x^3, a numeric
+    // coefficient, not a negative power. Without this the two spell the same
+    // value differently and never compare equal.
+    if (rhs.is(Kind::Integer) || rhs.is(Kind::Rational)) {
+        if (rhs.numerator() != 0) {
+            return lhs * Expr::rational(rhs.denominator(), rhs.numerator());
+        }
+    } else if (rhs.is(Kind::Real) && rhs.realValue() != 0.0) {
+        return lhs * Expr::real(1.0 / rhs.realValue());
     }
+    // Anything else, including division by zero, becomes a negative power —
+    // which is also how Maxima represents it, and lets Maxima be the one to
+    // object to dividing by zero.
     return Expr::mul({lhs, Expr::pow(rhs, Expr::integer(-1))});
 }
 

@@ -21,6 +21,17 @@ public:
     using Error::Error;
 };
 
+/// Maxima signalled an error while evaluating.
+///
+/// Thrown only by the operations that have no ordinary way to fail — diff,
+/// expand, subst and the like. The ones that *can* ordinarily fail, such as
+/// integrate and solve, report it as an mx::Failure instead, because "there is
+/// no closed form" is an answer rather than a malfunction.
+class MaximaError : public Error {
+public:
+    using Error::Error;
+};
+
 /// Text that should have been a Maxima reply could not be read as one.
 ///
 /// Distinct from KernelError because the causes differ: a KernelError means the
