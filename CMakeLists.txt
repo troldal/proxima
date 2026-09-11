@@ -47,11 +47,18 @@ include(cmake/CPM.cmake)
 # rules would produce an installed library that cannot be included. This is the
 # opposite of the doctest case in tests/CMakeLists.txt, where a test framework
 # has no business in a consumer's prefix.
+#
+# 1.92.0 and not something older: Boost.Container's bundled dlmalloc passed an
+# `int*` to InterlockedExchange, which wants `volatile long*`. Clang has treated
+# that as an error rather than a warning since 16, so clang-cl could not build
+# boost_container -- a library nothing here uses, dragged in because
+# Boost::multiprecision declares Boost::random, which depends on it. Upstream
+# added the cast in 1.89. Do not pin this below that.
 CPMAddPackage(
         NAME Boost
-        VERSION 1.86.0
-        URL https://github.com/boostorg/boost/releases/download/boost-1.86.0/boost-1.86.0-cmake.tar.xz
-        URL_HASH SHA256=2c5ec5edcdff47ff55e27ed9560b0a0b94b07bd07ed9928b476150e16b0efc57
+        VERSION 1.92.0
+        URL https://github.com/boostorg/boost/releases/download/boost-1.92.0/boost-1.92.0-cmake.tar.xz
+        URL_HASH SHA256=9bed76128d4e46755dbe818487788c6fceb6f72b378f4daa49b7e1e600d9088d
         SYSTEM YES
         OPTIONS
         "BOOST_ENABLE_CMAKE ON"

@@ -171,6 +171,12 @@ time and built as part of the project, so there is no system package to add and
 no version to match. Maxima is not needed to build at all; it is located when a
 kernel first starts.
 
+Boost's headers land in every translation unit, which makes each one costly to
+compile in memory. On a machine short of free RAM, a wide parallel build can
+fail with *clang frontend command failed due to signal* on files that have
+nothing to do with Boost; that is the compiler being killed, not a code error.
+Build with a smaller `-j` if you see it.
+
 The first configure downloads Boost and takes a minute or so. After that the
 sources live in a **shared CPM cache** rather than in each build tree, so the
 other presets configure in seconds. The cache defaults to `~/.cache/CPM`; set

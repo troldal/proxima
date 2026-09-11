@@ -1089,6 +1089,16 @@ always *defined*, a `NOT DEFINED` guard never fires, and 732 MB of Boost lands
 in `_deps`. With the cache, a second build tree configures in about two seconds
 and its `_deps` is 1.3 MB.
 
+The Boost version has a floor, and it is not about multiprecision.
+Boost.Container's bundled dlmalloc passed an `int *` to `InterlockedExchange`,
+which takes `volatile long *`; clang has treated that as an error rather than a
+warning since clang 16, so **clang-cl could not build `boost_container` at
+all**. Nothing here uses that library -- it arrives because
+`Boost::multiprecision` declares `Boost::random`, which depends on it, and the
+superbuild then compiles it whether or not a byte of it is ever linked.
+Upstream added the cast in 1.89, so the fix was to move to 1.92 rather than to
+patch flags onto someone else's target. Do not pin below 1.89.
+
 `BOOST_SKIP_INSTALL_RULES` is `OFF`, against the usual advice for a fetched
 dependency, so `cmake --install` puts Boost's headers in the same prefix as this
 library. `mx::Integer` holds a `cpp_int` by value, so `<mx/integer.hpp>` needs
@@ -1098,7 +1108,18 @@ decision in step 3, and for the exact opposite reason: a test framework is our
 business, a type in our public header is the consumer's. The installed config
 prepends its own prefix before `find_dependency(Boost)`, so a consumer resolves
 the Boost this library was compiled against. Verified by installing to a clean
-prefix and building a separate project that never mentions Boost.
+prefix and building a separate project that never mentions Boost. Boost installs
+under a versioned `include/boost-1_92`, so it cannot collide with a consumer's
+own copy in the same prefix.
+
+One consequence worth knowing about: Boost's headers are now in every
+translation unit, so each one costs substantially more memory to compile. On a
+machine with little free RAM and no page file, a wide parallel build (`-j 16`)
+dies with *clang frontend command failed due to signal* -- on plain files like
+`discovery.cpp`, which makes it look like a compiler bug rather than the
+out-of-memory it is. `-j 4` builds cleanly. This is environmental rather than a
+defect, but it is new with Boost, and the symptom is misleading enough to be
+worth recording.
 
 Only Linux caught the portability bug: constructors on `int` and `std::int64_t`
 leave `long long` ambiguous wherever `int64_t` is `long`, which is every LP64
