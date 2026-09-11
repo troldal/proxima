@@ -4,6 +4,7 @@
 #include "transport/child_process.hpp"
 
 #include <mx/errors.hpp>
+#include <mx/version.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -75,14 +76,42 @@ constexpr const char *kHelperLisp = R"LISP((progn
   (quote maxima::$done))
  (cl-user::run)))LISP";
 
-std::unique_ptr<ITransport> launchMaxima(const Config &config) {
+std::unique_ptr<ITransport> launchMaxima(const Config &config,
+                                         std::string &versionTag) {
     const MaximaInstall install = discoverMaxima(config, systemEnv());
+    versionTag = install.versionTag;
     return std::make_unique<ChildProcessTransport>(
         MaximaSession::launchCommand(install),
         MaximaSession::launchEnvironment(install, config));
 }
 
 } // namespace
+
+std::string MaximaSession::persistenceStamp() const {
+    // Everything an answer depends on, beyond the question itself. The
+    // assumption state is the one that is unsound to leave out: sqrt(x^2) is
+    // abs(x) normally and x under assume(x > 0), and a persistent entry outlives
+    // the scope that made the assumption.
+    std::string stamp = "lib=";
+    stamp += version;
+    stamp += "\nmaxima=" + maximaVersion_ + "\nstate=";
+    for (const JournalEntry &entry : journal_) {
+        stamp += entry.statement;
+        stamp += ';';
+    }
+    return stamp;
+}
+
+bool MaximaSession::usingPersistence() const {
+    return persistent_ != nullptr && persistent_->usable() && stateAccounted_;
+}
+
+void MaximaSession::restampPersistence() {
+    if (persistent_ != nullptr) {
+        persistent_ = std::make_unique<PersistentCache>(persistent_->directory(),
+                                                        persistenceStamp());
+    }
+}
 
 std::string MaximaSession::frameBegin(std::uint64_t id) {
     return "@@B" + std::to_string(id) + "@@";
@@ -182,9 +211,16 @@ MaximaSession::launchEnvironment(const MaximaInstall &install,
 MaximaSession::MaximaSession(Config config)
     : config_(std::move(config)), cache_(config_.cacheEntries) {
     // A factory rather than one transport, so a dead kernel can be replaced.
-    factory_ = [config = config_] { return launchMaxima(config); };
+    factory_ = [this] { return launchMaxima(config_, maximaVersion_); };
     transport_ = factory_();
     handshake();
+
+    // Only now is the Maxima version known, and a persistent key cannot be
+    // formed without it.
+    if (!config_.cacheDirectory.empty() && !maximaVersion_.empty()) {
+        persistent_ = std::make_unique<PersistentCache>(config_.cacheDirectory,
+                                                        persistenceStamp());
+    }
 }
 
 MaximaSession::MaximaSession(TransportFactory factory, Config config)
@@ -244,6 +280,10 @@ Reply MaximaSession::eval(std::string_view expression) {
     // worst is the only safe default: a stale cached answer is a correctness
     // bug, an emptied cache is merely slower.
     cache_.clear();
+    // And a change nobody recorded means the journal no longer describes this
+    // session, so a persistent key — which is built from the journal — would
+    // claim conditions that do not hold. Persistence stops here.
+    stateAccounted_ = false;
     try {
         return evalLocked(expression, config_.timeout);
     } catch (const KernelError &) {
@@ -251,6 +291,25 @@ Reply MaximaSession::eval(std::string_view expression) {
         // reporting, so that only this call is lost rather than every call
         // after it. Recovery failing is not worth replacing the original
         // diagnosis with — the next call will try again.
+        if (factory_ && !recovering_) {
+            try {
+                recover();
+            } catch (...) {
+            }
+        }
+        throw;
+    }
+}
+
+Reply MaximaSession::evalTracked(std::string_view statement) {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    // A state change the journal accounts for. The in-memory cache still has to
+    // go — its entries were computed under the old state — but persistence
+    // survives, because the new state will be part of the key.
+    cache_.clear();
+    try {
+        return evalLocked(statement, config_.timeout);
+    } catch (const KernelError &) {
         if (factory_ && !recovering_) {
             try {
                 recover();
@@ -275,6 +334,14 @@ Reply MaximaSession::evalPure(std::string_view expression) {
     if (const Reply *cached = cache_.find(key)) {
         return *cached;
     }
+    if (usingPersistence()) {
+        if (auto stored = persistent_->find(key)) {
+            // Promoted into memory as well, so a second ask costs nothing.
+            ++persistentHits_;
+            cache_.insert(key, *stored);
+            return *stored;
+        }
+    }
 
     Reply reply;
     try {
@@ -292,6 +359,9 @@ Reply MaximaSession::evalPure(std::string_view expression) {
     // Failures are cached too: "Maxima cannot integrate this" is as stable an
     // answer as any other, and re-asking costs the same round trip.
     cache_.insert(key, reply);
+    if (usingPersistence()) {
+        persistent_->insert(key, reply);
+    }
     return reply;
 }
 
@@ -302,7 +372,7 @@ void MaximaSession::invalidateCache() {
 
 MaximaSession::CacheStats MaximaSession::cacheStats() const {
     const std::lock_guard<std::mutex> lock(mutex_);
-    return {cache_.hits(), cache_.misses(), cache_.size()};
+    return {cache_.hits(), cache_.misses(), cache_.size(), persistentHits_};
 }
 
 void MaximaSession::setTimeout(std::chrono::milliseconds timeout) {
@@ -317,6 +387,7 @@ std::uint64_t MaximaSession::remember(std::string statement) {
     cache_.clear();
     const std::uint64_t handle = ++nextJournalHandle_;
     journal_.push_back({handle, std::move(statement)});
+    restampPersistence();
     return handle;
 }
 
@@ -328,6 +399,7 @@ void MaximaSession::forget(std::uint64_t handle) {
     std::erase_if(journal_, [handle](const JournalEntry &entry) {
         return entry.handle == handle;
     });
+    restampPersistence();
 }
 
 void MaximaSession::recover() {

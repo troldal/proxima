@@ -22,6 +22,7 @@ add_library(maxima_cpp
         src/kernel/cache.cpp
         src/kernel/context.cpp
         src/kernel/discovery.cpp
+        src/kernel/persistent_cache.cpp
         src/kernel/kernel.cpp
         src/kernel/ops.cpp
         src/kernel/session.cpp

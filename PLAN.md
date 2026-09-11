@@ -864,6 +864,9 @@ quoting and environment-block tests), 7 integration on both.
 5. ~~**Offline `parse()`**~~ — built after step 15: `Expr::parse` is a Pratt
    parser over a subset of Maxima's grammar, needing no kernel. `mx::parse`
    remains for anything outside that subset. See below.
+6. ~~**A persistent cache**~~ — built after step 15, via
+   `Config::cacheDirectory`. See below; the version stamp turned out to be the
+   smaller half of the problem.
 
 ### Two parsers, and how they differ
 
@@ -889,16 +892,51 @@ parser printed.
 
 Nothing outstanding.
 
+### The persistent cache, and what its key has to contain
+
+`Config::cacheDirectory` keeps replies between runs, one file per entry. Off by
+default: a library should not start writing files somewhere unasked.
+
+Step 14 noted that persisting would need a **Maxima version stamp**. Building it
+showed that to be the smaller half. An in-memory cache can be blunt about
+invalidation — throw everything away whenever anything might have changed —
+because the thing that changed happened here. A cache shared across processes
+and across time cannot, because the change may have happened somewhere else
+entirely. So everything an answer depends on has to be *in the key*:
+
+- the **Maxima version**, as originally noted;
+- **this library's version**, because the stored value is an s-expression read
+  back by a mapping that could change, and the key is source rendered by a
+  printer that could change;
+- the **assumption state**, which is the one that is unsound to omit.
+  `sqrt(x^2)` is `abs(x)` normally and `x` under `assume(x > 0)`. A process that
+  cached the second would otherwise hand it to a process that never made the
+  assumption — and unlike the in-memory case there is no moment at which that
+  second process could be told to discard anything.
+
+The assumption state is taken from the replay journal built in step 13, which
+already records exactly the statements that constitute it. That also decides
+what happens after a raw `Kernel::eval`: nothing in its text says whether it
+changed Maxima's state, so the journal can no longer be trusted to describe the
+session, and persistence switches itself off for that kernel. `mx::Context` uses
+`Kernel::evalTracked` instead, which promises the change *is* in the journal.
+
+Entries are written to a temporary and renamed into place, so a reader never
+sees a half-written file and two writers race only to produce identical content.
+The key is hashed to name the file and stored inside it as well, so a collision
+is detected rather than silently answered wrongly. The hash is FNV-1a rather
+than `std::hash`, which varies between standard libraries — a cache on disk
+outlives the build that wrote it.
+
+`Kernel::cacheStats().persistentHits` counts answers that came from disk.
+Without it the tests could not tell a disk hit from a fresh computation, since
+both end up in the in-memory cache.
+
 ### Decided, but not built
 
 These are known gaps rather than open questions — the approach is settled, the
 work simply is not done. Listed here because a reader scanning this section
 should not have to reconstruct them from the step narratives.
-
-6. **A persistent cache would need a Maxima version stamp in its key.** Step 14
-   omits one deliberately: an in-memory cache belongs to one kernel running one
-   Maxima, so the version cannot vary within it. That reasoning stops holding
-   the moment the cache outlives the process.
 
 7. **Numeric evaluation walks the tree per call.** Fine until it appears in a
    profile, at which point the expression can be printed and handed to ExprTk or

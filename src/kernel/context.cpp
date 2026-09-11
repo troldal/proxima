@@ -18,8 +18,12 @@ std::string nextContextName() {
     return "mx_ctx_" + std::to_string(++counter);
 }
 
+/// Every statement a Context issues changes Maxima's state in a way the
+/// kernel's journal accounts for — either recorded here, or undoing something
+/// that was. evalTracked says so, which is what keeps a persistent cache usable
+/// for a kernel that uses assumptions.
 Expr evaluateOrThrow(Kernel &kernel, const std::string &source) {
-    const Reply reply = kernel.eval(source);
+    const Reply reply = kernel.evalTracked(source);
     if (!reply.ok) {
         throw MaximaError(reply.reason);
     }
@@ -98,8 +102,8 @@ Context::~Context() {
              handle != replayHandles_.rend(); ++handle) {
             kernel_->forget(*handle);
         }
-        kernel_->eval("context: " + parent_);
-        kernel_->eval("killcontext(" + name_ + ")");
+        kernel_->evalTracked("context: " + parent_);
+        kernel_->evalTracked("killcontext(" + name_ + ")");
     } catch (...) {
     }
 }

@@ -5,6 +5,7 @@
 // ITransport and nothing else.
 
 #include "kernel/cache.hpp"
+#include "kernel/persistent_cache.hpp"
 #include "kernel/discovery.hpp"
 #include "transport/itransport.hpp"
 #include "transport/process_env.hpp"
@@ -101,6 +102,9 @@ public:
     /// The caller guarantees the expression changes nothing in Maxima.
     Reply evalPure(std::string_view expression);
 
+    /// Evaluates a state-changing statement the journal accounts for.
+    Reply evalTracked(std::string_view statement);
+
     /// Discards every cached reply.
     void invalidateCache();
 
@@ -108,6 +112,7 @@ public:
         std::size_t hits = 0;
         std::size_t misses = 0;
         std::size_t entries = 0;
+        std::size_t persistentHits = 0;
     };
     CacheStats cacheStats() const;
 
@@ -167,6 +172,18 @@ private:
     void handshake();
     void writeLine(std::string_view line);
 
+    /// Everything a persistent key has to be qualified by: the two versions
+    /// and the assumption state, in a form that changes whenever any of them
+    /// does.
+    std::string persistenceStamp() const;
+
+    /// True when a persistent entry would describe this session honestly.
+    bool usingPersistence() const;
+
+    /// Rebuilds the persistent cache's stamp after the journal changed, so
+    /// later entries are keyed on the new assumption state rather than the old.
+    void restampPersistence();
+
     /// Reads until the frame belonging to `id` is complete, discarding
     /// everything before it: banners, prompts, and any stale frame left over
     /// from an earlier request.
@@ -179,6 +196,17 @@ private:
     std::uint64_t nextRequestId_ = 0;
 
     ReplyCache cache_;
+
+    /// Set up once the Maxima version is known and Config::cacheDirectory is
+    /// set. Absent means answers are remembered only for this process.
+    std::unique_ptr<PersistentCache> persistent_;
+    std::string maximaVersion_;
+    std::size_t persistentHits_ = 0;
+
+    /// False once something has changed Maxima's state without the journal
+    /// recording it, which makes a persistent key unable to describe the
+    /// session it was computed in.
+    bool stateAccounted_ = true;
 
     std::vector<JournalEntry> journal_;
     std::uint64_t nextJournalHandle_ = 0;

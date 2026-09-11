@@ -43,6 +43,19 @@ struct Config {
     /// caching entirely.
     std::size_t cacheEntries = 4096;
 
+    /// Where to keep replies between runs. Empty means do not.
+    ///
+    /// Off by default: writing files somewhere is not a thing a library should
+    /// start doing unasked. When set, answers survive process exit and are
+    /// shared between processes using the same directory.
+    ///
+    /// Every key is qualified by the Maxima version, this library's version and
+    /// the kernel's assumption state, so an entry can only ever be read back
+    /// under the conditions that produced it. Persistence switches itself off
+    /// for a kernel whose state has been changed by a raw Kernel::eval, since
+    /// that change is not part of the key.
+    std::filesystem::path cacheDirectory;
+
     /// Whether to let Maxima load the user's maxima-init.mac at startup.
     ///
     /// Off by default, and deliberately so. Maxima reads that file from

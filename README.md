@@ -128,13 +128,19 @@ refused. `declare` covers `Integer`, `Even`, `Odd`, `Rational`, `Real`,
 - **Remembers answers.** An LRU keyed on the Maxima source, discarded whenever
   anything might have changed it — any raw `eval`, any assumption added or
   dropped. Sized by `Config::cacheEntries`; zero disables it.
+- **Optionally between runs.** Set `Config::cacheDirectory` and answers survive
+  process exit and are shared with other processes using the same directory.
+  Every key carries the Maxima version, this library's version *and* the
+  assumption state, so an entry can only be read back under the conditions that
+  produced it — `sqrt(x^2)` cached under `assume(x > 0)` is not visible to a
+  process that never made the assumption.
 - **Cannot be deadlocked by a prompt.** Maxima asks the user for facts it lacks,
   and reads the answer from standard input; over a pipe that would block and
   then swallow the next request. Questions become errors instead — see *When
   Maxima needs a fact it has not been told*.
 
 `Config` covers `maximaRoot`, `timeout`, `startupTimeout`, `cacheEntries`,
-`loadUserInit` and `userDir`. The user's own `maxima-init.mac` is **not** loaded
+`cacheDirectory`, `loadUserInit` and `userDir`. The user's own `maxima-init.mac` is **not** loaded
 by default: a library should compute the same answer on every machine.
 
 ## Requirements

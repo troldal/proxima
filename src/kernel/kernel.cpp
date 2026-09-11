@@ -23,13 +23,17 @@ Reply Kernel::evalPure(std::string_view expression) {
     return session_->evalPure(expression);
 }
 
+Reply Kernel::evalTracked(std::string_view statement) {
+    return session_->evalTracked(statement);
+}
+
 void Kernel::invalidateCache() {
     session_->invalidateCache();
 }
 
 Kernel::CacheStats Kernel::cacheStats() const {
     const detail::MaximaSession::CacheStats stats = session_->cacheStats();
-    return {stats.hits, stats.misses, stats.entries};
+    return {stats.hits, stats.misses, stats.entries, stats.persistentHits};
 }
 
 std::uint64_t Kernel::remember(std::string statement) {

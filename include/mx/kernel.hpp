@@ -74,6 +74,19 @@ public:
     /// any assumption added or dropped through mx::Context.
     Reply evalPure(std::string_view expression);
 
+    /// Evaluates a statement that changes Maxima's state in a way this
+    /// kernel's replay journal accounts for.
+    ///
+    /// The caller promises that the change is either being recorded through
+    /// remember(), or is undoing something that was. On that promise the
+    /// kernel's state stays fully described by its journal, which is what keeps
+    /// Config::cacheDirectory usable — a persistent entry is keyed on that
+    /// state, so an unrecorded change would make the key a lie.
+    ///
+    /// mx::Context is the intended caller; there is rarely a reason to use this
+    /// directly. Use eval() for anything else, which assumes the worst.
+    Reply evalTracked(std::string_view statement);
+
     /// Forgets every cached reply. Rarely needed directly — state changes made
     /// through this library already do it — but the escape hatch if Maxima has
     /// been changed some other way.
@@ -84,6 +97,9 @@ public:
         std::size_t hits = 0;
         std::size_t misses = 0;
         std::size_t entries = 0;
+        /// Answers that came from Config::cacheDirectory rather than from
+        /// Maxima — that is, from a previous run or another process.
+        std::size_t persistentHits = 0;
     };
     CacheStats cacheStats() const;
 
