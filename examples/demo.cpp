@@ -6,6 +6,7 @@
 #include <mx/errors.hpp>
 #include <mx/expr.hpp>
 #include <mx/functions.hpp>
+#include <mx/numeric.hpp>
 #include <mx/ops.hpp>
 #include <mx/symbol.hpp>
 
@@ -79,6 +80,13 @@ int main() {
         assuming.assume(gt(mx::Expr(n), mx::Expr(0)));
         if (const auto known = mx::integrate(power, x)) {
             std::cout << "  assuming n > 0 = " << known->str() << '\n';
+        }
+
+        // Once a closed form exists, turning it into numbers is ordinary
+        // arithmetic. No further round trips, so this is usable in a loop.
+        if (const auto antiderivative = mx::integrate(integrand, x)) {
+            const auto F = mx::asFunction(*antiderivative, x);
+            std::cout << "F(1) - F(0)      = " << F(1.0) - F(0.0) << '\n';
         }
     } catch (const std::exception &e) {
         std::cerr << "Maxima call failed: " << e.what() << std::endl;

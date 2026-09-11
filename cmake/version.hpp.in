@@ -1,0 +1,20 @@
+#pragma once
+
+// Generated from cmake/version.hpp.in. Do not edit; change the version in
+// CMakeLists.txt instead, so the two cannot drift apart.
+
+#define MX_VERSION_MAJOR @maxima_cpp_VERSION_MAJOR@
+#define MX_VERSION_MINOR @maxima_cpp_VERSION_MINOR@
+#define MX_VERSION_PATCH @maxima_cpp_VERSION_PATCH@
+#define MX_VERSION_STRING "@maxima_cpp_VERSION@"
+
+namespace mx {
+
+/// This library's version, as "major.minor.patch".
+inline constexpr const char *version = MX_VERSION_STRING;
+
+inline constexpr int versionMajor = MX_VERSION_MAJOR;
+inline constexpr int versionMinor = MX_VERSION_MINOR;
+inline constexpr int versionPatch = MX_VERSION_PATCH;
+
+} // namespace mx

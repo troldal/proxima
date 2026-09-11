@@ -1,0 +1,13 @@
+@PACKAGE_INIT@
+
+# maxima_cpp drives a Maxima child process over pipes and has no build-time
+# dependencies of its own. On Unix it needs a thread library for the POSIX
+# transport's teardown wait.
+include(CMakeFindDependencyMacro)
+if (NOT WIN32)
+    find_dependency(Threads)
+endif ()
+
+include("${CMAKE_CURRENT_LIST_DIR}/maxima_cppTargets.cmake")
+
+check_required_components(maxima_cpp)

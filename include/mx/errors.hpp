@@ -44,6 +44,16 @@ public:
     using Error::Error;
 };
 
+/// An expression could not be turned into a number.
+///
+/// A symbol with no value, a function with no numeric meaning here, a relation,
+/// or an Opaque node — Maxima source this library never interpreted, and so has
+/// no way to evaluate. Local: nothing to do with the kernel.
+class EvalError : public Error {
+public:
+    using Error::Error;
+};
+
 /// Text that should have been a Maxima reply could not be read as one.
 ///
 /// Distinct from KernelError because the causes differ: a KernelError means the

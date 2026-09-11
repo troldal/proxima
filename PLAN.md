@@ -702,16 +702,56 @@ transport tests, for nothing. Anyone persisting this cache must add it.
 
 ### Step 15. Numeric evaluation and packaging
 
-A tree-walking evaluator,
-`double evalNumeric(const Expr&, const std::map<Symbol,double>&)` — roughly 150
-lines, no dependency. Then install/export targets so `find_package(maxima_cpp)`
-works, a README, and a version header.
+**`mx::evalNumeric`** walks the tree, entirely locally. That is the point: once
+Maxima has produced a closed form, turning it into numbers is ordinary
+arithmetic, and paying a millisecond round trip per point would make plotting it
+or integrating it numerically absurd. `asFunction` binds one variable for
+repeated use; `isEvaluable` asks without catching.
 
-If JIT-speed numeric evaluation is ever needed, print `Expr` to a string and
-hand it to ExprTk or muParser. That is a one-way conversion at a leaf, so it
-does not reintroduce the dual-canonicalization problem.
+Named constants are recognised as Maxima spells them (`%pi`, `%e`, `inf`,
+`minf`), with an explicit binding winning over them.
 
----
+The function table is a **closed set**, and an unknown head is an error rather
+than a guess — silently returning something plausible for a function that is not
+actually implemented would be far worse than refusing. The same applies to the
+nodes that have no numeric meaning: a relation, and `Opaque`, which is Maxima
+source this library never interpreted and so has nothing that could evaluate it.
+`mx::EvalError` names the culprit.
+
+**Packaging.** `install`/`export` with a generated `maxima_cppConfig.cmake`, so
+
+```cmake
+find_package(maxima_cpp 0.1 REQUIRED)
+target_link_libraries(my_app PRIVATE mx::maxima_cpp)
+```
+
+works from an install prefix. `mx/version.hpp` is generated from
+`cmake/version.hpp.in`, so the version cannot drift from the one in
+`CMakeLists.txt`. `target_include_directories` uses `BUILD_INTERFACE` and
+`INSTALL_INTERFACE`, so the same target serves both a `add_subdirectory` consumer
+and an installed one.
+
+One thing the install surfaced: doctest was being installed alongside the
+library, putting a test framework into the consumer's prefix.
+`DOCTEST_NO_INSTALL` fixes it — a reminder that a dependency's install rules run
+whether or not they are wanted.
+
+- *Verify:* the evaluator against closed forms Maxima produced, including that a
+  definite integral agrees with sampling its own antiderivative — the symbolic
+  and numeric halves checked against each other. And packaging verified by
+  actually doing it: install to a scratch prefix, then build and run a
+  standalone consumer that knows nothing of the source tree, on both Windows and
+  Linux.
+
+If tree-walking evaluation ever shows up in a profile, the expression can be
+printed and handed to ExprTk or muParser — a one-way conversion at a leaf, which
+does not reintroduce the two-canonicalisers problem that shaped this design.
+
+## Status
+
+All sixteen steps are done, on Windows and Linux. See README.md for what the
+library does and how to use it; the sections above record why it is built the
+way it is, including the decisions that were revised along the way.
 
 ## Sequencing notes
 

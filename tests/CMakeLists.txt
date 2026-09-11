@@ -4,8 +4,14 @@ CPMAddPackage(
         NAME doctest
         GITHUB_REPOSITORY doctest/doctest
         GIT_TAG v2.4.12
+        EXCLUDE_FROM_ALL YES
+        SYSTEM YES
         OPTIONS
         "DOCTEST_WITH_TESTS OFF"
+        # Without this, `cmake --install` on this project would also install
+        # doctest's headers and package config into the consumer's prefix. A
+        # test framework is our business, not theirs.
+        "DOCTEST_NO_INSTALL ON"
 )
 
 add_executable(mx_tests
@@ -17,6 +23,7 @@ add_executable(mx_tests
         test_expr.cpp
         test_from_maxima.cpp
         test_normalize.cpp
+        test_numeric.cpp
         test_ops.cpp
         test_process_env.cpp
         test_sexpr.cpp
