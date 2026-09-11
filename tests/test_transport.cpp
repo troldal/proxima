@@ -115,12 +115,6 @@ TEST_CASE("a null transport is rejected rather than dereferenced") {
     CHECK_THROWS_AS(MaximaSession(nullptr, mx::Config{}), mx::KernelError);
 }
 
-TEST_CASE("launchCommand reports a missing Maxima root instead of hanging") {
-    mx::Config config;
-    config.maximaRoot = "C:\\definitely\\not\\a\\maxima\\install";
-    CHECK_THROWS_AS(MaximaSession::launchCommand(config), mx::KernelError);
-}
-
 TEST_CASE("Win32 argument quoting follows the MSVCRT argv rules") {
     using mx::detail::quoteArg;
 

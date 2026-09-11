@@ -1,12 +1,15 @@
 #include "kernel/session.hpp"
 
+#include "kernel/discovery.hpp"
 #include "transport/child_process_win32.hpp"
 
 #include <mx/errors.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <regex>
+#include <system_error>
 
 namespace mx::detail {
 namespace {
@@ -20,59 +23,83 @@ std::string trim(const std::string &s) {
     return s.substr(first, last - first + 1);
 }
 
-// Recursively searches `root` for a file named `filename` and returns the
-// first match. Used to locate sbcl.exe and maxima.core without hard-coding the
-// version-specific "binary-sbcl" subdirectory name.
-//
-// PLAN.md step 5 replaces this with a targeted lookup: the core actually lives
-// at <root>/lib/maxima/<tag>/binary-sbcl/maxima.core, so this walk needlessly
-// descends into gnuplot, vtk, clisp and doc, and could match the wrong
-// sbcl.exe.
-std::filesystem::path findFile(const std::filesystem::path &root,
-                               const std::string &filename) {
-    if (!std::filesystem::is_directory(root)) {
-        throw KernelError("Maxima root is not a directory: " + root.string());
-    }
-    for (const auto &entry : std::filesystem::recursive_directory_iterator(
-             root, std::filesystem::directory_options::skip_permission_denied)) {
-        if (entry.is_regular_file() && entry.path().filename() == filename) {
-            return entry.path();
-        }
-    }
-    throw KernelError("Could not find " + filename + " under " + root.string());
-}
-
 // How long to wait for any single chunk of output before checking whether the
 // child is still alive. Not a deadline; see readUntilPrompt.
 constexpr std::chrono::milliseconds kPollInterval{50};
 
+// Maxima expects Windows paths with forward slashes; upstream's maxima.bat
+// performs the same substitution before exporting maxima_prefix.
+std::string toMaximaPath(const std::filesystem::path &p) {
+    std::string text = p.string();
+    std::replace(text.begin(), text.end(), '\\', '/');
+    return text;
+}
+
+std::unique_ptr<ITransport> launchMaxima(const Config &config) {
+    const MaximaInstall install = discoverMaxima(config, systemEnv());
+    return std::make_unique<ChildProcessTransport>(
+        MaximaSession::launchCommand(install),
+        MaximaSession::launchEnvironment(install, config));
+}
+
 } // namespace
 
-std::vector<std::string> MaximaSession::launchCommand(const Config &config) {
-    const std::filesystem::path sbclExe = findFile(config.maximaRoot, "sbcl.exe");
-    const std::filesystem::path coreFile
-        = findFile(config.maximaRoot, "maxima.core");
-
+std::vector<std::string>
+MaximaSession::launchCommand(const MaximaInstall &install) {
     const std::string evalExpr
         = "(progn (setf maxima::*prompt-prefix* \"" + std::string(kPromptPrefix)
           + "\") (setf maxima::*prompt-suffix* \"" + std::string(kPromptSuffix)
           + "\") (cl-user::run))";
 
     // Unquoted: quoting for the platform's argv parser is the transport's job.
-    return {
-        sbclExe.string(),
-        "--core", coreFile.string(),
-        "--noinform",
-        "--end-runtime-options",
-        "--eval", evalExpr,
-        "--end-toplevel-options",
-    };
+    std::vector<std::string> argv{install.sbclExe.string(), "--core",
+                                  install.maximaCore.string(), "--noinform"};
+
+    if (install.is64Bit) {
+        // What maxima.bat does on 64-bit builds, and for the same reason:
+        // without the larger heap, load("lapack") runs out of dynamic space.
+        argv.emplace_back("--dynamic-space-size");
+        argv.emplace_back("2000");
+    }
+
+    argv.insert(argv.end(), {"--end-runtime-options", "--eval", evalExpr,
+                             "--end-toplevel-options"});
+    return argv;
+}
+
+std::vector<std::pair<std::string, std::string>>
+MaximaSession::launchEnvironment(const MaximaInstall &install,
+                                 const Config &config) {
+    std::vector<std::pair<std::string, std::string>> env;
+
+    // Correct even where the image already has a prefix compiled in, which
+    // matters for a relocated or portable installation whose baked-in path no
+    // longer exists.
+    env.emplace_back("MAXIMA_PREFIX", toMaximaPath(install.root));
+
+    // maxima.bat sets this when the crosscompiled installer has not; SBCL needs
+    // it to locate its contribs.
+    env.emplace_back("SBCL_HOME", toMaximaPath(install.root / "bin"));
+
+    if (!config.loadUserInit) {
+        // Point Maxima's user directory somewhere we control so it does not
+        // read the user's maxima-init.mac. See Config::loadUserInit.
+        std::filesystem::path userDir = config.userDir;
+        if (userDir.empty()) {
+            std::error_code ec;
+            userDir = std::filesystem::temp_directory_path(ec) / "maxima_cpp"
+                      / "userdir";
+        }
+        std::error_code ec;
+        std::filesystem::create_directories(userDir, ec);
+        env.emplace_back("MAXIMA_USERDIR", toMaximaPath(userDir));
+    }
+
+    return env;
 }
 
 MaximaSession::MaximaSession(Config config)
-    : config_(std::move(config)),
-      transport_(
-          std::make_unique<ChildProcessTransport>(launchCommand(config_))) {
+    : config_(std::move(config)), transport_(launchMaxima(config_)) {
     handshake();
 }
 

@@ -10,9 +10,16 @@
 #include <exception>
 #include <string>
 
-TEST_CASE("Config carries a usable default Maxima root") {
+TEST_CASE("a default Config asks for discovery rather than a fixed path") {
     const mx::Config config;
-    CHECK_FALSE(config.maximaRoot.empty());
+    // Empty is meaningful: it means "find Maxima yourself". A hard-coded
+    // default would quietly work on the machine it was written on and nowhere
+    // else.
+    CHECK(config.maximaRoot.empty());
+
+    // A library must compute the same answer on every machine, so the user's
+    // own maxima-init.mac is out of the picture unless asked for.
+    CHECK_FALSE(config.loadUserInit);
 }
 
 TEST_CASE("KernelError is catchable at every level of the hierarchy") {

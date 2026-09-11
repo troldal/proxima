@@ -13,6 +13,7 @@
 #include "transport/itransport.hpp"
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace mx::detail {
@@ -29,9 +30,18 @@ namespace mx::detail {
 /// than of the command being run.
 class ChildProcessTransport final : public ITransport {
 public:
+    /// A name/value pair layered over the inherited environment.
+    using EnvOverride = std::pair<std::string, std::string>;
+
     /// Launches `argv[0]` with the remaining entries as its arguments.
+    ///
+    /// `env` entries are merged over the parent's environment — matched
+    /// case-insensitively, as Windows treats variable names — rather than
+    /// replacing it, so the child keeps PATH and friends.
+    ///
     /// Throws KernelError if the process or its pipes could not be created.
-    explicit ChildProcessTransport(const std::vector<std::string> &argv);
+    explicit ChildProcessTransport(const std::vector<std::string> &argv,
+                                   const std::vector<EnvOverride> &env = {});
 
     ~ChildProcessTransport() override;
 
@@ -58,5 +68,16 @@ private:
 ///
 /// Exposed for testing; not part of the public API.
 std::string quoteArg(const std::string &arg);
+
+/// Merges `overrides` over the current process environment and returns a
+/// CreateProcess environment block: "NAME=VALUE\0...\0\0".
+///
+/// Names match case-insensitively, since that is how Windows compares them —
+/// overriding "maxima_prefix" must replace an inherited "MAXIMA_PREFIX" rather
+/// than sit beside it, which the child would see as undefined behaviour.
+///
+/// Exposed for testing; not part of the public API.
+std::vector<char>
+buildEnvironmentBlock(const std::vector<ChildProcessTransport::EnvOverride> &overrides);
 
 } // namespace mx::detail

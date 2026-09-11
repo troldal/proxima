@@ -6,6 +6,8 @@
 
 #include <doctest/doctest.h>
 
+#include <mx/config.hpp>
+#include <mx/errors.hpp>
 #include <mx/kernel.hpp>
 
 #include <string>
@@ -35,6 +37,26 @@ TEST_CASE("kernel performs a symbolic integration") {
     const std::string result = maxima.evalRaw("integrate(x^2*sin(x), x);");
     CHECK_FALSE(result.empty());
     CHECK(result.find("sin") != std::string::npos);
+}
+
+TEST_CASE("the launch environment reaches the child process") {
+    // Maxima exposes the value of $MAXIMA_USERDIR as maxima_userdir, which
+    // makes the whole environment-block path observable end to end: merged over
+    // the inherited environment, passed to CreateProcess, and read by Maxima.
+    //
+    // This is also what keeps the user's own maxima-init.mac out of the
+    // picture, so it is worth asserting rather than assuming.
+    mx::Config config;
+    config.userDir = "C:\\mx_test_userdir";
+
+    mx::Kernel maxima(config);
+    CHECK(maxima.evalRaw("maxima_userdir;") == "\"C:/mx_test_userdir\"");
+}
+
+TEST_CASE("an explicitly wrong Maxima root fails loudly") {
+    mx::Config config;
+    config.maximaRoot = "C:\\no\\such\\maxima";
+    CHECK_THROWS_AS(mx::Kernel{config}, mx::KernelError);
 }
 
 TEST_CASE("two kernels are independent") {

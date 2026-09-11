@@ -8,6 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # third-party dependencies to build or link. cmake/CPM.cmake is kept for the
 # test framework added later (see PLAN.md step 3).
 add_library(maxima_cpp
+        src/kernel/discovery.cpp
         src/kernel/kernel.cpp
         src/kernel/session.cpp
         src/transport/child_process_win32.cpp

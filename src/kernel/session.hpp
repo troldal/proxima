@@ -4,12 +4,14 @@
 // this class holds no handles and includes no platform headers. It speaks the
 // Maxima protocol over an ITransport and nothing else.
 
+#include "kernel/discovery.hpp"
 #include "transport/itransport.hpp"
 
 #include <mx/config.hpp>
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace mx::detail {
@@ -52,9 +54,14 @@ public:
     static constexpr const char *kPromptPrefix = "@MAXIMA_PROMPT_BEGIN@";
     static constexpr const char *kPromptSuffix = "@MAXIMA_PROMPT_END@";
 
-    /// Builds the argv used to launch Maxima's SBCL image for `config`.
-    /// Exposed for testing; performs filesystem lookups but starts nothing.
-    static std::vector<std::string> launchCommand(const Config &config);
+    /// Builds the argv used to launch Maxima's SBCL image for `install`.
+    /// Exposed for testing; touches no filesystem and starts nothing.
+    static std::vector<std::string> launchCommand(const MaximaInstall &install);
+
+    /// Builds the environment overrides layered over the parent's environment.
+    /// Exposed for testing; may create Config::userDir but starts nothing.
+    static std::vector<std::pair<std::string, std::string>>
+    launchEnvironment(const MaximaInstall &install, const Config &config);
 
 private:
     void handshake();

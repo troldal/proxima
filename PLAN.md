@@ -195,12 +195,34 @@ Replace `findFile`'s recursive walk with an ordered strategy: explicit
 `PATH`. Within the chosen root, look for `bin/sbcl.exe` and glob
 `lib/maxima/*/binary-sbcl/maxima.core` directly.
 
-Also set `MAXIMA_PREFIX` in the child environment so Maxima finds its `share/`
-tree — several `integrate` and `solve` paths load share packages and fail
-confusingly without it.
+Set `MAXIMA_PREFIX` and `SBCL_HOME` in the child environment, and pass
+`--dynamic-space-size 2000` on 64-bit builds, matching what upstream's
+`maxima.bat` does.
+
+> **Correction (measured during step 5).** An earlier draft of this plan claimed
+> `MAXIMA_PREFIX` was required for share packages to load. That is not so on a
+> standard install: the core has its paths compiled in, and `load(abs_integrate)`
+> plus `integrate(abs(x),x)` both succeed with the variable unset. It is still
+> worth setting, but for a narrower reason — a relocated or portable
+> installation whose baked-in prefix no longer exists.
+
+The measurement did turn up a real hazard: Maxima loads `maxima-init.mac` from
+`$MAXIMA_USERDIR` (default `~/maxima`) at startup, and wxMaxima creates that file
+as a matter of course. Anything in it silently changes this library's results on
+one machine and not another. A library must compute the same answer everywhere,
+so `Config::loadUserInit` defaults to false and the user directory is pointed at
+a controlled location. Setting it true opts back in.
 
 - *Verify:* startup is visibly faster; a bogus root produces a clear error
-  instead of a 30-second scan.
+  instead of a 30-second scan; `maxima_userdir` read back from a live session
+  reflects the configured value, which makes the whole environment path
+  observable end to end.
+
+**Explicit configuration is authoritative.** If `Config::maximaRoot` is set but
+unusable, discovery throws rather than searching on. Falling through would
+silently run a different installation than the caller asked for, turning a
+mistyped path into surprising results instead of a diagnosable error. (Caught by
+a test during step 5, which the first implementation failed.)
 
 ### Step 6. Framed protocol with correlation IDs
 

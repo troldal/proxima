@@ -3,6 +3,8 @@
 #include <mx/errors.hpp>
 
 #include <algorithm>
+#include <cctype>
+#include <cstring>
 
 namespace mx::detail {
 
@@ -33,7 +35,77 @@ std::string quoteArg(const std::string &arg) {
     return result;
 }
 
-ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &argv) {
+namespace {
+
+bool equalsIgnoreCase(std::string_view a, std::string_view b) {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < a.size(); ++i) {
+        const unsigned char lhs = static_cast<unsigned char>(a[i]);
+        const unsigned char rhs = static_cast<unsigned char>(b[i]);
+        if (std::tolower(lhs) != std::tolower(rhs)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+std::vector<char> buildEnvironmentBlock(
+    const std::vector<ChildProcessTransport::EnvOverride> &overrides) {
+    std::vector<char> block;
+    std::vector<bool> applied(overrides.size(), false);
+
+    const auto append = [&block](std::string_view entry) {
+        block.insert(block.end(), entry.begin(), entry.end());
+        block.push_back('\0');
+    };
+
+    if (const char *environment = GetEnvironmentStringsA()) {
+        for (const char *entry = environment; *entry != '\0';
+             entry += std::strlen(entry) + 1) {
+            const std::string_view text(entry);
+
+            // Entries beginning with '=' are the per-drive working directories
+            // ("=C:=C:\work"). They are not user variables and must be passed
+            // through untouched.
+            const size_t equals
+                = text.empty() ? std::string_view::npos : text.find('=', 1);
+            if (text.front() == '=' || equals == std::string_view::npos) {
+                append(text);
+                continue;
+            }
+
+            const std::string_view name = text.substr(0, equals);
+            auto override_ = std::find_if(
+                overrides.begin(), overrides.end(),
+                [&name](const auto &o) { return equalsIgnoreCase(o.first, name); });
+
+            if (override_ == overrides.end()) {
+                append(text);
+            } else {
+                applied[static_cast<size_t>(override_ - overrides.begin())] = true;
+                append(override_->first + "=" + override_->second);
+            }
+        }
+        FreeEnvironmentStringsA(const_cast<LPCH>(environment));
+    }
+
+    // Overrides that did not replace anything inherited.
+    for (size_t i = 0; i < overrides.size(); ++i) {
+        if (!applied[i]) {
+            append(overrides[i].first + "=" + overrides[i].second);
+        }
+    }
+
+    block.push_back('\0'); // Blocks are terminated by a second NUL.
+    return block;
+}
+
+ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &argv,
+                                             const std::vector<EnvOverride> &env) {
     if (argv.empty()) {
         throw KernelError("ChildProcessTransport requires at least an executable");
     }
@@ -69,8 +141,17 @@ ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &arg
     std::vector<char> cmdBuf(commandLine.begin(), commandLine.end());
     cmdBuf.push_back('\0');
 
+    // An empty override list means "inherit everything", which CreateProcess
+    // spells as a null block rather than an empty one.
+    std::vector<char> envBlock;
+    if (!env.empty()) {
+        envBlock = buildEnvironmentBlock(env);
+    }
+
     BOOL ok = CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr, TRUE,
-                             CREATE_NO_WINDOW, nullptr, nullptr, &si, &procInfo_);
+                             CREATE_NO_WINDOW,
+                             envBlock.empty() ? nullptr : envBlock.data(),
+                             nullptr, &si, &procInfo_);
 
     // The child owns its ends now; holding them open would keep the pipe from
     // ever reporting end-of-stream.
