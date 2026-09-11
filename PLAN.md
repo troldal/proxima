@@ -861,13 +861,33 @@ quoting and environment-block tests), 7 integration on both.
 4. ~~**`solve` over a system**~~ — built after step 15, once the gap was
    noticed: `solve(equations, unknowns)`, with the single-unknown form
    delegating to it. See step 11.
+5. ~~**Offline `parse()`**~~ — built after step 15: `Expr::parse` is a Pratt
+   parser over a subset of Maxima's grammar, needing no kernel. `mx::parse`
+   remains for anything outside that subset. See below.
+
+### Two parsers, and how they differ
+
+`Expr::parse` is a Pratt parser over a deliberate *subset* of Maxima's grammar:
+arithmetic, comparisons, function application, lists, strings. It needs no
+kernel. Statements — assignment, definition, quoting, non-commutative
+multiplication — are refused, because it parses expressions rather than
+programs.
+
+Precedences are Maxima's, including the two that catch people out: `^` is
+right-associative (`x^2^3` is `x^(2^3)`), and unary minus binds *looser* than
+`^` (`-x^2` is `-(x^2)`).
+
+The difference that matters most is not the grammar, though. **`Expr::parse`
+parses; `mx::parse` parses and evaluates.** `Expr::parse("5!")` is
+`factorial(5)`; `mx::parse("5!")` is `120`, because Maxima evaluates as it
+reads. Writing the agreement test against structure rather than meaning was
+wrong for exactly this reason, and the test now compares both sides *through*
+Maxima: its reading of the original text against its reading of what the offline
+parser printed.
 
 ### Genuinely undecided
 
-5. **Offline `parse()`.** `mx::parse` delegates to Maxima and so needs a running
-   kernel. If constructing expressions from strings without one ever becomes a
-   requirement, a hand-written Pratt parser (~250 lines) is the answer; nothing
-   so far has needed it.
+Nothing outstanding.
 
 ### Decided, but not built
 

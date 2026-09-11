@@ -90,6 +90,31 @@ public:
     /// and `Expr::rational(1, 2)` are different values, as they are to any CAS.
     Expr(double value);
 
+    /// Reads an expression from infix text, with no kernel involved.
+    ///
+    /// A deliberate *subset* of Maxima's syntax: arithmetic, comparisons,
+    /// function application, lists, strings. Statements — assignment,
+    /// definition, quoting, non-commutative multiplication — are not here,
+    /// because this parses expressions rather than programs. For those, and for
+    /// anything else exotic, mx::parse hands the text to Maxima's own parser
+    /// and so cannot drift from it; the price is needing a running kernel.
+    ///
+    /// Precedences are Maxima's, including the two that surprise people: `^` is
+    /// right-associative, so `x^2^3` is `x^(2^3)`; and unary minus binds looser
+    /// than `^`, so `-x^2` is `-(x^2)`.
+    ///
+    /// Exactness is preserved — `1/3` is a Rational, not 0.333… — and an
+    /// integer too large for mx::Integer becomes an Opaque node holding its
+    /// digits rather than wrapping.
+    ///
+    /// **This parses; it does not evaluate.** `Expr::parse("5!")` is
+    /// `factorial(5)` and `Expr::parse("2^3")` is `2^3`, normalised but not
+    /// computed. mx::parse differs here as well as in grammar: it hands the
+    /// text to Maxima, which evaluates as it reads, and answers 120 and 8.
+    ///
+    /// Throws mx::ParseError, naming the offset, for anything malformed.
+    static Expr parse(std::string_view source);
+
     static Expr integer(Integer value);
 
     /// An exact fraction, reduced, with the sign carried by the numerator.

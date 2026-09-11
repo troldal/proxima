@@ -29,6 +29,10 @@ if (const auto integral = mx::integrate(f, x)) {
 - **Assumption scopes.** `mx::Context` opens a Maxima context and discards it on
   destruction, assumptions and declarations alike.
 - **Numeric evaluation** without a round trip, once a closed form exists.
+- **Two parsers.** `Expr::parse("x^2 - 3*x + 2")` needs no kernel and covers
+  ordinary infix; `mx::parse` hands the text to Maxima for anything beyond that.
+  Note that the first only parses, while the second also evaluates — `5!` is
+  `factorial(5)` to one and `120` to the other.
 - **A kernel that survives its own death.** If Maxima hangs or exits, the call
   reports it and the kernel restarts with its assumptions replayed.
 

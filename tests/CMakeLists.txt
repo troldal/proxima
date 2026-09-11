@@ -25,6 +25,7 @@ add_executable(mx_tests
         test_normalize.cpp
         test_numeric.cpp
         test_ops.cpp
+        test_parser.cpp
         test_process_env.cpp
         test_sexpr.cpp
         test_kernel.cpp
