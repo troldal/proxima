@@ -139,8 +139,7 @@ public:
     /// right-associative, so `x^2^3` is `x^(2^3)`; and unary minus binds looser
     /// than `^`, so `-x^2` is `-(x^2)`.
     ///
-    /// Exactness is preserved — `1/3` is a Rational, not 0.333… — and an
-    /// integer too large for mx::Integer becomes an Opaque node holding its
+    /// Exactness is preserved — `1/3` is a Rational, not 0.333…
     ///
     /// Integers of any size are read exactly — `mx::Integer` is unbounded —
     /// so a factorial pasted in as text is a number rather than a blob.
