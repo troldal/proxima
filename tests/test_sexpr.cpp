@@ -145,6 +145,17 @@ TEST_CASE("malformed input is rejected rather than half-read") {
     CHECK_THROWS_AS(parseSExpr("(1) (2)"), mx::ParseError);
 }
 
+TEST_CASE("a ';' in a reply is refused, rather than read for ever") {
+    // Found by fuzzing: ';' ended an atom but nothing consumed it, so the
+    // reader produced empty atoms at the same place until memory ran out.
+    // Maxima never puts a comment in a reply.
+    CHECK_THROWS_AS(static_cast<void>(
+                        parseSExpr("((BIGFLOAT SIMP 56) 450359;96273704960 1)")),
+                    mx::ParseError);
+    CHECK_THROWS_AS(static_cast<void>(parseSExpr(";")), mx::ParseError);
+    CHECK_THROWS_AS(static_cast<void>(parseSExpr("(a ; b)")), mx::ParseError);
+}
+
 TEST_CASE("dotted pairs are rejected explicitly") {
     // Maxima's term representation is proper lists throughout. Treating the dot
     // as an ordinary symbol would corrupt the tree instead of reporting that

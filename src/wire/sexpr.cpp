@@ -127,6 +127,13 @@ public:
         if (c == '|') {
             return {TokenKind::QuotedSymbol, readBarSymbol()};
         }
+        if (c == ';') {
+            // A Lisp comment, which Maxima never puts in a reply. Found by
+            // fuzzing: ';' ends an atom but nothing consumed it, so every call
+            // returned an empty atom at the same place, and the list growing
+            // from them ran the process out of memory.
+            throw ParseError("unexpected ';' in Maxima reply");
+        }
         return {TokenKind::Atom, readAtom()};
     }
 
@@ -176,6 +183,12 @@ private:
         const size_t start = at_;
         while (at_ < text_.size() && !isDelimiter(text_[at_])) {
             ++at_;
+        }
+        if (at_ == start) {
+            // Every delimiter is handled before this is reached, so an atom of
+            // nothing means one was not. Refused rather than returned, since an
+            // empty atom never advances and the reader would loop.
+            throw ParseError("unreadable character in Maxima reply");
         }
         return std::string(text_.substr(start, at_ - start));
     }
