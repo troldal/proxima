@@ -181,6 +181,14 @@ TEST_CASE("strings become Maxima source text, re-escaped") {
 TEST_CASE("a malformed term is rejected rather than half-mapped") {
     CHECK_THROWS_AS(fromMaxima(parseSExpr("()")), mx::ParseError);
     CHECK_THROWS_AS(fromMaxima(parseSExpr("((42 SIMP) 1)")), mx::ParseError);
+
+    SUBCASE("including a rational that is not one") {
+        // These used to become Opaque text, "(1/0)" and "($X/2)", and so
+        // survived as something that looked like an answer.
+        CHECK_THROWS_AS(fromMaxima(parseSExpr("((RAT SIMP) 1 0)")), mx::ParseError);
+        CHECK_THROWS_AS(fromMaxima(parseSExpr("((RAT SIMP) $X 2)")), mx::ParseError);
+        CHECK_THROWS_AS(fromMaxima(parseSExpr("((RAT SIMP) 1)")), mx::ParseError);
+    }
 }
 
 TEST_CASE("every recorded Maxima reply maps to something printable") {

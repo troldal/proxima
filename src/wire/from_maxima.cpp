@@ -87,25 +87,36 @@ std::string decodeHead(std::string_view raw) {
     return decodeMaximaName(raw);
 }
 
-Expr mapInteger(const SExpr &form) {
-    // Any size: mx::Integer is unbounded, so a factorial arrives as a number
-    // rather than as a blob of text.
-    if (auto value = Integer::parse(form.digits())) {
-        return Expr::integer(std::move(*value));
+/// The value of an Integer atom, of any size: mx::Integer is unbounded, so a
+/// factorial arrives as a number rather than as a blob of text.
+Integer integerOf(const SExpr &form) {
+    // The reader makes an Integer only of an optional sign and digits, so this
+    // parses. It throws rather than falling back to Opaque text, which is what
+    // it once did, so that a broken reader could never pass for an answer.
+    auto value = Integer::parse(form.digits());
+    if (!value) {
+        throw ParseError("unreadable integer '" + form.digits() + "' in a Maxima reply");
     }
-    return Expr::opaque(form.digits());
+    return std::move(*value);
 }
 
+Expr mapInteger(const SExpr &form) {
+    return Expr::integer(integerOf(form));
+}
+
+/// Maxima's `(RAT numerator denominator)`: two integers, the denominator not
+/// zero. Anything else is not a term Maxima produces, and is refused rather
+/// than kept as Opaque text such as "(1/0)" that would look like an answer.
 Expr mapRational(const SExpr &form) {
-    auto numerator = Integer::parse(form.at(1).digits());
-    auto denominator = Integer::parse(form.at(2).digits());
-    if (numerator && denominator && !denominator->isZero()) {
-        return Expr::rational(std::move(*numerator), std::move(*denominator));
+    if (form.size() != 3 || !form.at(1).isInteger() || !form.at(2).isInteger()) {
+        throw ParseError("malformed rational " + form.toString() + " in a Maxima reply");
     }
-    // Parenthesised because Opaque is treated as an atom by the printer and
-    // this content is not one.
-    return Expr::opaque("(" + form.at(1).digits() + "/" + form.at(2).digits()
-                        + ")");
+    Integer denominator = integerOf(form.at(2));
+    if (denominator.isZero()) {
+        throw ParseError("rational with a zero denominator " + form.toString()
+                         + " in a Maxima reply");
+    }
+    return Expr::rational(integerOf(form.at(1)), std::move(denominator));
 }
 
 /// A Maxima bigfloat is mantissa * 2^(exponent - bits(mantissa)).

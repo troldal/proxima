@@ -55,7 +55,9 @@ public:
         return kind_ == Kind::Symbol && text_ == name;
     }
 
-    /// The digits of an Integer, sign included. Empty for other kinds.
+    /// The digits of an Integer, sign included: an optional sign and at least
+    /// one digit, which the reader guarantees. Meaningless for other kinds,
+    /// whose text it would return — check isInteger() first.
     const std::string &digits() const { return text_; }
 
     /// The Integer's value, or nullopt when it does not fit in 64 bits.
