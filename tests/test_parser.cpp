@@ -254,6 +254,38 @@ TEST_CASE("malformed input is rejected, with the offset") {
     }
 }
 
+TEST_CASE("text nested too deep is refused, not a stack overflow") {
+    // Found by fuzzing: 200,000 opening parentheses, unary minuses or a chain
+    // of powers each recursed once per level and crashed the process.
+    const std::size_t levels = 200'000;
+    const std::string parens = std::string(levels, '(') + "x" + std::string(levels, ')');
+    const std::string minuses = std::string(levels, '-') + "x";
+    std::string powers = "x";
+    for (std::size_t i = 0; i < levels; ++i) {
+        powers += "^x";
+    }
+
+    for (const std::string *source :
+         std::initializer_list<const std::string *>{&parens, &minuses, &powers}) {
+        CHECK_THROWS_WITH_AS(static_cast<void>(Expr::parse(*source)),
+                             doctest::Contains("nested deeper than"), mx::ParseError);
+    }
+
+    SUBCASE("while ordinary nesting, and a long flat sum, still parse") {
+        const std::size_t modest = 200;
+        CHECK_NOTHROW(static_cast<void>(
+            Expr::parse(std::string(modest, '(') + "x" + std::string(modest, ')'))));
+        CHECK_NOTHROW(static_cast<void>(Expr::parse(std::string(modest, '-') + "x")));
+        // Sums loop rather than recurse, so length is not depth. Longer than
+        // the limit, but not much: each + rebuilds the sum so far.
+        std::string sum = "x";
+        for (int i = 0; i < 2'000; ++i) {
+            sum += "+x";
+        }
+        CHECK_NOTHROW(static_cast<void>(Expr::parse(sum)));
+    }
+}
+
 TEST_CASE("statements are not expressions, and are refused") {
     // Assignment, definition and quoting are Maxima *programs*. Refusing them
     // here is the boundary that keeps this a parser for expressions; mx::parse

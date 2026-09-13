@@ -269,6 +269,10 @@ std::string quoteString(std::string_view text) {
     return out;
 }
 
+/// How deeply an expression may nest. Far beyond anything written by hand, and
+/// the same as the reader of Maxima's replies allows.
+constexpr std::size_t kMaxParseDepth = 1000;
+
 class Parser {
 public:
     explicit Parser(std::string_view source) : lexer_(source) {
@@ -282,6 +286,8 @@ public:
     }
 
 private:
+    std::size_t depth_ = 0;
+
     void advance() {
         current_ = lexer_.next();
     }
@@ -307,6 +313,21 @@ private:
     /// The Pratt loop: parse a prefix, then keep absorbing infix and postfix
     /// operators that bind more tightly than the caller allows.
     Expr expression(int minimumPower) {
+        // Every way to nest — parentheses, a unary sign, the right of `^` or a
+        // relation, a function's arguments — comes back through here, so this
+        // is the one place to count depth. Uncounted, 200,000 opening
+        // parentheses overflowed the stack and killed the process.
+        if (depth_ >= kMaxParseDepth) {
+            throw ParseError("expression nested deeper than "
+                             + std::to_string(kMaxParseDepth) + " levels at offset "
+                             + std::to_string(current_.at));
+        }
+        ++depth_;
+        struct Leave {
+            std::size_t &depth;
+            ~Leave() { --depth; }
+        } leave{depth_};
+
         Expr left = prefix();
         while (leftBindingPower(current_.kind) > minimumPower) {
             left = infix(std::move(left));
