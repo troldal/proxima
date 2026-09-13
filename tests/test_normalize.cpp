@@ -173,6 +173,61 @@ TEST_CASE("nothing is expanded or factored") {
     CHECK_FALSE((Expr(x) + 1) * (Expr(x) - 1) == pow(Expr(x), 2) - 1);
 }
 
+TEST_CASE("an integer power of a power is combined, as Maxima combines it") {
+    // Found by fuzzing: 1/x^2 is (x^2)^-1, and was a different expression from
+    // x^-2 — which the printer writes as 1/x^2, so it did not read back.
+    const Symbol x("x");
+    const Symbol y("y");
+    CHECK(pow(pow(Expr(x), 2), -1) == pow(Expr(x), -2));
+    CHECK(Expr(1) / pow(Expr(x), 2) == pow(Expr(x), -2));
+    CHECK(pow(pow(Expr(x), Expr::rational(1, 2)), -1)
+          == pow(Expr(x), Expr::rational(-1, 2)));
+    CHECK(pow(pow(Expr(x), Expr(y)), 3) == pow(Expr(x), 3 * Expr(y)));
+    CHECK(pow(pow(Expr(x), Expr::rational(1, 2)), 2) == Expr(x));
+
+    CHECK(Expr::parse(pow(Expr(x), -2).str()) == pow(Expr(x), -2));
+    CHECK(Expr::parse(pow(Expr(x), Expr::rational(-1, 2)).str())
+          == pow(Expr(x), Expr::rational(-1, 2)));
+
+    SUBCASE("but not a fractional or symbolic power of one, which would be wrong") {
+        // (x^2)^(1/2) is abs(x), not x; and (x^2)^y is x^(2y) only for some y.
+        const Expr root = pow(pow(Expr(x), 2), Expr::rational(1, 2));
+        REQUIRE(root.kind() == Kind::Pow);
+        CHECK(root.arg(0) == pow(Expr(x), 2));
+        CHECK(pow(pow(Expr(x), 2), Expr(y)).arg(0) == pow(Expr(x), 2));
+    }
+}
+
+TEST_CASE("a reciprocal is kept in the one form division produces") {
+    // Found by fuzzing: the printer writes every reciprocal as a division, and
+    // 2^-1 printed as 1/2, which reads back as a Rational; s*n^-1*f^-1 printed
+    // as s/(n*f), which read back as s*(n*f)^-1.
+    const Symbol x("x");
+    const Symbol y("y");
+
+    CHECK(pow(Expr(2), -1) == Expr::rational(1, 2));
+    CHECK(pow(Expr::rational(2, 3), -1) == Expr::rational(3, 2));
+    CHECK(pow(Expr::rational(-2, 3), -1) == Expr::rational(-3, 2));
+    CHECK(pow(Expr(x) * Expr(y), -1) == pow(Expr(x), -1) * pow(Expr(y), -1));
+    CHECK(pow(3 * Expr(y), -1) == Expr::rational(1, 3) * pow(Expr(y), -1));
+
+    SUBCASE("which is not evaluating powers of numbers in general") {
+        CHECK(pow(Expr(0), -1).kind() == Kind::Pow); // Not a division by zero.
+        CHECK(pow(Expr(2), 3).kind() == Kind::Pow);  // 2^3 is not folded to 8.
+        CHECK(pow(Expr(x) * Expr(y), 2).kind() == Kind::Pow);
+    }
+
+    SUBCASE("and what it prints reads back") {
+        const Expr f = Expr::function("f", {Expr(x)});
+        for (const Expr &e : {Expr::symbol("s") * pow(Expr::symbol("n"), -1) * pow(f, -1),
+                              Expr::rational(1, 3) * Expr(x) * pow(Expr(y), -1),
+                              Expr(x) * pow(Expr(2), -1)}) {
+            CAPTURE(e.str());
+            CHECK(Expr::parse(e.str()) == e);
+        }
+    }
+}
+
 TEST_CASE("powers are not combined") {
     const Symbol x("x");
     CHECK_FALSE(pow(Expr(x), 2) * pow(Expr(x), 3) == pow(Expr(x), 5));

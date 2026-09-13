@@ -327,6 +327,36 @@ std::optional<Expr> normalizePower(const Expr &base, const Expr &exponent) {
     if (isExactOne(base)) {
         return Expr::integer(1);
     }
+    // A reciprocal is kept in one form, the one division produces and the
+    // printer writes: found by fuzzing, 2^-1 printed as 1/2, which reads back as
+    // the Rational, and s*n^-1*f^-1 printed as s/(n*f), which read back as
+    // s*(n*f)^-1. So an exact number's reciprocal is the Rational — as 2/4 is
+    // already 1/2, though 2^3 is still not 8 — and a product's reciprocal is
+    // the product of its factors' reciprocals, as Maxima keeps a quotient.
+    if (exponent.is(Kind::Integer) && exponent.integerValue() == Integer(-1)) {
+        if (base.is(Kind::Integer) && !base.integerValue().isZero()) {
+            return Expr::rational(Integer(1), base.integerValue());
+        }
+        if (base.is(Kind::Rational)) {
+            return Expr::rational(base.denominator(), base.numerator());
+        }
+        if (base.is(Kind::Mul)) {
+            std::vector<Expr> reciprocals;
+            reciprocals.reserve(base.arity());
+            for (const Expr &factor : base.args()) {
+                reciprocals.push_back(Expr::pow(factor, exponent));
+            }
+            return Expr::mul(std::move(reciprocals));
+        }
+    }
+    // (a^r)^n is a^(r*n) when n is an integer, whatever a and r are: an
+    // integer power has one value, so nothing is lost. Maxima simplifies it so
+    // on every result. Found by fuzzing: without it `1/x^2`, which is
+    // (x^2)^-1, was a different expression from x^-2 — which is exactly how the
+    // printer writes x^-2, so a printed expression did not read back.
+    if (base.is(Kind::Pow) && exponent.is(Kind::Integer)) {
+        return Expr::pow(base.arg(0), Expr::mul({base.arg(1), exponent}));
+    }
     return std::nullopt;
 }
 

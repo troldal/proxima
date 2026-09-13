@@ -49,7 +49,8 @@ can compute with rather than a value that wraps or has to be handed back to
 Maxima. Values that fit in 64 bits never allocate.
 
 Expressions are **normalised at construction**: nested sums flattened, numeric
-terms folded, identities dropped, operands canonically ordered. So `x + 1` and
+terms folded, identities dropped, an integer power of a power combined
+(`(x^2)^-1` is `x^-2`, as Maxima has it), operands canonically ordered. So `x + 1` and
 `1 + x` are equal and hash alike. It is normalisation, not algebra: `x - x`
 stays `x - x`, and nothing is expanded or factored, because that is Maxima's
 job and having two things simplify would make results depend on which path

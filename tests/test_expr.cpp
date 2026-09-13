@@ -321,7 +321,8 @@ TEST_CASE("printing parenthesises by precedence") {
         CHECK((pow(Expr(x), 2) * Expr(y)).str() == "y*x^2");
     }
     SUBCASE("a power's own base is wrapped, since ^ is right-associative") {
-        CHECK(pow(pow(Expr(x), 2), 3).str() == "(x^2)^3");
+        // A symbolic exponent: an integer one, (x^2)^3, is combined into x^6.
+        CHECK(pow(pow(Expr(x), 2), Expr(y)).str() == "(x^2)^y");
     }
 }
 
