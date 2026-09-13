@@ -9,12 +9,29 @@
 #include <mx/kernel.hpp>
 #include <mx/ops.hpp>
 
+#include <cstdint>
 #include <limits>
 #include <random>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 using mx::Integer;
+
+// bool and the character types are integral to C++ but not numbers. Integer
+// already refused bool and char, but not the wide character types, so
+// Integer(u'7') compiled and quietly meant 55. The fixed-width types spelled
+// with signed char and unsigned char are numbers, and must stay convertible.
+static_assert(!std::is_constructible_v<Integer, bool>);
+static_assert(!std::is_constructible_v<Integer, char>);
+static_assert(!std::is_constructible_v<Integer, wchar_t>);
+static_assert(!std::is_constructible_v<Integer, char8_t>);
+static_assert(!std::is_constructible_v<Integer, char16_t>);
+static_assert(!std::is_constructible_v<Integer, char32_t>);
+static_assert(std::is_convertible_v<std::int8_t, Integer>);
+static_assert(std::is_convertible_v<std::uint8_t, Integer>);
+static_assert(std::is_convertible_v<long long, Integer>);
+static_assert(std::is_convertible_v<unsigned long long, Integer>);
 
 namespace {
 

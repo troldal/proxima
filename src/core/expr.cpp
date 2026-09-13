@@ -87,8 +87,6 @@ Expr Expr::makeInteger(Integer value) {
 
 Expr::Expr() : Expr(makeInteger(0)) {}
 
-Expr::Expr(double value) : Expr(real(value)) {}
-
 Expr Expr::integer(Integer value) {
     return makeInteger(value);
 }

@@ -12,6 +12,30 @@
 
 namespace mx {
 
+/// The character types. Integral to C++, but not numbers to anyone reading an
+/// expression: `'a'` in a formula is a mistake, not the value 97.
+template <typename T>
+concept CharacterType = std::same_as<T, char> || std::same_as<T, wchar_t>
+                        || std::same_as<T, char8_t> || std::same_as<T, char16_t>
+                        || std::same_as<T, char32_t>;
+
+/// The integral types that are numbers: all of them except bool and the
+/// character types.
+///
+/// `signed char` and `unsigned char` count as numbers, because std::int8_t and
+/// std::uint8_t are spelled with them, and excluding them would make those
+/// unusable. Plain `char`, whose signedness is not even fixed, does not.
+template <typename T>
+concept IntegralNumber
+    = std::integral<T> && !std::same_as<T, bool> && !CharacterType<T>;
+
+/// The types C++ converts to numbers implicitly that must not become numbers
+/// here. Integer and Expr delete their constructors for these, so that a
+/// mistake like `Expr(true)` is a compile error naming the argument rather
+/// than a silent 1.
+template <typename T>
+concept BooleanOrCharacter = std::same_as<T, bool> || CharacterType<T>;
+
 /// An exact integer of unbounded size.
 ///
 /// Maxima produces large integers in ordinary use — `30!` has 33 digits, and a
@@ -36,22 +60,27 @@ class Integer {
 public:
     Integer() = default;
 
-    /// Implicit from any integral type but bool and char.
+    /// Implicit from any integral type that is a number: see IntegralNumber.
     ///
     /// A template rather than overloads on int and std::int64_t: those leave
     /// `long long` ambiguous wherever int64_t is `long`, which is every LP64
     /// platform — it compiles on Windows and not on Linux.
     template <typename T>
-        requires std::signed_integral<T> && (!std::same_as<T, char>)
+        requires IntegralNumber<T> && std::signed_integral<T>
     Integer(T value) : value_(static_cast<std::int64_t>(value)) {} // NOLINT
 
     /// Unsigned values above the signed range still fit, so they are not
     /// quietly truncated into negatives.
     template <typename T>
-        requires std::unsigned_integral<T> && (!std::same_as<T, bool>)
-                 && (!std::same_as<T, char>)
+        requires IntegralNumber<T> && std::unsigned_integral<T>
     Integer(T value) // NOLINT
         : value_(static_cast<std::uint64_t>(value)) {}
+
+    /// Deleted. This used to refuse bool and char but accept the wide
+    /// character types, so `Integer(u'7')` compiled and meant 55.
+    template <typename T>
+        requires BooleanOrCharacter<T>
+    Integer(T) = delete;
 
     /// Reads a decimal literal, with an optional sign. Throws mx::ParseError if
     /// `text` is not one.

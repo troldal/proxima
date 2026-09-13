@@ -7,8 +7,11 @@
 #include <mx/symbol.hpp>
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -16,6 +19,50 @@
 using mx::Expr;
 using mx::Kind;
 using mx::Symbol;
+
+// --- what an expression can be built from ------------------------------------
+//
+// Checked at compile time, since that is where the trap was. C++ converts bool
+// and the character types to numbers implicitly, and Expr used to take them
+// that way: Expr(true) was the Real 1.0, Expr('a') the Real 97.0, Expr(u'a')
+// the Integer 97, and `x + true` quietly `1.0 + x`.
+
+static_assert(!std::is_constructible_v<Expr, bool>);
+static_assert(!std::is_constructible_v<Expr, char>);
+static_assert(!std::is_constructible_v<Expr, wchar_t>);
+static_assert(!std::is_constructible_v<Expr, char8_t>);
+static_assert(!std::is_constructible_v<Expr, char16_t>);
+static_assert(!std::is_constructible_v<Expr, char32_t>);
+// Nor implicitly, which is what an operator's argument needs: `x + true`.
+static_assert(!std::is_convertible_v<bool, Expr>);
+static_assert(!std::is_convertible_v<char, Expr>);
+static_assert(!std::is_convertible_v<char16_t, Expr>);
+
+// Every numeric type still converts, including the fixed-width ones that are
+// spelled with signed char and unsigned char.
+static_assert(std::is_convertible_v<int, Expr>);
+static_assert(std::is_convertible_v<long long, Expr>);
+static_assert(std::is_convertible_v<unsigned, Expr>);
+static_assert(std::is_convertible_v<std::size_t, Expr>);
+static_assert(std::is_convertible_v<std::int8_t, Expr>);
+static_assert(std::is_convertible_v<std::uint8_t, Expr>);
+static_assert(std::is_convertible_v<float, Expr>);
+static_assert(std::is_convertible_v<double, Expr>);
+static_assert(std::is_convertible_v<long double, Expr>);
+static_assert(std::is_convertible_v<mx::Integer, Expr>);
+
+TEST_CASE("small fixed-width integers are numbers, not characters") {
+    // std::int8_t is signed char, which is why only plain char is excluded.
+    CHECK(Expr(std::int8_t{-3}).kind() == Kind::Integer);
+    CHECK(Expr(std::int8_t{-3}).integerValue() == -3);
+    CHECK(Expr(std::uint8_t{200}).integerValue() == 200);
+
+    SUBCASE("and every floating-point type is a Real") {
+        CHECK(Expr(2.5f).kind() == Kind::Real);
+        CHECK(Expr(2.5f).realValue() == 2.5);
+        CHECK(Expr(2.5L).kind() == Kind::Real);
+    }
+}
 
 TEST_CASE("numeric leaves") {
     SUBCASE("integers") {

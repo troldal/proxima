@@ -71,18 +71,34 @@ public:
     /// The integer zero.
     Expr();
 
-    /// Implicit from any integral type except bool, so `x + 1` works.
+    /// Implicit from any integral type that is a number, so `x + 1` works. See
+    /// mx::IntegralNumber for which those are.
     template <typename T>
-        requires std::integral<T> && (!std::same_as<T, bool>)
-                 && (!std::same_as<T, char>)
-    Expr(T value) : Expr(makeInteger(static_cast<Integer>(value))) {}
+        requires IntegralNumber<T>
+    Expr(T value) : Expr(makeInteger(static_cast<Integer>(value))) {} // NOLINT
 
     /// Implicit from an exact integer of any size.
     Expr(Integer value) : Expr(makeInteger(std::move(value))) {} // NOLINT
 
-    /// Implicit from double, producing an inexact Real. Note that `Expr(0.5)`
-    /// and `Expr::rational(1, 2)` are different values, as they are to any CAS.
-    Expr(double value);
+    /// Implicit from any floating-point type, producing an inexact Real. Note
+    /// that `Expr(0.5)` and `Expr::rational(1, 2)` are different values, as
+    /// they are to any CAS.
+    ///
+    /// A constrained template rather than `Expr(double)`, because a plain
+    /// double constructor accepts anything with a standard conversion to
+    /// double — bool and char among them. `Expr(true)` used to be the Real 1.0
+    /// and `Expr('a')` the Real 97.0.
+    template <std::floating_point T>
+    Expr(T value) : Expr(real(static_cast<double>(value))) {} // NOLINT
+
+    /// Deleted. bool and the character types convert to numbers in C++, but an
+    /// expression built from `true` or `'a'` is a mistake, not 1 or 97.
+    /// Deleting them, rather than merely leaving them unmatched, makes the
+    /// error name the argument, and makes `x + true` a compile error where it
+    /// used to be `1.0 + x`. A Maxima boolean is `Expr::symbol("true")`.
+    template <typename T>
+        requires BooleanOrCharacter<T>
+    Expr(T) = delete;
 
     /// Reads an expression from infix text, with no kernel involved.
     ///
