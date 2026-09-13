@@ -100,8 +100,9 @@ DisplayNode fromPower(const Expr &base, const Expr &exponent) {
     }
 
     // A negative exponent is a reciprocal, which reads as a fraction. Without
-    // this, `1/x` renders as `x^-1`.
-    if (exponent.isNegativeNumber()) {
+    // this, `1/x` renders as `x^-1`. Not when the base is a number, though: see
+    // fromProduct.
+    if (exponent.isNegativeNumber() && !base.isNumber()) {
         std::vector<DisplayNode> parts;
         parts.push_back(integerNode(Integer(1)));
         parts.push_back(reciprocalBody(base, exponent));
@@ -151,7 +152,14 @@ Signed fromProduct(const std::vector<Expr> &args) {
     std::vector<DisplayNode> above;
     std::vector<DisplayNode> below;
     for (const Expr &factor : factors) {
-        if (factor.is(Kind::Pow) && factor.arg(1).isNegativeNumber()) {
+        // A reciprocal of a number stays a power. Below the line it would be
+        // multiplied with the coefficient's denominator and folded when read
+        // back: found by fuzzing, 4/269 * 0^-1 printed as 4/(269*0), which
+        // reads back as a division by the Integer 0, and 2.5^-1 as 269*2.5
+        // would fold to 672.5. An exact non-zero number's reciprocal is already
+        // a Rational, so only zero, a real, or a power other than -1 get here.
+        if (factor.is(Kind::Pow) && factor.arg(1).isNegativeNumber()
+            && !factor.arg(0).isNumber()) {
             below.push_back(reciprocalBody(factor.arg(0), factor.arg(1)));
             continue;
         }

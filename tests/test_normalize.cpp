@@ -219,9 +219,15 @@ TEST_CASE("a reciprocal is kept in the one form division produces") {
 
     SUBCASE("and what it prints reads back") {
         const Expr f = Expr::function("f", {Expr(x)});
+        // The last three have a number for the reciprocal's base, which the
+        // printer once multiplied into the denominator: 4/(269*0) reads back
+        // with 269*0 folded to 0.
         for (const Expr &e : {Expr::symbol("s") * pow(Expr::symbol("n"), -1) * pow(f, -1),
                               Expr::rational(1, 3) * Expr(x) * pow(Expr(y), -1),
-                              Expr(x) * pow(Expr(2), -1)}) {
+                              Expr(x) * pow(Expr(2), -1),
+                              Expr::rational(4, 269) * pow(Expr(0), -1),
+                              Expr::rational(4, 269) * pow(Expr(2.5), -1),
+                              Expr::rational(3, 5) * pow(Expr(2), -2) * Expr(x)}) {
             CAPTURE(e.str());
             CHECK(Expr::parse(e.str()) == e);
         }
