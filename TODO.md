@@ -22,7 +22,7 @@ Items are ordered by how much they matter, not by file.
 
 ## Status since the review
 
-Updated after `6bc0f7d`. Resolved findings are ticked where they stand, with
+Updated after `8bb6ca4`. Resolved findings are ticked where they stand, with
 an *Outcome* note; everything unticked is still open. The review's own text
 is left as written, so its measurements stay comparable.
 
@@ -93,12 +93,24 @@ Work since, and what it turned up that the review had not found:
   and Maxima quietly recreates a context that `context:` names after it was
   killed; and splitting the session lock exposed a gap that was already
   there, listed as a new §2 item and closed in `6bc0f7d`.
+- **MSVC** (`56389be`). The non-ASCII path tests failed under MSVC because
+  their literals held raw characters, which MSVC reads in the ANSI code page
+  unless given `/utf-8`. The tests now spell the name in bytes and code units,
+  and every target compiles with `/utf-8` under MSVC. Verified with `cl`.
+- **§3, measured before and after each change** (`bfcdea6` … `8bb6ca4`), in
+  a GCC Release build with the old and new library run alternately. A first,
+  single-run comparison of the node layout suggested a 45% slowdown; repeated
+  and interleaved it was noise, which is why every figure below is a median.
+  Found on the way, and more serious than anything in §3: replies were
+  printed under Maxima's Lisp print limits, so any result with more than 100
+  terms or nested deeper than 15 came back silently truncated, and the reader
+  took a bar-quoted symbol such as `|123|` for a number (`d670d17`, now in §1).
 
-Suite: 279 cases / 3000 assertions on Windows (GCC and clang-cl), 280 / 2998 on
+Suite: 284 cases / 3048 assertions on Windows (GCC and clang-cl), 285 / 3046 on
 Linux (222 when the review was written).
 
-§1 and §2 are closed. What remains is performance (§3), ergonomics (§4) and
-the smaller sections after them.
+§1, §2 and §3 are closed. What remains is ergonomics (§4) and the smaller
+sections after it.
 
 ---
 
@@ -262,6 +274,23 @@ These produce a result that disagrees with Maxima, silently.
   and `infinity`, Maxima's complex infinity for 1/x at 0 from both sides —
   remain values, and `ops.hpp` now says which answers are which. The tour no
   longer shows a hand-written check for `ind`.
+
+- [x] **Large results came back silently truncated.** *Found while measuring
+  §3's `readFrame`, whose large replies never grew.* Maxima runs with Lisp's
+  `*print-length*` at 100 and `*print-level*` at 15, and the helper printed
+  every reply under them: a sum of more than 100 terms arrived as its first 100
+  and `...`, anything nested deeper than 15 levels as `#`, and the reader took
+  both for ordinary symbols. `expand((x+y+z)^40)`, 861 terms, mapped to an Add
+  of 100 — a wrong answer that looked right. The "6 KB reply" §3 quotes for
+  that expression was the truncated one; whole, it is 75 KB.
+
+  *Outcome:* fixed in `d670d17`. The helper binds `*print-length*`,
+  `*print-level*` and `*print-lines*` to `nil`, and `*print-base*` and
+  `*print-radix*` to their defaults, and the reader refuses a bare `...` or
+  `#`, so a truncation can no longer pass silently. Making that refusal safe
+  found a second bug: bar-quoted symbols went through the same path as bare
+  atoms, so `|123|` read as the integer 123. Quoted symbols now have their own
+  token kind. Tests written first failed on the old code.
 
 ## 2. Robustness — a typo costs two minutes
 
@@ -467,7 +496,7 @@ These produce a result that disagrees with Maxima, silently.
 
 Fine at today's sizes; these are the walls you will hit.
 
-- [ ] **`sizeof(Node)` is 160 bytes** (measured). Every node — every
+- [x] **`sizeof(Node)` is 160 bytes** (measured). Every node — every
   symbol, every `sin(x)` — carries two `cpp_int`s (64 bytes) plus a
   `double`, a `string` and a `vector`. `node.hpp` calls this a deliberate
   trade against `std::variant`; with `cpp_int` underneath the price
@@ -475,7 +504,13 @@ Fine at today's sizes; these are the walls you will hit.
   std::vector<Expr>>` payload, or a small tagged union, would halve the
   node and put the args vector for leaves out of existence.
 
-- [ ] **`a + b` allocates about five times.** `Expr::add` takes a
+  *Outcome:* done in `bfcdea6` with the `std::variant` payload. A node is 96
+  bytes, 112 allocated (was 176), and a leaf carries no operand vector. Nothing
+  outside `expr.cpp` read Node's fields. *Measured* (Release, five interleaved
+  rounds): no speed change — a 50-term polynomial 37.0 -> 36.9 ms, a mixed
+  small-expression workload 48.2 -> 47.2 ms.
+
+- [x] **`a + b` allocates about five times.** `Expr::add` takes a
   `std::vector<Expr>` by value (1), `normalize()` builds `flat` (2),
   `partitionNumbers` builds `numbers` and `rest` (3, 4), then
   `make_shared` (5), plus a `std::sort` over two elements. Given Boost is
@@ -484,6 +519,17 @@ Fine at today's sizes; these are the walls you will hit.
   scratch is nearly free to adopt. A two-operand fast path in
   `operator+`/`operator*` (skip flatten/partition when neither side is the
   same kind and at most one is a number) would remove most of it.
+
+  *Outcome:* done in `8908cb0`, without `small_vector`: Boost.Container is a
+  compiled library, and linking it into this static one would have changed the
+  installed package's dependencies. The normaliser now flattens only when an
+  operand needs it and otherwise works in the caller's vector, partitions the
+  numbers in place, and returns a lone number untouched instead of rebuilding
+  it. *Measured:* `x + y` 5 -> 2 allocations, `x + 1` 8 -> 3, `(x + 1) + y`
+  17 -> 7, the polynomial 1619 -> 830; Release, ten interleaved rounds, the
+  polynomial 37.8 -> 30.6 ms and the mixed workload 49.0 -> 25.4 ms. A test
+  written to pin reals folding "in any order" failed; checked against the old
+  normaliser, chained `+` never had that property, so the test was corrected.
 
 - [x] **Resolved — the printer is a renderer now; see PLAN.md "Renderers".**
   *Original finding:* the printer runs the normaliser. `negativeTerm()` rebuilds a
@@ -499,13 +545,21 @@ Fine at today's sizes; these are the walls you will hit.
   `x - (1 + y)` printed as `x - 1 + y`, which re-parses to a different
   expression. `tests/test_render.cpp` pins the round trip now.
 
-- [ ] **`readFrame` is O(n²) on large replies.** Every 4 KB chunk appends
+- [x] **`readFrame` is O(n²) on large replies.** Every 4 KB chunk appends
   to `buffer` and then `buffer.find(end)` searches *from the beginning*.
   Not yet visible in practice — `expand((x+y+z)^40)` is a 6 KB reply and
   takes 16 ms end to end — but it is quadratic in reply size by
   construction. Search from `max(0, oldSize - end.size())` instead, and
   raise the transport chunk size (64 KB) — the 4 KB buffer means a 1 MB
   reply is 256 syscalls and 256 searches.
+
+  *Outcome:* done in `9130264`, both halves: the search starts just before the
+  bytes that arrived, and a read takes up to 64 KB. *Measured:* `readFrame`
+  alone over 4 KB reads, 4 MB went from 49-52 ms to 12-13 ms, now roughly
+  linear; against Maxima, the 889 KB reply of `expand((x+y+z)^120)` from about
+  51 to 46 ms, its transfer share from 15-17 ms to 12. Most of the rest is
+  Lisp printing. None of this could be measured until the truncation above was
+  fixed: before it, every large reply was capped near 7 KB.
 
 - [x] **Win32 `receive` polls with `Sleep(1)`.** `PeekNamedPipe` +
   `Sleep(1)` in a loop; on a default Windows timer that sleep is 1–15 ms,
@@ -522,20 +576,39 @@ Fine at today's sizes; these are the walls you will hit.
   completion port. Same 200-call measurement: **0.04 ms** per trivial
   `evalPure`, and 1.5 ms per `expand` round trip (was 15.6 ms).
 
-- [ ] **`Context` construction clears the reply cache just to read a
+- [x] **`Context` construction clears the reply cache just to read a
   name.** `evaluateOrThrow(kernel, "context")` goes through `evalTracked`,
   which clears the in-memory cache, before anything has changed. Use
   `evalPure` for the read.
 
-- [ ] **`evalNumeric`'s `walk()` allocates a `std::vector<double>` per
+  *Outcome:* no change needed. Since `6bc0f7d` the read is one step of the
+  conversation that opens the context and records it with `remember()`, which
+  clears the cache regardless — the new scope's statement is a change of
+  state. A read that did not clear would change nothing observable, so no API
+  was added for it.
+
+- [x] **`evalNumeric`'s `walk()` allocates a `std::vector<double>` per
   function call**, and `isEvaluable` builds failure strings it then
   discards. Use a small stack array (max builtin arity is 2 except
   `max`/`min`) and pass `nullptr` for the failure sink.
 
-- [ ] **`Compiled::pushConstant` dedups with `std::find` on `double ==`.**
+  *Outcome:* done in `2df55b4`: an eight-slot stack array, spilling only for a
+  longer call, and failure messages built only when there is a sink.
+  *Measured* (Release, 200,000 calls): `evalNumeric` on an expression of
+  function calls 4 -> 0 allocations and about 165 -> 87 ms; `isEvaluable` on an
+  unbound symbol 42 -> 4 ms; on a relation, which printed the whole expression
+  to discard the message, 45 allocations and about 520 ms -> 0 and 0.4 ms.
+
+- [x] **`Compiled::pushConstant` dedups with `std::find` on `double ==`.**
   Merges `-0.0` with `0.0` (sign of zero lost — harmless in practice) and
   never merges NaN. Compare bit patterns if you want exact dedup; it is
   O(n) per constant either way, fine for expression sizes seen here.
+
+  *Outcome:* fixed in `8bb6ca4`, and it was not harmless: `atan2(0.0, -1)` is
+  pi and `atan2(-0.0, -1)` is -pi, so the compiled form of their sum answered
+  2 pi where `evalNumeric` answered 0, and `1/0.0 + 1/-0.0` gave inf instead of
+  NaN. A test comparing the two evaluators failed on both first. Constants now
+  share a slot only when equal with the same sign, or both NaN.
 
 ## 4. API ergonomics
 
