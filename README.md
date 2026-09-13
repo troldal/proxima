@@ -120,6 +120,24 @@ text renderer returns boxes with a width, height and baseline, so a fraction can
 stack and an exponent can actually be raised. An interface fixed to
 `std::string` would rule that out.
 
+There is one in [`examples/text2d.hpp`](examples/text2d.hpp), and the demo uses
+it. It is deliberately **not** part of the library — a plain struct of about
+300 lines, written the way you would write your own, and a good place to start
+if you do. It stacks fractions, raises exponents, draws radicals and brackets as
+tall as their contents, and leaves `negate()` for the library to fill in. Here
+is a root of `a*x^2 + b*x + c = 0`, as Maxima solves it and the demo prints it:
+
+```
+  str()     ((b^2 - 4*a*c)^(1/2) - b)/(2*a)
+  toTeX()   \frac{\sqrt{b^{2} - 4 a c} - b}{2 a}
+  text2d
+        ___________
+       /  2
+     \/  b  - 4 a c - b
+    --------------------
+            2 a
+```
+
 **The library decides when to bracket; you decide how.** That is the part worth
 having: a TeX renderer written directly against the expression tree had seven
 defects in under two hundred lines — `x - 1` printing as `-1 + x`, `x/3` as a
