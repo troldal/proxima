@@ -152,6 +152,32 @@ TEST_CASE("dotted pairs are rejected explicitly") {
     CHECK_THROWS_AS(parseSExpr("(a . b)"), mx::ParseError);
 }
 
+TEST_CASE("a reply truncated by Lisp's print limits is refused, not misread") {
+    // Under *print-length* Lisp ends a long list with `...`, and under
+    // *print-level* it replaces a deep one with `#`. Both used to read as
+    // ordinary symbols, turning a truncated reply into a plausible, wrong
+    // expression.
+    CHECK_THROWS_AS(parseSExpr("(1 2 ...)"), mx::ParseError);
+    CHECK_THROWS_AS(parseSExpr("((MPLUS SIMP) $X #)"), mx::ParseError);
+
+    SUBCASE("while a symbol really called that is escaped, and still reads") {
+        const SExpr quoted = parseSExpr("(A |...| |#|)");
+        REQUIRE(quoted.size() == 3);
+        CHECK(quoted.at(1).isSymbol("..."));
+        CHECK(quoted.at(2).isSymbol("#"));
+    }
+
+    SUBCASE("and an escaped name is never read as a number either") {
+        // Lisp bar-quotes a symbol whose name would otherwise read as
+        // something else. These used to come back as the integer 123 and the
+        // real 1.5.
+        const SExpr quoted = parseSExpr("(|123| |1.5|)");
+        REQUIRE(quoted.size() == 2);
+        CHECK(quoted.at(0).isSymbol("123"));
+        CHECK(quoted.at(1).isSymbol("1.5"));
+    }
+}
+
 TEST_CASE("reading past the end of a list is an error, not undefined") {
     const SExpr value = parseSExpr("(1 2)");
     CHECK_THROWS_AS(value.at(2), mx::ParseError);

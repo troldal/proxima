@@ -429,4 +429,30 @@ TEST_CASE("a moved-from kernel reports it rather than dereferencing nothing") {
     // NOLINTEND(bugprone-use-after-move)
 }
 
+TEST_CASE("a large reply arrives whole") {
+    // Maxima runs with Lisp's *print-length* at 100 and *print-level* at 15,
+    // and the helper printed replies under those limits: a sum of 861 terms
+    // came back as its first 100 and a `...`, which the reader then took for a
+    // symbol. The result was a wrong answer that looked like a right one.
+    mx::Kernel kernel;
+
+    const mx::Reply wide = kernel.evalPure("expand((x+y+z)^40)");
+    REQUIRE(wide.ok);
+    CHECK(wide.value.find("...") == std::string::npos);
+    const mx::Expr sum = mx::detail::fromMaxima(mx::detail::parseSExpr(wide.value));
+    CHECK(sum.kind() == mx::Kind::Add);
+    CHECK(sum.arity() == 861);
+
+    SUBCASE("and so does a deep one") {
+        // Twenty levels, past *print-level*'s fifteen, which truncates with #.
+        mx::Expr nested = mx::Expr::symbol("x");
+        for (int depth = 0; depth < 20; ++depth) {
+            nested = mx::Expr::function("f", {nested});
+        }
+        const mx::Reply deep = kernel.evalPure(nested);
+        REQUIRE(deep.ok);
+        CHECK(mx::detail::fromMaxima(mx::detail::parseSExpr(deep.value)) == nested);
+    }
+}
+
 } // TEST_SUITE("maxima")

@@ -66,6 +66,14 @@ std::string toMaximaPath(const std::filesystem::path &p) {
 // delimiters, so a frame can only ever be matched to the request that asked
 // for it.
 //
+// The reply is printed with Lisp's print limits switched off. Maxima itself
+// runs with *print-length* at 100 and *print-level* at 15, and under those a
+// sum of more than a hundred terms printed as its first hundred and `...`, and
+// anything nested deeper than fifteen levels as `#`. The reader took both for
+// symbols, so a large result came back as a smaller, wrong one that looked
+// right. *print-base* and *print-radix* are pinned for the same reason: what is
+// printed here is data for a reader, not text for a person.
+//
 // Keep the delimiters here in step with frameBegin/frameSeparator/frameEnd
 // below; a test asserts that they agree.
 constexpr const char *kHelperLisp = R"LISP((progn
@@ -94,7 +102,12 @@ constexpr const char *kHelperLisp = R"LISP((progn
         (reason "")
         (*print-circle* nil)
         (*print-pretty* nil)
-        (*print-readably* nil))
+        (*print-readably* nil)
+        (*print-length* nil)
+        (*print-level* nil)
+        (*print-lines* nil)
+        (*print-base* 10)
+        (*print-radix* nil))
    (unless ok
     (let ((sink (make-string-output-stream)))
      (let ((*standard-output* sink)) (ignore-errors (maxima::$errormsg)))

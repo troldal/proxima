@@ -96,7 +96,10 @@ class Lexer {
 public:
     explicit Lexer(std::string_view text) : text_(text) {}
 
-    enum class TokenKind { End, Open, Close, Atom, String };
+    /// QuotedSymbol is kept apart from Atom: Lisp bar-quotes a symbol
+    /// precisely because its name would otherwise read as something else — a
+    /// number, `...`, `#` — so its text must never be interpreted.
+    enum class TokenKind { End, Open, Close, Atom, QuotedSymbol, String };
 
     struct Token {
         TokenKind kind = TokenKind::End;
@@ -122,7 +125,7 @@ public:
             return {TokenKind::String, readString()};
         }
         if (c == '|') {
-            return {TokenKind::Atom, readBarSymbol()};
+            return {TokenKind::QuotedSymbol, readBarSymbol()};
         }
         return {TokenKind::Atom, readAtom()};
     }
@@ -193,6 +196,15 @@ SExpr atomFrom(std::string text) {
         // pair would mean something unmodelled arrived, and silently treating
         // the dot as a symbol would corrupt the tree rather than say so.
         throw ParseError("dotted pairs are not supported in Maxima replies");
+    }
+    if (text == "..." || text == "#") {
+        // What Lisp prints in place of the rest of a list under *print-length*,
+        // and of a deeper list under *print-level*. A symbol really named
+        // either would have been printed escaped, as |...| or |#|. Read as a
+        // symbol, a truncated reply became a smaller expression that looked
+        // complete; the helper now prints without limits, and this makes sure
+        // a truncation can never pass silently again.
+        throw ParseError("the Maxima reply was truncated by Lisp's print limits");
     }
     return SExpr::symbol(std::move(text));
 }
@@ -364,6 +376,11 @@ SExpr parseSExpr(std::string_view text) {
             break;
         case Lexer::TokenKind::Atom:
             value = atomFrom(token.text);
+            break;
+        case Lexer::TokenKind::QuotedSymbol:
+            // Its name is its name. Passed through atomFrom, as it used to be,
+            // |123| read as the integer 123.
+            value = SExpr::symbol(token.text);
             break;
         default:
             break;
