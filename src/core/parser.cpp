@@ -388,8 +388,18 @@ private:
         default:
             break;
         }
+        Expr right = expression(kRelation);
+        if (leftBindingPower(current_.kind) == kRelation) {
+            // a < b < c. Maxima refuses it — a relation is not something to
+            // compare — and accepting it as (a < b) < c would give text a
+            // meaning Maxima never gives it. Parenthesised, it is legal in both,
+            // and that path does not come through here.
+            throw ParseError("chained relation '" + current_.text
+                             + "' at offset " + std::to_string(current_.at)
+                             + ": parenthesise one side");
+        }
         return Expr::relation(relationFor(token.kind), std::move(left),
-                              expression(kRelation));
+                              std::move(right));
     }
 
     std::vector<Expr> arguments(Token::Kind closer, std::string_view wanted) {

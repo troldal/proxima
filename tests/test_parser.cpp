@@ -127,6 +127,45 @@ TEST_CASE("relations") {
     SUBCASE("and bind looser than arithmetic") {
         CHECK(Expr::parse("x + 1 = 2*x") == eq(Expr(x) + 1, 2 * Expr(x)));
     }
+
+    SUBCASE("but do not chain") {
+        // Maxima's parser: "Found LOGICAL expression where ALGEBRAIC expression
+        // expected". Accepting these as (a < b) < c gave text a meaning Maxima
+        // never gives it.
+        for (const char *source :
+             {"a < b < c", "a = b = c", "a # b # c", "a < b = c", "a = b + 1 < c"}) {
+            CAPTURE(std::string(source));
+            CHECK_THROWS_AS(Expr::parse(source), mx::ParseError);
+        }
+        try {
+            Expr::parse("a = b = c");
+            FAIL("expected a ParseError");
+        } catch (const mx::ParseError &e) {
+            // Where Maxima puts its caret: the second relation.
+            CHECK(std::string(e.what()).find("offset 6") != std::string::npos);
+        }
+    }
+
+    SUBCASE("unless parenthesised, which Maxima accepts too") {
+        const Symbol a("a");
+        const Symbol b("b");
+        const Symbol c("c");
+        CHECK(Expr::parse("(a < b) < c") == lt(lt(Expr(a), Expr(b)), Expr(c)));
+        CHECK(Expr::parse("a = (b = c)") == eq(Expr(a), eq(Expr(b), Expr(c))));
+        CHECK(Expr::parse("f(a < b)")
+              == Expr::function("f", {lt(Expr(a), Expr(b))}));
+        CHECK(Expr::parse("[a = b, b < c]")
+              == Expr::function("list", {eq(Expr(a), Expr(b)), lt(Expr(b), Expr(c))}));
+
+        // And print with the parentheses kept, or the printed text would be
+        // exactly what is refused above.
+        for (const char *source : {"(a < b) < c", "a = (b = c)", "(a = b) # (b = c)"}) {
+            CAPTURE(std::string(source));
+            const Expr once = Expr::parse(source);
+            CAPTURE(once.str());
+            CHECK(Expr::parse(once.str()) == once);
+        }
+    }
 }
 
 TEST_CASE("postfix factorial") {
