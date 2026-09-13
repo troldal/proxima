@@ -126,6 +126,34 @@ TEST_CASE("the compiled form keeps 0.0 and -0.0 apart") {
     }
 }
 
+TEST_CASE("bindings name a symbol by the Symbol or by its name") {
+    const Symbol x("x");
+    const Symbol y("y");
+
+    // Compiled takes its variables as Symbols; the values can come the same way.
+    CHECK(mx::evalNumeric(Expr(x) * Expr(y), {{x, 3.0}, {"y", 4.0}})
+          == doctest::Approx(12.0));
+    CHECK(mx::Compiled(Expr(x) + Expr(y), x, {{y, 0.5}})(2.0) == doctest::Approx(2.5));
+    CHECK(mx::asFunction(Expr(x) * Expr(y), x, {{y, 2.0}})(3.0) == doctest::Approx(6.0));
+    CHECK(mx::isEvaluable(Expr(x), {{x, 1.0}}));
+
+    mx::Bindings bindings{{x, 1.0}, {"x", 2.0}};
+    CHECK(bindings.size() == 1u);
+    CHECK(bindings.find(x)->second == 2.0); // The last value given wins.
+    bindings.set(y, 5.0);
+    CHECK(bindings.contains(y));
+    CHECK(bindings.contains("y"));
+    CHECK_FALSE(bindings.contains("z"));
+    CHECK(bindings.find("z") == bindings.end());
+    CHECK(mx::evalNumeric(Expr(x) + Expr(y), bindings) == doctest::Approx(7.0));
+
+    std::string names;
+    for (const auto &[name, value] : bindings) {
+        names += name;
+    }
+    CHECK(names == "xy");
+}
+
 TEST_CASE("constants are recognised as Maxima spells them") {
     CHECK(mx::evalNumeric(mx::pi()) == doctest::Approx(std::numbers::pi));
     CHECK(mx::evalNumeric(mx::e()) == doctest::Approx(std::numbers::e));

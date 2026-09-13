@@ -3,21 +3,71 @@
 #include <mx/expr.hpp>
 #include <mx/symbol.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <initializer_list>
 #include <map>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace mx {
 
-/// Values for the symbols in an expression, by name.
+/// Values for the symbols in an expression.
 ///
-/// Keyed on the name rather than on Symbol so that a lookup can be made from a
-/// string_view without building a Symbol, and so that the common case reads as
-/// `{{"x", 2.0}, {"y", 3.0}}`.
-using Bindings = std::map<std::string, double, std::less<>>;
+/// A symbol can be named either way — by the Symbol an expression was built
+/// with, or by its name — so `{{x, 2.0}, {"y", 3.0}}` reads as consistently as
+/// Compiled's list of variables does. Stored by name either way, so that the
+/// lookup evalNumeric makes for every symbol it meets builds nothing.
+///
+/// A name given twice keeps the last value given.
+class Bindings {
+public:
+    /// One value, for a symbol or a name.
+    struct Entry {
+        Entry(const Symbol &symbol, double boundValue)
+            : name(symbol.name()), value(boundValue) {}
+        Entry(std::string_view symbolName, double boundValue)
+            : name(symbolName), value(boundValue) {}
+
+        std::string name;
+        double value;
+    };
+
+    using const_iterator = std::map<std::string, double, std::less<>>::const_iterator;
+
+    Bindings() = default;
+
+    Bindings(std::initializer_list<Entry> entries) { // NOLINT: `{{x, 1.0}}` is the point.
+        for (const Entry &entry : entries) {
+            values_.insert_or_assign(entry.name, entry.value);
+        }
+    }
+
+    /// Gives a symbol a value, replacing any it had.
+    void set(const Symbol &symbol, double value) { set(symbol.name(), value); }
+    void set(std::string_view symbolName, double value) {
+        values_.insert_or_assign(std::string(symbolName), value);
+    }
+
+    /// The entry for a symbol, or end().
+    const_iterator find(std::string_view symbolName) const { return values_.find(symbolName); }
+    const_iterator find(const Symbol &symbol) const { return find(symbol.name()); }
+
+    bool contains(std::string_view symbolName) const { return values_.contains(symbolName); }
+    bool contains(const Symbol &symbol) const { return contains(symbol.name()); }
+
+    /// Name–value pairs, in name order.
+    const_iterator begin() const { return values_.begin(); }
+    const_iterator end() const { return values_.end(); }
+    std::size_t size() const { return values_.size(); }
+    bool empty() const { return values_.empty(); }
+
+private:
+    std::map<std::string, double, std::less<>> values_;
+};
 
 /// Evaluates an expression to a double, once.
 ///
