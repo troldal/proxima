@@ -22,7 +22,7 @@ Items are ordered by how much they matter, not by file.
 
 ## Status since the review
 
-Updated after `64c9f17`. Resolved findings are ticked where they stand, with
+Updated after `83f3bc8`. Resolved findings are ticked where they stand, with
 an *Outcome* note; everything unticked is still open. The review's own text
 is left as written, so its measurements stay comparable.
 
@@ -59,12 +59,20 @@ Work since, and what it turned up that the review had not found:
   every public feature that doubles as a quick-start guide. Writing it found
   two new §1 items: `Context::facts()` contradicting its documentation, and
   `limit` treating `ind` and `und` differently.
+- **Boost.Process v2 replaces the hand-written transports** (`83f3bc8`).
+  Resolves §6's first item, §3's `Sleep(1)` floor, and §2's handle leak and
+  unchecked `WriteFile`; half of §2's ANSI item. On Windows a trivial round
+  trip went from 15.5 ms to 0.04 ms and startup from ~131 ms to ~75 ms.
+  Found: binding the child's end of a pipe to the io_context sent SBCL's
+  overlapped-write completions to this process's completion port and corrupted
+  memory at startup — Windows only, Maxima only, invisible to tests using
+  cmd.exe. PLAN.md "Boost.Process" has the details.
 
-Suite: 249 cases / 2770 assertions on Windows, 246 / 2759 on Linux (222 when
-the review was written).
+Suite: 250 cases / 2771 assertions on Windows (GCC and clang-cl), 251 / 2771 on
+Linux (222 when the review was written).
 
-Still open and worth doing first: §3's 15 ms Win32 round-trip floor, and
-§1's NaN ordering, which is undefined behaviour in the normaliser's sort.
+Still open and worth doing first: §1's NaN ordering, which is undefined
+behaviour in the normaliser's sort.
 
 ---
 
@@ -258,7 +266,7 @@ These produce a result that disagrees with Maxima, silently.
   thread-safe to initialise, and step 13 serialised the Kernel). Fix the
   comment; consider `Context` holding a `shared_ptr` or a weak reference.
 
-- [ ] **Win32 launch leaks every inheritable handle into every child.**
+- [x] **Win32 launch leaks every inheritable handle into every child.**
   `CreateProcessA(..., bInheritHandles = TRUE, ...)` with no
   `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` gives each Maxima child a copy of
   every inheritable handle in the host process, including other kernels'
@@ -269,14 +277,28 @@ These produce a result that disagrees with Maxima, silently.
   it is the reason the POSIX side needed a close-on-exec status pipe. Use
   the attribute list (or Boost.Process, see §6).
 
+  *Outcome:* fixed by the move to Boost.Process (§6), whose Windows launcher
+  passes `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` with only the child's three
+  standard handles.
+
 - [ ] **Win32 uses the ANSI API family.** `CreateProcessA`,
   `GetEnvironmentStringsA`, `STARTUPINFOA`. A Maxima installed under a
   non-ASCII path — or a non-ASCII `Config::userDir` — will fail or be
   mangled. Use the `W` variants and convert.
 
-- [ ] **Win32 `send` ignores `WriteFile`'s return value.** A failed or
+  *Outcome:* half done in `83f3bc8`. Boost.Process launches with
+  `CreateProcessW` and reads the environment with the wide API. But
+  `session.cpp` still builds the SBCL argv with `path::string()`, which is
+  narrow on Windows, so a non-ASCII install path is still mangled before it
+  reaches the launch. Left open for that.
+
+- [x] **Win32 `send` ignores `WriteFile`'s return value.** A failed or
   short write is silently dropped; the next `readFrame` then times out
   with a misleading diagnosis.
+
+  *Outcome:* fixed in `83f3bc8`. `asio::write` writes everything or reports
+  an error, and an error marks the transport closed, so the next `receive()`
+  and `alive()` report the dead child at once.
 
 - [ ] **The session mutex is held for the whole computation.**
   `cacheStats()` and `setTimeout()` take the same lock as `eval`, so both
@@ -328,7 +350,7 @@ Fine at today's sizes; these are the walls you will hit.
   raise the transport chunk size (64 KB) — the 4 KB buffer means a 1 MB
   reply is 256 syscalls and 256 searches.
 
-- [ ] **Win32 `receive` polls with `Sleep(1)`.** `PeekNamedPipe` +
+- [x] **Win32 `receive` polls with `Sleep(1)`.** `PeekNamedPipe` +
   `Sleep(1)` in a loop; on a default Windows timer that sleep is 1–15 ms,
   so every round trip carries that latency floor. *Measured:* **15.5 ms
   per trivial `evalPure`** (200 cache-missing `1+i` calls), which is
@@ -338,6 +360,10 @@ Fine at today's sizes; these are the walls you will hit.
   says "Step 13 replaces this with a dedicated reader thread" — it did
   not. Options: overlapped I/O with an event, a reader thread feeding a
   condition variable, or Boost.Process's async pipes (§6).
+
+  *Outcome:* fixed in `83f3bc8` with Asio's pipes, which wait on the
+  completion port. Same 200-call measurement: **0.04 ms** per trivial
+  `evalPure`, and 1.5 ms per `expand` round trip (was 15.6 ms).
 
 - [ ] **`Context` construction clears the reply cache just to read a
   name.** `evaluateOrThrow(kernel, "context")` goes through `evalTracked`,
@@ -478,7 +504,7 @@ stand out. All refer to plan steps as future work that has since shipped:
 You said dependencies are fine. With Boost already fetched, these are the
 candidates, most valuable first.
 
-- [ ] **Boost.Process (v2) for `child_process_win32.cpp` /
+- [x] **Boost.Process (v2) for `child_process_win32.cpp` /
   `child_process_posix.cpp` / `process_env.cpp` / `win32_process_utils.hpp`
   (~560 lines).** It handles the handle-inheritance list, Unicode paths,
   argument quoting, environment merging, and — with Boost.Asio, which it
@@ -489,6 +515,12 @@ candidates, most valuable first.
   interface is already abstract, so this is a drop-in behind `ITransport`
   and FakeTransport keeps the tests honest. Worth doing; the hand-written
   code is careful but §2 lists four platform-specific holes in it.
+
+  *Outcome:* done in `83f3bc8`. One correction to the above: Boost.Process v2
+  is not header-only — it is a compiled library, fetched and built by CPM like
+  the rest of Boost, and linked privately. Asio's compile-time cost is
+  confined to `child_process.cpp`. `process_env.cpp` stays, smaller, because
+  the session merges overrides into the inherited environment.
 
 - [ ] **`boost::container::small_vector` for `Node::args` and the
   normaliser's scratch vectors.** Already compiled as a transitive
