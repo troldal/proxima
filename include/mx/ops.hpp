@@ -26,7 +26,13 @@ struct Failure {
 /// The process-wide kernel, started on first use and shut down at exit.
 ///
 /// Convenient rather than obligatory: every operation below takes a Kernel to
-/// use, defaulting to this one. Not thread-safe — see PLAN.md step 13.
+/// use, defaulting to this one. Safe to use from several threads, like any
+/// Kernel: starting it on first use is thread-safe, and calls on it take turns.
+///
+/// Shut down during static destruction, like any function-local static. An
+/// mx::Context still open on it by then — one with static storage duration,
+/// say — does not call into the destroyed kernel: its operations throw
+/// mx::KernelError, and its destructor does nothing.
 Kernel &sharedKernel();
 
 /// Parses Maxima source into an expression.

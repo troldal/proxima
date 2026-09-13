@@ -182,6 +182,39 @@ TEST_CASE("a restart after an out-of-order end rebuilds the surviving scope") {
     CHECK(kernel.eval("context").value == "$INITIAL");
 }
 
+TEST_CASE("a Context that outlives its Kernel reports it instead of calling into it") {
+    // The situation a Context with static storage duration is in at exit,
+    // once sharedKernel() has been destroyed. It used to call into the
+    // destroyed Kernel — a use after free, and so a crash rather than a
+    // failing check, which is why this test could not be run first.
+    const Symbol x("outlived_probe");
+
+    auto kernel = std::make_unique<mx::Kernel>();
+    auto outer = std::make_unique<Context>(*kernel);
+    outer->assume(gt(Expr(x), Expr(0)));
+    auto inner = std::make_unique<Context>(*kernel);
+
+    kernel.reset();
+
+    CHECK_THROWS_AS(inner->assume(gt(Expr(x), Expr(1))), mx::KernelError);
+    CHECK_THROWS_AS(inner->declare(x, Feature::Integer), mx::KernelError);
+    CHECK_THROWS_AS(static_cast<void>(inner->facts()), mx::KernelError);
+
+    // Ending them, outer first, has nothing to tidy and touches nothing.
+    CHECK_NOTHROW(outer.reset());
+    CHECK_NOTHROW(inner.reset());
+
+    // And nothing left behind trips up the next kernel's scopes.
+    mx::Kernel fresh;
+    {
+        Context again(fresh);
+        again.assume(gt(Expr(x), Expr(0)));
+        CHECK(fresh.eval("is(outlived_probe > 0)").value == "T");
+    }
+    CHECK(fresh.eval("is(outlived_probe > 0)").value != "T");
+    CHECK(fresh.eval("context").value == "$INITIAL");
+}
+
 TEST_CASE("a contradictory assumption is refused") {
     // Maxima detects the contradiction; carrying on with an inconsistent set of
     // facts would make every later result in the scope meaningless.

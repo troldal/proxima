@@ -6,6 +6,7 @@
 #include <mx/symbol.hpp>
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -73,6 +74,13 @@ std::string_view nameOf(Feature feature);
 /// The assumptions are also kept in C++ so that PLAN.md step 14's cache key can
 /// include them: a result computed under `x > 0` is not the same result as one
 /// computed without it.
+///
+/// ## A Context that outlives its Kernel
+///
+/// A Context refers to its Kernel, so the Kernel should outlive it. One that
+/// does not — a Context with static storage duration outliving sharedKernel()
+/// at exit, say — can tell: its operations throw mx::KernelError, and its
+/// destructor has nothing left to tidy and does nothing.
 class Context {
 public:
     /// Opens a new Maxima context, nested inside whichever is currently active.
@@ -120,6 +128,11 @@ public:
 
 private:
     Kernel *kernel_;
+
+    /// Expires when the Kernel does, which is how a Context that outlives it
+    /// knows not to call into it.
+    std::weak_ptr<const int> kernelLifetime_;
+
     std::string name_;
     std::string parent_;
     std::vector<Expr> assumptions_;

@@ -158,10 +158,19 @@ public:
     void restart();
 
 private:
+    friend class Context;
+
     /// The session, or KernelError for a kernel that has been moved from.
     detail::MaximaSession &session() const;
 
     std::unique_ptr<detail::MaximaSession> session_;
+
+    /// Alive exactly as long as this kernel's session, and moved along with
+    /// it. A Context keeps a weak reference, so one that outlives the kernel —
+    /// a static Context at exit, after sharedKernel() has been destroyed —
+    /// can tell, instead of calling into a destroyed object. Declared after
+    /// session_, so it expires first.
+    std::shared_ptr<const int> lifetime_ = std::make_shared<const int>(0);
 };
 
 } // namespace mx

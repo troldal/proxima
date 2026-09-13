@@ -6,6 +6,7 @@
 #include <mx/errors.hpp>
 
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -26,6 +27,9 @@ std::string nextContextName() {
 struct Scope {
     std::string parent;
     Kernel *kernel = nullptr;
+
+    /// Expired once the kernel is gone, when there is no Maxima left to tidy.
+    std::weak_ptr<const int> kernelLifetime;
 
     /// Scopes opened inside this one that have not been torn down. While any
     /// remain, this one stays in Maxima even after its Context has ended:
@@ -62,6 +66,18 @@ Registry &registry() {
 /// Maxima's root context: the built-in facts of its type system, such as
 /// `kind(%e, irrational)`, seventy-odd of them. Not anything a caller assumed.
 constexpr std::string_view kBuiltInContext = "global";
+
+/// The kernel a Context was opened on, or KernelError if it no longer exists.
+///
+/// A Context refers to its Kernel by pointer, and nothing stops the Kernel
+/// being destroyed first — a Context with static storage duration outlives
+/// sharedKernel() at exit. It used to call into the destroyed object.
+Kernel &liveKernel(Kernel *kernel, const std::weak_ptr<const int> &lifetime) {
+    if (lifetime.expired()) {
+        throw KernelError("the Kernel this Context was opened on no longer exists");
+    }
+    return *kernel;
+}
 
 /// Every statement a Context issues changes Maxima's state in a way the
 /// kernel's journal accounts for — either recorded here, or undoing something
@@ -100,12 +116,18 @@ bool mentionsSymbol(const Expr &expr, std::string_view name) {
 /// carried out after it is released, so no lock is held across a round trip.
 struct Teardown {
     Kernel *kernel;
+    std::weak_ptr<const int> kernelLifetime;
     std::string name;
     std::string parent;
     std::vector<std::uint64_t> replayHandles;
 };
 
 void carryOut(const Teardown &step) {
+    // A kernel that is already gone took its Maxima, and every context in it,
+    // with it. There is nothing to tidy, and nothing safe to call.
+    if (step.kernelLifetime.expired()) {
+        return;
+    }
     // Drop the replay entries first: a restart triggered by the teardown
     // itself must not rebuild a scope that is ending.
     for (auto handle = step.replayHandles.rbegin();
@@ -152,7 +174,9 @@ std::string_view nameOf(Feature feature) {
     return "real";
 }
 
-Context::Context(Kernel &kernel) : kernel_(&kernel), name_(nextContextName()) {
+Context::Context(Kernel &kernel)
+    : kernel_(&kernel), kernelLifetime_(kernel.lifetime_),
+      name_(nextContextName()) {
     // Whatever is active now becomes this context's parent, which is what makes
     // nesting inherit rather than shadow.
     const Expr current = evaluateOrThrow(*kernel_, Expr::symbol("context"));
@@ -169,6 +193,7 @@ Context::Context(Kernel &kernel) : kernel_(&kernel), name_(nextContextName()) {
     Scope &scope = registry().scopes[name_];
     scope.parent = parent_;
     scope.kernel = kernel_;
+    scope.kernelLifetime = kernelLifetime_;
     if (const auto enclosing = registry().scopes.find(parent_);
         enclosing != registry().scopes.end()) {
         ++enclosing->second.openChildren;
@@ -193,7 +218,8 @@ Context::~Context() {
             auto &scopes = registry().scopes;
             const auto self = scopes.find(name_);
             if (self == scopes.end()) {
-                steps.push_back({kernel_, name_, parent_, replayHandles_});
+                steps.push_back(
+                    {kernel_, kernelLifetime_, name_, parent_, replayHandles_});
             } else {
                 self->second.ended = true;
                 self->second.replayHandles = replayHandles_;
@@ -209,7 +235,8 @@ Context::~Context() {
                     }
                     Scope scope = std::move(found->second);
                     scopes.erase(found);
-                    steps.push_back({scope.kernel, next, scope.parent,
+                    steps.push_back({scope.kernel, std::move(scope.kernelLifetime),
+                                     next, scope.parent,
                                      std::move(scope.replayHandles)});
 
                     const auto enclosing = scopes.find(scope.parent);
@@ -229,8 +256,9 @@ Context::~Context() {
 }
 
 void Context::assume(const Expr &predicate) {
+    Kernel &kernel = liveKernel(kernel_, kernelLifetime_);
     const Expr statement = call("assume", {predicate});
-    const Expr result = evaluateOrThrow(*kernel_, statement);
+    const Expr result = evaluateOrThrow(kernel, statement);
 
     // Maxima answers with a list describing what it did. `inconsistent` means
     // this contradicts something already in force; carrying on would make every
@@ -241,17 +269,20 @@ void Context::assume(const Expr &predicate) {
     }
     // `redundant` is harmless: the fact was already implied.
     assumptions_.push_back(predicate);
-    replayHandles_.push_back(kernel_->remember(statement));
+    replayHandles_.push_back(kernel.remember(statement));
 }
 
 void Context::declare(const Symbol &symbol, Feature feature) {
+    Kernel &kernel = liveKernel(kernel_, kernelLifetime_);
     const Expr statement
         = call("declare", {symbol, Expr::symbol(std::string(nameOf(feature)))});
-    evaluateOrThrow(*kernel_, statement);
-    replayHandles_.push_back(kernel_->remember(statement));
+    evaluateOrThrow(kernel, statement);
+    replayHandles_.push_back(kernel.remember(statement));
 }
 
 std::vector<Expr> Context::facts() const {
+    Kernel &kernel = liveKernel(kernel_, kernelLifetime_);
+
     // Maxima's facts(name) lists the facts of that one context, not its
     // ancestors'; and a bare facts() lists whichever context happens to be
     // current, which is not necessarily this one. This used to be a bare
@@ -278,7 +309,7 @@ std::vector<Expr> Context::facts() const {
     std::vector<Expr> all;
     for (const std::string &name : chain) {
         const Expr result
-            = evaluateOrThrow(*kernel_, call("facts", {Expr::symbol(name)}));
+            = evaluateOrThrow(kernel, call("facts", {Expr::symbol(name)}));
         if (result.is(Kind::Function) && result.name() == "list") {
             all.insert(all.end(), result.args().begin(), result.args().end());
         }
