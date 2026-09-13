@@ -56,9 +56,8 @@ target_compile_definitions(mx_tests PRIVATE
 #
 #     ctest -LE maxima      # everything that runs without Maxima
 #
-# From PLAN.md step 4 onward the Maxima-free half grows to cover the protocol,
-# reader and term layers via FakeTransport, so this split is what keeps the
-# suite runnable in CI.
+# The Maxima-free half covers the protocol, reader and term layers through
+# FakeTransport, so this split is what keeps most of the suite runnable in CI.
 add_test(NAME unit COMMAND mx_tests --test-suite-exclude=maxima)
 
 add_test(NAME integration COMMAND mx_tests --test-suite=maxima)

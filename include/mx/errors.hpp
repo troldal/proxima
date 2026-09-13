@@ -15,7 +15,7 @@ public:
 ///
 /// This is an infrastructure failure, deliberately distinct from a
 /// mathematical one ("no closed form exists"), which is an ordinary outcome
-/// and will be reported through std::expected instead. See PLAN.md step 11.
+/// and is reported as an mx::Failure through std::expected instead.
 class KernelError : public Error {
 public:
     using Error::Error;
