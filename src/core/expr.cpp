@@ -343,6 +343,14 @@ bool Expr::operator==(const Expr &other) const {
     return false;
 }
 
+std::weak_ordering canonicalOrder(const Expr &lhs, const Expr &rhs) {
+    const int order = detail::compareExpr(lhs, rhs);
+    if (order < 0) {
+        return std::weak_ordering::less;
+    }
+    return order > 0 ? std::weak_ordering::greater : std::weak_ordering::equivalent;
+}
+
 // --- operators ------------------------------------------------------------
 
 Expr operator+(const Expr &lhs, const Expr &rhs) {

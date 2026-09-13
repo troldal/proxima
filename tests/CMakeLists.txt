@@ -26,6 +26,7 @@ add_executable(mx_tests
         test_integer.cpp
         test_normalize.cpp
         test_numeric.cpp
+        test_order.cpp
         test_ops.cpp
         test_parser.cpp
         test_persistent_cache.cpp

@@ -2,10 +2,12 @@
 
 #include <mx/integer.hpp>
 
+#include <compare>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <functional>
 #include <iosfwd>
 #include <memory>
 #include <string>
@@ -245,6 +247,27 @@ std::string_view symbolFor(RelOp op);
 /// std::formatter below for the notations it offers.
 std::ostream &operator<<(std::ostream &out, const Expr &expr);
 
+/// The canonical order over expressions: the order the normaliser sorts
+/// operands by. Numbers first, by value, then symbols, then compounds.
+///
+/// Two expressions compare equivalent exactly when they are ==, which is what
+/// an ordered container relies on. Weak rather than strong because 0.0 and
+/// -0.0 are equivalent, as they are equal, yet print differently.
+///
+/// Deliberately not operator<. Expr converts from numbers and symbols, so
+/// `x < 0` would compile and mean "sorts before" rather than build the
+/// relation — which is what lt(x, 0) is for, and why == is the only
+/// comparison operator Expr has.
+std::weak_ordering canonicalOrder(const Expr &lhs, const Expr &rhs);
+
+/// canonicalOrder as a less-than, for std::sort and the like. std::less<Expr>
+/// is this too, so std::set<Expr> and std::map<Expr, T> need no comparator.
+struct CanonicalLess {
+    bool operator()(const Expr &lhs, const Expr &rhs) const {
+        return canonicalOrder(lhs, rhs) < 0;
+    }
+};
+
 namespace detail {
 
 /// The notations a format spec can ask for.
@@ -263,6 +286,11 @@ struct std::hash<mx::Expr> {
         return value.hash();
     }
 };
+
+/// The canonical order, so std::set<Expr> and std::map<Expr, T> need no
+/// comparator. See mx::canonicalOrder.
+template <>
+struct std::less<mx::Expr> : mx::CanonicalLess {};
 
 /// `std::format("{}", expr)` is `expr.str()`, and a spec can ask for another
 /// notation: `{:tex}` is toTeX(), `{:mathml}` is toMathML(). After the

@@ -237,6 +237,9 @@ int compareExpr(const Expr &lhs, const Expr &rhs) {
     const int rightRank = rankOf(rhs.kind());
 
     if (lhs.isNumber() && rhs.isNumber()) {
+        // Doubles first, since they are cheap and nearly always decisive.
+        // Rounding never reverses an order, so unequal doubles mean the numbers
+        // themselves compare the same way.
         const double a = approxValue(lhs);
         const double b = approxValue(rhs);
         if (a < b) {
@@ -245,16 +248,31 @@ int compareExpr(const Expr &lhs, const Expr &rhs) {
         if (a > b) {
             return 1;
         }
-        // Equal in magnitude: order by kind so that 2, 2/1 and 2.0 still have a
-        // stable relative order.
+
+        if (!lhs.is(Kind::Real) && !rhs.is(Kind::Real)) {
+            // Equal as doubles, but two exact numbers can still differ: 2^100 and
+            // 2^100 + 1 round to the same double. This used to stop at the
+            // doubles and call them equal although == told them apart, and an
+            // ordered container keyed on the order would have merged them. So
+            // compare exactly, by cross-multiplying — denominators are positive,
+            // so the sign of the difference survives. Equal values are the same
+            // number: an Integer and a Rational are never equal.
+            const Integer left = lhs.numerator() * rhs.denominator();
+            const Integer right = rhs.numerator() * lhs.denominator();
+            if (left < right) {
+                return -1;
+            }
+            return right < left ? 1 : 0;
+        }
+
+        // Equal in value with a real involved: order by kind, so that 2 and 2.0
+        // still have a stable relative order. That always puts an exact number
+        // before a real of the same value, which with rounding's monotonicity
+        // keeps the order consistent. Two reals equal in value — 0.0 and -0.0
+        // included — are equal expressions too.
         if (lhs.kind() != rhs.kind()) {
             return static_cast<int>(lhs.kind()) < static_cast<int>(rhs.kind()) ? -1
                                                                               : 1;
-        }
-        if (lhs.is(Kind::Rational)) {
-            if (lhs.denominator() != rhs.denominator()) {
-                return lhs.denominator() < rhs.denominator() ? -1 : 1;
-            }
         }
         return 0;
     }

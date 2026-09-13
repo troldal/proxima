@@ -3,6 +3,7 @@
 #include <mx/expr.hpp>
 
 #include <format>
+#include <functional>
 #include <iosfwd>
 #include <string>
 
@@ -54,5 +55,14 @@ template <>
 struct std::formatter<mx::Symbol, char> : std::formatter<mx::Expr, char> {
     auto format(const mx::Symbol &symbol, std::format_context &context) const {
         return std::formatter<mx::Expr, char>::format(symbol.expr(), context);
+    }
+};
+
+/// The canonical order of the symbols as expressions — by name — so that
+/// std::set<Symbol> and std::map<Symbol, T> need no comparator.
+template <>
+struct std::less<mx::Symbol> {
+    bool operator()(const mx::Symbol &lhs, const mx::Symbol &rhs) const {
+        return mx::canonicalOrder(lhs.expr(), rhs.expr()) < 0;
     }
 };

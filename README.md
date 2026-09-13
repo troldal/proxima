@@ -75,6 +75,12 @@ Builders for `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `log`,
 Relations are built by name — `eq`, `ne`, `lt`, `le`, `gt`, `ge` — so that `==`
 can keep its ordinary meaning.
 
+For the same reason there is no `<`: `x < 0` would compile and mean "sorts
+before". The canonical order the normaliser uses is `mx::canonicalOrder` instead,
+with `mx::CanonicalLess` for sorting, and `std::less` is specialised for `Expr`
+and `Symbol`, so `std::set<Expr>` and `std::map<Expr, T>` need no comparator.
+Two expressions are equivalent in that order exactly when they are `==`.
+
 Results chain, because what comes back is an expression rather than text:
 
 ```cpp
