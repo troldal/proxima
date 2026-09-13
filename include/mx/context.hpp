@@ -71,9 +71,11 @@ std::string_view nameOf(Feature feature);
 /// still in force. Without that, a restart would silently drop them and later
 /// results would be quietly wrong rather than obviously broken.
 ///
-/// The assumptions are also kept in C++ so that PLAN.md step 14's cache key can
-/// include them: a result computed under `x > 0` is not the same result as one
-/// computed without it.
+/// The same record is what keeps cached answers honest: a result computed under
+/// `x > 0` is not the same result as one computed without it, so any change
+/// here clears the reply cache, and Config::cacheDirectory keys each answer on
+/// the journal's contents. The assumptions are also kept in C++, so that
+/// assumptions() can list this scope's without asking Maxima.
 ///
 /// ## A Context that outlives its Kernel
 ///
