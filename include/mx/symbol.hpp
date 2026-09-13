@@ -2,6 +2,8 @@
 
 #include <mx/expr.hpp>
 
+#include <format>
+#include <iosfwd>
 #include <string>
 
 namespace mx {
@@ -30,6 +32,11 @@ private:
     Expr expr_;
 };
 
+/// Writes the symbol as an expression: its name.
+inline std::ostream &operator<<(std::ostream &out, const Symbol &symbol) {
+    return out << symbol.expr();
+}
+
 inline namespace literals {
 
 /// `"x"_sym` — a symbol without the ceremony, for expression-heavy code.
@@ -40,3 +47,12 @@ inline Symbol operator""_sym(const char *name, std::size_t length) {
 } // namespace literals
 
 } // namespace mx
+
+/// Formats as the expression it is, with the same notations: `{:tex}` writes
+/// `%pi` as `\pi`.
+template <>
+struct std::formatter<mx::Symbol, char> : std::formatter<mx::Expr, char> {
+    auto format(const mx::Symbol &symbol, std::format_context &context) const {
+        return std::formatter<mx::Expr, char>::format(symbol.expr(), context);
+    }
+};

@@ -105,11 +105,16 @@ ordinary clients of `<mx/render.hpp>`, which is the supported way to add
 another.
 
 ```cpp
-std::cout << e.str();                 // (1 + x)/(x - 1)
-std::cout << mx::toTeX(e);            // \frac{1 + x}{x - 1}
-std::cout << mx::toMathML(e);         // <math ...><mfrac>...</mfrac></math>
-std::cout << mx::render(e, MyOwn{});  // whatever you like
+std::cout << e;                         // (1 + x)/(x - 1)          also e.str()
+std::cout << std::format("{:tex}", e);  // \frac{1 + x}{x - 1}      also mx::toTeX(e)
+std::cout << std::format("{:mathml}", e); // <math ...><mfrac>...</mfrac></math>
+std::cout << mx::render(e, MyOwn{});    // whatever you like
 ```
+
+`operator<<` and `std::formatter` work for `Expr`, `Symbol` and `mx::Integer`.
+After a notation, or instead of one, a format spec takes the usual string
+options: `{:>30}`, `{:tex:*<40}`. An unknown notation is a `std::format_error`,
+so with a constant format string it does not compile.
 
 A renderer is a **plain struct** — it inherits nothing, overrides nothing, and
 owes this library no base class. Conformance is a concept, and `mx::Renderer<T>`

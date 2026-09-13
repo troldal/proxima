@@ -5,6 +5,8 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <format>
+#include <iosfwd>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -239,6 +241,20 @@ Expr ge(Expr lhs, Expr rhs);
 /// Maxima's spelling of a relation operator: "=", "#", "<", "<=", ">", ">=".
 std::string_view symbolFor(RelOp op);
 
+/// Writes `expr.str()`. `std::format("{}", expr)` works too; see the
+/// std::formatter below for the notations it offers.
+std::ostream &operator<<(std::ostream &out, const Expr &expr);
+
+namespace detail {
+
+/// The notations a format spec can ask for.
+enum class Notation { Infix, TeX, MathML };
+
+/// `expr` written in `notation`: str(), toTeX() or toMathML().
+std::string notate(const Expr &expr, Notation notation);
+
+} // namespace detail
+
 } // namespace mx
 
 template <>
@@ -246,4 +262,49 @@ struct std::hash<mx::Expr> {
     std::size_t operator()(const mx::Expr &value) const noexcept {
         return value.hash();
     }
+};
+
+/// `std::format("{}", expr)` is `expr.str()`, and a spec can ask for another
+/// notation: `{:tex}` is toTeX(), `{:mathml}` is toMathML(). After the
+/// notation, or instead of it, come the usual string options, separated from a
+/// notation by a colon — `{:>30}`, `{:tex:*<40}`. An unknown notation is a
+/// std::format_error, which for a constant format string means a compile error.
+template <>
+struct std::formatter<mx::Expr, char> {
+    constexpr auto parse(std::format_parse_context &context) {
+        auto it = context.begin();
+        const auto end = context.end();
+        const auto startsWith = [&it, &end](std::string_view word) {
+            auto cursor = it;
+            for (const char c : word) {
+                if (cursor == end || *cursor != c) {
+                    return false;
+                }
+                ++cursor;
+            }
+            return true;
+        };
+
+        if (startsWith("tex")) {
+            notation_ = mx::detail::Notation::TeX;
+            it += 3;
+        } else if (startsWith("mathml")) {
+            notation_ = mx::detail::Notation::MathML;
+            it += 6;
+        }
+        if (notation_ != mx::detail::Notation::Infix && it != end && *it == ':') {
+            ++it;
+        }
+        context.advance_to(it);
+        return text_.parse(context);
+    }
+
+    auto format(const mx::Expr &expr, std::format_context &context) const {
+        const std::string written = mx::detail::notate(expr, notation_);
+        return text_.format(std::string_view(written), context);
+    }
+
+private:
+    mx::detail::Notation notation_ = mx::detail::Notation::Infix;
+    std::formatter<std::string_view, char> text_;
 };

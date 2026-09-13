@@ -6,6 +6,8 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <format>
+#include <iosfwd>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -143,11 +145,25 @@ Integer abs(const Integer &value);
 /// Greatest common divisor, non-negative. gcd(0, 0) is 0.
 Integer gcd(const Integer &a, const Integer &b);
 
+/// Writes the decimal digits, as toString() does.
+std::ostream &operator<<(std::ostream &out, const Integer &value);
+
 } // namespace mx
 
 template <>
 struct std::hash<mx::Integer> {
     std::size_t operator()(const mx::Integer &value) const noexcept {
         return value.hash();
+    }
+};
+
+/// `std::format("{}", value)` is the decimal digits, with the usual string
+/// options for width and alignment: `{:>40}`.
+template <>
+struct std::formatter<mx::Integer, char> : std::formatter<std::string_view, char> {
+    auto format(const mx::Integer &value, std::format_context &context) const {
+        const std::string digits = value.toString();
+        return std::formatter<std::string_view, char>::format(std::string_view(digits),
+                                                              context);
     }
 };

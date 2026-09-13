@@ -21,6 +21,7 @@ add_executable(mx_tests
         test_context.cpp
         test_discovery.cpp
         test_expr.cpp
+        test_format.cpp
         test_from_maxima.cpp
         test_integer.cpp
         test_normalize.cpp

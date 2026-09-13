@@ -78,6 +78,7 @@ CPMAddPackage(
 
 add_library(maxima_cpp
         src/core/expr.cpp
+        src/core/format.cpp
         src/core/integer.cpp
         src/core/normalize.cpp
         src/core/numeric.cpp
