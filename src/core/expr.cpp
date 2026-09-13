@@ -432,6 +432,20 @@ Expr ge(Expr lhs, Expr rhs) {
     return Expr::relation(RelOp::GreaterEqual, std::move(lhs), std::move(rhs));
 }
 
+Expr lhs(const Expr &relation) {
+    if (!relation.is(Kind::Relation)) {
+        throw Error("lhs: " + relation.str() + " is not a relation");
+    }
+    return relation.arg(0);
+}
+
+Expr rhs(const Expr &relation) {
+    if (!relation.is(Kind::Relation)) {
+        throw Error("rhs: " + relation.str() + " is not a relation");
+    }
+    return relation.arg(1);
+}
+
 std::string_view symbolFor(RelOp op) {
     switch (op) {
     case RelOp::Equal:

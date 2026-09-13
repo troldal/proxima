@@ -3,12 +3,15 @@
 
 #include <doctest/doctest.h>
 
+#include <mx/context.hpp>
 #include <mx/errors.hpp>
 #include <mx/expr.hpp>
 #include <mx/functions.hpp>
 #include <mx/ops.hpp>
 #include <mx/symbol.hpp>
 
+#include <cmath>
+#include <numbers>
 #include <span>
 #include <string>
 #include <vector>
@@ -84,6 +87,25 @@ TEST_CASE("constants are spelled as Maxima names them") {
     CHECK(mx::pi().str() == "%pi");
     CHECK(mx::e().str() == "%e");
     CHECK(mx::inf().str() == "inf");
+}
+
+TEST_CASE("lhs and rhs take a relation apart, locally") {
+    const Symbol x("x");
+    const Expr relation = mx::le(Expr(x) + 1, Expr(3));
+    CHECK(mx::lhs(relation) == Expr(x) + 1);
+    CHECK(mx::rhs(relation) == Expr(3));
+    // Maxima's lhs would return x + 1 itself, hiding the mistake.
+    CHECK_THROWS_AS(static_cast<void>(mx::lhs(Expr(x) + 1)), mx::Error);
+    CHECK_THROWS_AS(static_cast<void>(mx::rhs(Expr(x))), mx::Error);
+}
+
+TEST_CASE("derivative builds the noun a differential equation is written with") {
+    const Symbol x("x");
+    const Symbol y("y");
+    // The order is spelled out, as Maxima's own 'diff(y, x) reads back.
+    CHECK(mx::derivative(Expr(y), x)
+          == Expr::function("'diff", {Expr(y), Expr(x), Expr(1)}));
+    CHECK(mx::derivative(Expr(y), x, 2).arg(2) == Expr(2));
 }
 
 // --- Against a real kernel -------------------------------------------------
@@ -409,6 +431,126 @@ TEST_CASE("results are canonical expressions, not text") {
     const Expr chained
         = mx::expand(mx::factor(mx::diff(pow(Expr(x), 3) + pow(Expr(x), 2), x)));
     CHECK(chained == 3 * pow(Expr(x), 2) + 2 * Expr(x));
+}
+
+TEST_CASE("is asks a predicate under the assumptions in force") {
+    // A name no other test assumes anything about.
+    const Expr a = Expr::symbol("mx_is_probe");
+
+    CHECK(mx::is(mx::gt(a, 0)) == mx::Truth::Unknown);
+    {
+        mx::Context context;
+        context.assume(mx::gt(a, 0));
+        // The same question as above, so a stale cached Unknown would show.
+        CHECK(mx::is(mx::gt(a, 0)) == mx::Truth::True);
+        CHECK(mx::is(mx::lt(a, 0)) == mx::Truth::False);
+    }
+    CHECK(mx::is(mx::gt(a, 0)) == mx::Truth::Unknown);
+    CHECK(mx::is(mx::gt(Expr(2), Expr(1))) == mx::Truth::True);
+}
+
+TEST_CASE("series, trigonometric, radical and partial-fraction rearrangement") {
+    const Symbol x("x");
+
+    CHECK(mx::taylor(mx::sin(Expr(x)), x, Expr(0), 5)
+          == Expr(x) + Expr::rational(-1, 6) * pow(Expr(x), 3)
+                 + Expr::rational(1, 120) * pow(Expr(x), 5));
+    CHECK(mx::trigsimp(pow(mx::sin(Expr(x)), 2) + pow(mx::cos(Expr(x)), 2)) == Expr(1));
+    CHECK(mx::trigexpand(mx::sin(2 * Expr(x))) == 2 * mx::cos(Expr(x)) * mx::sin(Expr(x)));
+    CHECK(mx::radcan(mx::exp(2 * mx::log(Expr(x)))) == pow(Expr(x), 2));
+    CHECK(mx::partfrac(1 / (pow(Expr(x), 2) - 1), x)
+          == Expr::rational(1, 2) * pow(Expr(x) - 1, -1)
+                 + Expr::rational(-1, 2) * pow(Expr(x) + 1, -1));
+}
+
+TEST_CASE("float and coeff") {
+    const Symbol x("x");
+
+    CHECK(mx::toFloat(mx::pi() + Expr(x)) == Expr(std::numbers::pi) + Expr(x));
+    CHECK(mx::toFloat(Expr::rational(1, 3)).kind() == Kind::Real);
+
+    const Expr p = 3 * pow(Expr(x), 2) + 2 * Expr(x) + 5;
+    CHECK(mx::coeff(p, Expr(x), 2) == Expr(3));
+    CHECK(mx::coeff(p, Expr(x)) == Expr(2));
+    CHECK(mx::coeff(p, Expr(x), 0) == Expr(5));
+    // Taken as it stands, not expanded.
+    CHECK(mx::coeff(pow(Expr(x) + 1, 2), Expr(x)) == Expr(0));
+}
+
+TEST_CASE("sums and products in closed form") {
+    const Symbol k("k");
+    const Expr n = Expr::symbol("n");
+
+    const auto triangular = mx::sum(Expr(k), k, Expr(1), n);
+    REQUIRE(triangular.has_value());
+    CHECK(mx::expand(*triangular)
+          == Expr::rational(1, 2) * n + Expr::rational(1, 2) * pow(n, 2));
+    CHECK(mx::sum(Expr(k), k, Expr(1), Expr(5)).value() == Expr(15));
+    CHECK(mx::sum(pow(Expr(2), -Expr(k)), k, Expr(0), mx::inf()).value() == Expr(2));
+    CHECK(mx::product(Expr(k), k, Expr(1), Expr(5)).value() == Expr(120));
+
+    SUBCASE("and a Failure where there is none") {
+        CHECK_FALSE(mx::sum(Expr::function("f", {Expr(k)}), k, Expr(1), n).has_value());
+        CHECK_FALSE(mx::product(Expr(k), k, Expr(1), n).has_value());
+    }
+}
+
+TEST_CASE("real roots: counted, isolated and found") {
+    const Symbol x("x");
+    const Expr y = Expr::symbol("y");
+
+    CHECK(mx::nroots(pow(Expr(x), 3) - Expr(x), Expr(-2), Expr(2)) == 3u);
+    // The interval is (low, high]: the root at -1 is outside it.
+    CHECK(mx::nroots(pow(Expr(x), 2) - 1, Expr(-1), Expr(1)) == 1u);
+    CHECK(mx::nroots(pow(Expr(x), 2) - 1) == 2u);
+    CHECK_THROWS_AS(static_cast<void>(mx::nroots(Expr(x) * y - 1)), mx::MaximaError);
+
+    CHECK(mx::realroots(pow(Expr(x), 2) - 1) == std::vector<Expr>{Expr(-1), Expr(1)});
+    CHECK(mx::realroots(pow(Expr(x), 2) + 1).empty());
+    const std::vector<Expr> cubeRoot = mx::realroots(pow(Expr(x), 3) - 2);
+    REQUIRE(cubeRoot.size() == 1);
+    REQUIRE(cubeRoot[0].is(Kind::Rational));
+    CHECK(cubeRoot[0].numerator().toDouble() / cubeRoot[0].denominator().toDouble()
+          == doctest::Approx(std::cbrt(2.0)).epsilon(1e-6));
+    CHECK_THROWS_AS(static_cast<void>(mx::realroots(Expr(x) * y - 1)), mx::MaximaError);
+
+    SUBCASE("and found numerically") {
+        const auto root = mx::findRoot(mx::sin(Expr(x)), x, 3.0, 4.0);
+        REQUIRE(root.has_value());
+        CHECK(*root == doctest::Approx(std::numbers::pi));
+
+        const auto sameSign = mx::findRoot(pow(Expr(x), 2) + 1, x, 0.0, 1.0);
+        REQUIRE_FALSE(sameSign.has_value());
+        CHECK(sameSign.error().message.find("same sign") != std::string::npos);
+
+        CHECK_FALSE(mx::findRoot(Expr(x) * y, x, -1.0, 1.0).has_value());
+    }
+}
+
+TEST_CASE("ode2 solves an ordinary differential equation, or says it cannot") {
+    const Symbol x("x");
+    const Symbol y("y");
+
+    const auto growth = mx::ode2(mx::eq(mx::derivative(Expr(y), x), Expr(y)), y, x);
+    REQUIRE(growth.has_value());
+    REQUIRE(growth->is(Kind::Relation));
+    CHECK(mx::lhs(*growth) == Expr(y));
+    CHECK(mx::rhs(*growth) == Expr::symbol("%c") * mx::exp(Expr(x)));
+
+    const auto oscillator
+        = mx::ode2(mx::eq(mx::derivative(Expr(y), x, 2) + Expr(y), Expr(0)), y, x);
+    REQUIRE(oscillator.has_value());
+    CHECK(mx::contains(mx::rhs(*oscillator), Symbol("%k1")));
+    CHECK(mx::contains(mx::rhs(*oscillator), Symbol("%k2")));
+
+    SUBCASE("a Failure when it cannot, and the session is none the worse") {
+        // ode2 prints its reason to the console before answering false, so
+        // that text reaches the pipe ahead of the reply.
+        const auto nonlinear = mx::ode2(
+            mx::eq(pow(mx::derivative(Expr(y), x), 2), mx::sin(Expr(y)) * Expr(x)), y, x);
+        REQUIRE_FALSE(nonlinear.has_value());
+        CHECK(mx::expand(pow(Expr(x) + 1, 2)) == Expr(1) + 2 * Expr(x) + pow(Expr(x), 2));
+    }
 }
 
 } // TEST_SUITE("maxima")

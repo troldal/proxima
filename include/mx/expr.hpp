@@ -247,6 +247,12 @@ Expr le(Expr lhs, Expr rhs);
 Expr gt(Expr lhs, Expr rhs);
 Expr ge(Expr lhs, Expr rhs);
 
+/// The two sides of a relation: `lhs(le(x + 1, 3))` is `x + 1`. Local, and
+/// stricter than Maxima's: anything but a relation throws mx::Error, where
+/// Maxima's lhs would hand the expression back unchanged and hide the mistake.
+Expr lhs(const Expr &relation);
+Expr rhs(const Expr &relation);
+
 /// Maxima's spelling of a relation operator: "=", "#", "<", "<=", ">", ">=".
 std::string_view symbolFor(RelOp op);
 

@@ -285,7 +285,151 @@ solve(const Expr &equation, const Symbol &unknown, Kernel &kernel) {
     return values;
 }
 
-// contains() lived here, although it needs no kernel; it is in
-// src/core/traverse.cpp now, beside replace().
+std::expected<Expr, Failure> ode2(const Expr &equation, const Symbol &dependent,
+                                  const Symbol &independent, Kernel &kernel) {
+    auto result = evaluate(kernel, call("ode2", {equation, dependent, independent}));
+    if (!result) {
+        return result;
+    }
+    // Maxima prints why to the console, and answers false.
+    if (result->is(Kind::Symbol) && result->name() == "false") {
+        return std::unexpected(Failure{"ode2 could not solve " + equation.str()
+                                       + " for " + dependent.name() + " as a function of "
+                                       + independent.name()});
+    }
+    return result;
+}
+
+Truth is(const Expr &predicate, Kernel &kernel) {
+    // evalPure is safe although the answer depends on the assumptions: the
+    // reply cache is discarded whenever a Context changes them.
+    const Expr answer = evaluateOrThrow(kernel, call("is", {predicate}));
+    if (answer.is(Kind::Symbol)) {
+        if (answer.name() == "true") {
+            return Truth::True;
+        }
+        if (answer.name() == "false") {
+            return Truth::False;
+        }
+        if (answer.name() == "unknown") {
+            return Truth::Unknown;
+        }
+    }
+    throw MaximaError("is(" + predicate.str() + ") answered " + answer.str()
+                      + ", which is not a truth value");
+}
+
+Expr taylor(const Expr &expr, const Symbol &wrt, const Expr &at, unsigned order,
+            Kernel &kernel) {
+    // Maxima answers a taylor series in its own truncated-series form; the
+    // protocol hands every reply through ratdisrep, which makes it a sum.
+    return evaluateOrThrow(kernel, call("taylor", {expr, wrt, at, Expr(order)}));
+}
+
+Expr trigsimp(const Expr &expr, Kernel &kernel) {
+    return evaluateOrThrow(kernel, call("trigsimp", {expr}));
+}
+
+Expr trigexpand(const Expr &expr, Kernel &kernel) {
+    return evaluateOrThrow(kernel, call("trigexpand", {expr}));
+}
+
+Expr radcan(const Expr &expr, Kernel &kernel) {
+    return evaluateOrThrow(kernel, call("radcan", {expr}));
+}
+
+Expr partfrac(const Expr &expr, const Symbol &wrt, Kernel &kernel) {
+    return evaluateOrThrow(kernel, call("partfrac", {expr, wrt}));
+}
+
+Expr toFloat(const Expr &expr, Kernel &kernel) {
+    return evaluateOrThrow(kernel, call("float", {expr}));
+}
+
+Expr coeff(const Expr &expr, const Expr &term, int power, Kernel &kernel) {
+    return evaluateOrThrow(kernel, call("coeff", {expr, term, Expr(power)}));
+}
+
+namespace {
+
+/// sum or product, closed or a Failure.
+std::expected<Expr, Failure> closedForm(const std::string &head, const Expr &term,
+                                        const Symbol &index, const Expr &from,
+                                        const Expr &to, Kernel &kernel) {
+    // `simpsum` is what has Maxima look for a closed form when a bound is
+    // symbolic; without it `sum(k, k, 1, n)` stays the noun. ev turns it on
+    // for this evaluation alone, so no setting outlives the call.
+    const Expr series = call(head, {term, index, from, to});
+    auto result = evaluate(kernel, call("ev", {series, Expr::symbol("simpsum")}));
+    if (!result) {
+        return result;
+    }
+    if (isUnevaluated(*result, head)) {
+        return std::unexpected(Failure{"no closed form for " + series.str()});
+    }
+    return result;
+}
+
+} // namespace
+
+std::expected<Expr, Failure> sum(const Expr &term, const Symbol &index,
+                                 const Expr &from, const Expr &to, Kernel &kernel) {
+    return closedForm("sum", term, index, from, to, kernel);
+}
+
+std::expected<Expr, Failure> product(const Expr &term, const Symbol &index,
+                                     const Expr &from, const Expr &to, Kernel &kernel) {
+    return closedForm("product", term, index, from, to, kernel);
+}
+
+std::size_t nroots(const Expr &polynomial, const Expr &low, const Expr &high,
+                   Kernel &kernel) {
+    const Expr count = evaluateOrThrow(kernel, call("nroots", {polynomial, low, high}));
+    if (count.is(Kind::Integer)) {
+        const auto value = count.integerValue().toInt64();
+        if (value && *value >= 0) {
+            return static_cast<std::size_t>(*value);
+        }
+    }
+    throw MaximaError("nroots answered " + count.str() + ", which is not a count");
+}
+
+std::vector<Expr> realroots(const Expr &polynomial, Kernel &kernel) {
+    const Expr roots = evaluateOrThrow(kernel, call("realroots", {polynomial}));
+    const auto notRoots = [&roots] {
+        return MaximaError("realroots answered " + roots.str()
+                           + ", which is not a list of roots");
+    };
+    if (!isList(roots)) {
+        throw notRoots();
+    }
+    // Each root arrives as `x = value`.
+    std::vector<Expr> values;
+    values.reserve(roots.arity());
+    for (const Expr &root : roots.args()) {
+        if (!root.is(Kind::Relation) || root.relationOp() != RelOp::Equal) {
+            throw notRoots();
+        }
+        values.push_back(root.arg(1));
+    }
+    return values;
+}
+
+std::expected<double, Failure> findRoot(const Expr &expr, const Symbol &wrt,
+                                        double low, double high, Kernel &kernel) {
+    auto result
+        = evaluate(kernel, call("find_root", {expr, wrt, Expr(low), Expr(high)}));
+    if (!result) {
+        return std::unexpected(result.error());
+    }
+    if (result->is(Kind::Real)) {
+        return result->realValue();
+    }
+    // Handed back unevaluated: the expression was not a number at some point
+    // of the interval, so there was nothing to bisect.
+    return std::unexpected(Failure{"find_root could not evaluate " + expr.str()
+                                   + " to a number between " + std::to_string(low)
+                                   + " and " + std::to_string(high)});
+}
 
 } // namespace mx

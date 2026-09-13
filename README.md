@@ -67,6 +67,13 @@ produced them.
 | `solve(equation, x)` | values for one unknown |
 | `solve(equations, unknowns)` | a system; one value per unknown, in the order asked for |
 | `expand` `factor` `simplify` `subst` | algebraic rearrangement |
+| `trigsimp` `trigexpand` `radcan` `partfrac(f, x)` `coeff(f, x, n)` | more rearrangement |
+| `taylor(f, x, a, n)` | Taylor expansion, as an ordinary expression |
+| `sum(t, k, a, b)` `product(t, k, a, b)` | closed forms; a `Failure` when there is none |
+| `ode2(equation, y, x)` | first- and second-order ODEs, written with `derivative(y, x)` |
+| `is(predicate)` | `Truth::True`, `False` or `Unknown` under the assumptions in force |
+| `toFloat(f)` `nroots(p, a, b)` `realroots(p)` `findRoot(f, x, a, b)` | numbers from Maxima: floats, root counts, isolated and numeric roots |
+| `lhs(r)` `rhs(r)` | local, no kernel: the sides of a relation |
 | `parse(text)` | Maxima's own parser, for anything the offline one will not take |
 | `contains(e, x)` `replace(e, x, v)` | local, no kernel: find a symbol, or rewrite it (normalised, not evaluated) |
 | `visit(e, f)` `anyOf(e, p)` `transform(e, f)` | local, no kernel: walk every node, search, or rewrite bottom-up |

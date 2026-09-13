@@ -52,6 +52,15 @@ inline Expr sqrt(const Expr &x) {
     return pow(x, Expr::rational(1, 2));
 }
 
+/// The derivative of `f` with respect to `variable`, `order` times, *as a
+/// noun*: Maxima's `'diff(f, x, n)`, which stays a derivative rather than
+/// being computed. What a differential equation for mx::ode2 is written with,
+/// since `diff(y, x)` of a plain symbol `y` would simply evaluate to 0. For
+/// the derivative computed, use mx::diff.
+inline Expr derivative(const Expr &f, const Expr &variable, unsigned order = 1) {
+    return Expr::function("'diff", {f, variable, Expr(order)});
+}
+
 /// The constants, spelled as Maxima names them.
 inline Expr pi() {
     return Expr::symbol("%pi");
