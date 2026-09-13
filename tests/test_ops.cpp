@@ -193,6 +193,37 @@ TEST_CASE("limits") {
         REQUIRE(decay.has_value());
         CHECK(*decay == Expr(0));
     }
+
+    SUBCASE("a limit that does not exist is a Failure, however Maxima says so") {
+        // `ind`: bounded, but never settling. It used to come back as a
+        // success holding the symbol ind, which a caller checking only the
+        // std::expected took for an answer.
+        const auto oscillating = mx::limit(mx::sin(Expr(1) / Expr(x)), x, Expr(0));
+        REQUIRE_FALSE(oscillating.has_value());
+        CHECK(oscillating.error().message.find("does not exist") != std::string::npos);
+        CHECK(oscillating.error().message.find("bounded") != std::string::npos);
+
+        const auto step = mx::limit(mx::abs(Expr(x)) / Expr(x), x, Expr(0));
+        CHECK_FALSE(step.has_value());
+
+        // `und`: undefined. Already a Failure.
+        const auto undefined = mx::limit(mx::exp(Expr(1) / Expr(x)), x, Expr(0));
+        REQUIRE_FALSE(undefined.has_value());
+        CHECK(undefined.error().message.find("does not exist") != std::string::npos);
+
+        // From one side the step has a value after all.
+        const auto right
+            = mx::limit(mx::abs(Expr(x)) / Expr(x), x, Expr(0), mx::Side::FromAbove);
+        REQUIRE(right.has_value());
+        CHECK(*right == Expr(1));
+    }
+
+    SUBCASE("an infinite limit is still a value") {
+        // From both sides 1/x grows without a sign: Maxima's complex infinity.
+        const auto unsignedInfinity = mx::limit(Expr(1) / Expr(x), x, Expr(0));
+        REQUIRE(unsignedInfinity.has_value());
+        CHECK(unsignedInfinity->str() == "infinity");
+    }
 }
 
 TEST_CASE("solving") {

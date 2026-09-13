@@ -558,19 +558,17 @@ void whenThereIsNoAnswer() {
     show("limit(1/x, x, 0), both sides",
          unsigned_ ? unsigned_->str() : "Failure: " + unsigned_.error().message);
 
-    // Not every limit that fails to exist is a Failure, and this one is worth
-    // knowing about. abs(x)/x is -1 on one side of 0 and 1 on the other.
-    // Maxima answers `ind` — indefinite, but bounded — and that arrives as a
-    // *successful* result holding the symbol ind. Only Maxima's `und`
-    // (undefined) is reported as a Failure. Where it matters, check for ind
-    // yourself.
+    // A limit that does not exist is a Failure, however Maxima puts it.
+    // abs(x)/x is -1 on one side of 0 and 1 on the other: Maxima answers `ind`,
+    // bounded but with no single value, and the Failure says so. Maxima's
+    // `und`, undefined, is a Failure the same way. From one side, the same
+    // limit is an ordinary value.
     const auto bounded = mx::limit(mx::abs(x) / x, x, 0);
-    const bool indefinite = bounded && bounded->is(mx::Kind::Symbol)
-                            && bounded->name() == "ind";
     show("limit(abs(x)/x, x, 0)",
-         indefinite ? "ind: bounded, but no single value"
-         : bounded  ? bounded->str()
-                    : "Failure: " + bounded.error().message);
+         bounded ? bounded->str() : "Failure: " + bounded.error().message);
+    const auto oneSided = mx::limit(mx::abs(x) / x, x, 0, mx::Side::FromAbove);
+    show("limit(abs(x)/x, x, 0, FromAbove)",
+         oneSided ? oneSided->str() : "Failure: " + oneSided.error().message);
 
     // Operations with no ordinary way to fail — diff, expand, factor,
     // simplify, subst — throw mx::MaximaError instead, because a failure

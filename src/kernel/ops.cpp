@@ -155,11 +155,21 @@ std::expected<Expr, Failure> limit(const Expr &expr, const Symbol &wrt,
                                        + expr.str() + " as " + wrt.name()
                                        + " approaches " + to.str()});
     }
-    // `und` is Maxima's "undefined", a definite answer that no limit exists.
+    // `und` and `ind` are both Maxima saying, definitely, that there is no
+    // limit: `und` that the expression is undefined there, `ind` that it stays
+    // bounded without settling — sin(1/x) at 0, or abs(x)/x, which is 1 on one
+    // side and -1 on the other. `ind` used to come back as a success, and a
+    // caller checking only the std::expected took the symbol for an answer.
     if (result->is(Kind::Symbol) && result->name() == "und") {
         return std::unexpected(Failure{"the limit of " + expr.str() + " as "
                                        + wrt.name() + " approaches " + to.str()
                                        + " does not exist"});
+    }
+    if (result->is(Kind::Symbol) && result->name() == "ind") {
+        return std::unexpected(Failure{"the limit of " + expr.str() + " as "
+                                       + wrt.name() + " approaches " + to.str()
+                                       + " does not exist: it stays bounded but "
+                                         "does not settle on a value"});
     }
     return result;
 }

@@ -76,6 +76,17 @@ std::expected<Expr, Failure> integrate(const Expr &expr, const Symbol &wrt,
 /// Which side to approach from, for a limit that differs either way.
 enum class Side { Both, FromAbove, FromBelow };
 
+/// The limit of `expr` as `wrt` approaches `to`.
+///
+/// A limit that exists comes back as its value, and so does an infinite one:
+/// `inf`, `minf`, or `infinity` — Maxima's complex infinity, unbounded with no
+/// direction, as for 1/x at 0 approached from both sides.
+///
+/// A Failure when there is no limit, whichever way Maxima says so: `und` (the
+/// expression is undefined there), `ind` (it stays bounded but never settles,
+/// like sin(1/x) at 0, or abs(x)/x, which is 1 on one side and -1 on the
+/// other), or the limit left unevaluated because Maxima could not decide.
+/// Approaching from one side can turn a Failure into a value.
 std::expected<Expr, Failure> limit(const Expr &expr, const Symbol &wrt,
                                    const Expr &to, Side side = Side::Both,
                                    Kernel &kernel = sharedKernel());
