@@ -1278,6 +1278,78 @@ instead of 217, and all seven defects are gone — six fixed by the shared layer
 the seventh (escaping) still the renderer's own business, which is where it
 belongs.
 
+### Boost.Process
+
+The two hand-written transports — `child_process_win32.cpp` and
+`child_process_posix.cpp`, with `win32_process_utils.hpp` for argument quoting
+and environment blocks, about 500 lines — are replaced by one portable
+`child_process.cpp` over Boost.Process v2 and Boost.Asio. `ITransport` did not
+change and neither did the session; that is what the interface was for.
+
+What it fixed, all listed in TODO.md: the Windows read polled `PeekNamedPipe`
+and `Sleep(1)`, because a blocking `ReadFile` on an anonymous pipe cannot be
+abandoned, and `Sleep(1)` is a whole scheduler tick; the Windows launch let the
+child inherit every inheritable handle in the host; it used the ANSI API
+family; and a failed `WriteFile` was ignored. Boost.Process launches through
+`CreateProcessW` with an explicit handle list, and Asio's pipes are overlapped,
+so a read waits on the completion port and returns the moment bytes arrive. A
+failed write now marks the transport closed at once instead of surfacing as a
+timeout.
+
+Measured, per round trip to a real Maxima, before → after:
+
+| | Windows | Linux |
+|---|---|---|
+| trivial `evalPure` | 15.5 ms → 0.04 ms | 0.05 ms → 0.07 ms |
+| `expand` | 15.6 ms → 1.5 ms | 1.1 ms → 1.1 ms |
+| kernel start to handshake | ~131 ms → ~75 ms | 15–62 ms → 14–15 ms |
+| teardown | 11–12 ms → 4–23 ms | 2.4–3.4 ms → 2.2 ms |
+
+On Windows the 15 ms floor was the whole cost of a small question; it is gone.
+Of the ~75 ms startup, the launch itself is 2–3 ms; the rest is SBCL — about
+52 ms to its first byte and 16 ms more to the handshake. One early measurement
+put the first launch in a process at 130 ms. It did not survive re-measuring,
+and a copy of the constructor timed step by step never showed it, so it is
+recorded here only so that nobody chases it again from the same numbers.
+
+**The bug the migration nearly shipped.** stdout and stderr share one pipe, and
+Boost.Process makes a fresh pipe for each stream it is given a pipe object for,
+so the first version made the pipe itself with `asio::connect_pipe` and handed
+the child its write end. That binds *both* ends to the `io_context`. On Windows
+binding a handle associates its file object with the completion port, and the
+child's inherited handle is the same file object. SBCL writes its standard
+output with overlapped I/O, so every one of its writes posted a completion to
+the *parent's* port, carrying an `OVERLAPPED` address from SBCL's address
+space, which Asio took for one of its own operations. The result was memory
+corruption during Maxima's startup, showing up as a crash in
+`MaximaSession::readFrame`. Windows only, Maxima only: cmd.exe does not use
+overlapped writes, so the transport's own tests passed, and Linux has no
+completion ports. The pipe is now made from raw handles with
+`asio::detail::create_pipe` and only the parent's read end is bound — which is
+what Boost.Process's own stdio bindings do. The comment in `child_process.cpp`
+says so, because the obvious tidy-up would put the bug back.
+
+Smaller things found on the way:
+
+- Asio names its Windows pipes with `BCryptGenRandom`, and `Boost::process`
+  does not carry `bcrypt` in its link interface; the MinGW linker does not find
+  it unaided, so `CMakeLists.txt` adds it.
+- `maxima_cpp` is static, so an installed consumer links Boost.Process even
+  though no public header mentions it; the package config finds it.
+- The Win32 quoting tests went with the quoter. What replaced them runs real
+  children — cmd.exe or `/bin/sh` — through the transport: output coming back,
+  a silent child honouring the receive timeout, a slow child producing many
+  empty reads then more than one read's worth, an environment override
+  arriving, and on POSIX awkward arguments arriving intact. None of them can
+  catch the completion-port bug; the Maxima integration suite is what guards
+  that.
+- `session.cpp` still builds the SBCL command line with `path::string()`, so a
+  Maxima under a non-ASCII path is only half fixed: the launch is wide now, the
+  string handed to it is not.
+
+Suite after: 250 cases / 2771 assertions on Windows (GCC and clang-cl),
+251 / 2771 on Linux; no warnings under the strict set on either.
+
 ### Decided, but not built
 
 Nothing outstanding.

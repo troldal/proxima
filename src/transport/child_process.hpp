@@ -15,14 +15,12 @@ namespace mx::detail {
 /// Maxima or SBCL are, which is what keeps the Maxima-specific launch details
 /// in MaximaSession where they can be tested against FakeTransport.
 ///
-/// Arguments are supplied unquoted. On Windows quoting for the MSVCRT argv
-/// parser happens here, since it is a property of the platform's process launch
-/// rather than of the command being run; on POSIX execve takes the array
-/// directly and no quoting exists to get wrong.
+/// Implemented over Boost.Process v2 and Boost.Asio, one file for every
+/// platform. Arguments are supplied unquoted: quoting for the Windows argv
+/// parser is Boost.Process's business, and POSIX needs none.
 ///
-/// The implementation is a pimpl so that this header stays free of <windows.h>
-/// and <unistd.h> alike: exactly one of child_process_win32.cpp and
-/// child_process_posix.cpp is compiled.
+/// The implementation is a pimpl, so this header stays free of Asio and of
+/// every platform header, and so does everything that includes it.
 class ChildProcessTransport final : public ITransport {
 public:
     /// Launches `argv[0]` with the remaining entries as its arguments.
@@ -32,10 +30,10 @@ public:
     /// environment rather than replacing it, so the child keeps PATH and
     /// friends; see mergeEnvironment for how names are matched.
     ///
-    /// Throws KernelError if the process or its pipes could not be created.
-    /// This includes a failed exec on POSIX, which is reported synchronously
-    /// through a close-on-exec status pipe rather than surfacing later as a
-    /// child that mysteriously exits with 127.
+    /// Throws KernelError if the process or its pipes could not be created,
+    /// including an executable that does not exist. That is reported
+    /// synchronously on every platform, rather than surfacing later as a child
+    /// that mysteriously exits.
     explicit ChildProcessTransport(const std::vector<std::string> &argv,
                                    const std::vector<EnvOverride> &env = {});
 

@@ -11,8 +11,9 @@ namespace mx::detail {
 /// Deliberately knows nothing about Maxima: no prompts, no markers, no
 /// statements. Framing and protocol live one layer up, in MaximaSession.
 /// That split is what lets FakeTransport exercise the protocol with no
-/// installation present, and what will let a POSIX implementation drop in
-/// beside the Win32 one without touching the session.
+/// installation present, and what let the process handling underneath be
+/// replaced wholesale — hand-written Win32 and POSIX code, then Boost.Process —
+/// without touching the session.
 class ITransport {
 public:
     virtual ~ITransport() = default;

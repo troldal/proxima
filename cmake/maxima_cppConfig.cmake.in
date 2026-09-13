@@ -12,7 +12,9 @@ include(CMakeFindDependencyMacro)
 # those headers. Look here first, so a consumer gets the Boost this library was
 # actually compiled against rather than whichever one happens to be on the path.
 list(PREPEND CMAKE_PREFIX_PATH "${PACKAGE_PREFIX_DIR}")
-find_dependency(Boost COMPONENTS multiprecision)
+# Boost.Process too: maxima_cpp is a static library, so the process library
+# it was built against is linked into the consumer's executable.
+find_dependency(Boost COMPONENTS multiprecision process)
 
 if (NOT WIN32)
     find_dependency(Threads)

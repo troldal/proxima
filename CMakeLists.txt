@@ -5,10 +5,14 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # All symbolic work is delegated to a Maxima child process, so nothing here
-# links against a computer algebra library. The one dependency is
-# Boost.Multiprecision, which backs mx::Integer: header-only, so it is compiled
-# rather than linked, but it appears in a public header and so must reach
-# consumers too -- see the install rules below.
+# links against a computer algebra library. Two parts of Boost are used:
+#
+#   Boost.Multiprecision  backs mx::Integer. Header-only, but it appears in a
+#                         public header, so it must reach consumers too -- see
+#                         the install rules below.
+#   Boost.Process (v2)    starts and talks to the Maxima child, over Boost.Asio.
+#                         A compiled library, and private: nothing about it
+#                         appears in include/mx.
 
 # Boost is a large download, and a copy per build directory would be several
 # gigabytes across the presets in CMakePresets.json. CPM keeps one shared source
@@ -38,8 +42,12 @@ include(cmake/CPM.cmake)
 # The CMake-native Boost release rather than the historical one: BOOST_ENABLE_CMAKE
 # builds it as an ordinary CMake project, so there is no b2 bootstrap and no
 # separate build step. BOOST_INCLUDE_LIBRARIES narrows the superbuild to
-# multiprecision and whatever it depends on -- Boost entire is far more than
-# this library needs, and configuring all of it is slow.
+# multiprecision, process and whatever they depend on -- Boost entire is far
+# more than this library needs, and configuring all of it is slow. The list
+# separator is escaped for CPM, which would otherwise split it into two options.
+#
+# BOOST_PROCESS_USE_STD_FS has Boost.Process use std::filesystem, so it does
+# not also need Boost.Filesystem linked in.
 #
 # BOOST_SKIP_INSTALL_RULES is OFF deliberately, against the usual advice for a
 # fetched dependency. mx::Integer holds a cpp_int by value, so the type is in
@@ -64,14 +72,9 @@ CPMAddPackage(
         "BOOST_ENABLE_CMAKE ON"
         "BOOST_SKIP_INSTALL_RULES OFF"
         "BUILD_SHARED_LIBS OFF"
-        "BOOST_INCLUDE_LIBRARIES multiprecision"
+        "BOOST_INCLUDE_LIBRARIES multiprecision\\\;process"
+        "BOOST_PROCESS_USE_STD_FS ON"
 )
-
-if (WIN32)
-    set(MX_CHILD_PROCESS_SOURCE src/transport/child_process_win32.cpp)
-else ()
-    set(MX_CHILD_PROCESS_SOURCE src/transport/child_process_posix.cpp)
-endif ()
 
 add_library(maxima_cpp
         src/core/expr.cpp
@@ -90,12 +93,12 @@ add_library(maxima_cpp
         src/kernel/kernel.cpp
         src/kernel/ops.cpp
         src/kernel/session.cpp
+        src/transport/child_process.cpp
         src/transport/fake_transport.cpp
         src/transport/process_env.cpp
         src/wire/from_maxima.cpp
         src/wire/sexpr.cpp
         src/wire/to_maxima.cpp
-        ${MX_CHILD_PROCESS_SOURCE}
 )
 
 # PUBLIC: include/mx/integer.hpp includes <boost/multiprecision/cpp_int.hpp>,
@@ -103,6 +106,18 @@ add_library(maxima_cpp
 # Boost::multiprecision rather than Boost::headers, so the dependency says which
 # part of Boost is actually used.
 target_link_libraries(maxima_cpp PUBLIC Boost::multiprecision)
+
+# PRIVATE: only src/transport/child_process.cpp includes it. The library is
+# static, though, so consumers still link it; the installed package config
+# finds it for them.
+target_link_libraries(maxima_cpp PRIVATE Boost::process)
+
+if (WIN32)
+    # Asio names its pipes using BCryptGenRandom, and Boost::process does not
+    # carry bcrypt in its link interface; the MinGW linker does not find it
+    # by itself.
+    target_link_libraries(maxima_cpp PRIVATE bcrypt)
+endif ()
 
 if (NOT WIN32)
     find_package(Threads REQUIRED)
@@ -122,8 +137,8 @@ target_include_directories(maxima_cpp
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated>
         $<INSTALL_INTERFACE:include>
-        # src/ is private: internal headers such as transport/child_process_win32
-        # pull in <windows.h>, which must never reach a consumer of include/mx.
+        # src/ is private: the transport pulls in Boost.Asio and, through it,
+        # <windows.h>, neither of which may reach a consumer of include/mx.
         PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
