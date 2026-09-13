@@ -272,6 +272,12 @@ ctest --preset linux
 
 `ctest -LE maxima` runs the two thirds of the suite that need no Maxima at all.
 
+Two example programs are built alongside the library. `demo` is a one-screen
+showcase. `tour` is the long version and doubles as a quick-start guide: a walk
+through every public feature in numbered sections, commented throughout, whose
+first part needs no Maxima at all. Read
+[`examples/tour.cpp`](examples/tour.cpp) with its output beside it.
+
 ## Installing and consuming
 
 ```sh

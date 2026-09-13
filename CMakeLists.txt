@@ -132,6 +132,10 @@ target_compile_features(maxima_cpp PUBLIC cxx_std_23)
 add_executable(demo examples/demo.cpp)
 target_link_libraries(demo PRIVATE mx::maxima_cpp)
 
+# A longer, heavily commented walk through every public feature.
+add_executable(tour examples/tour.cpp)
+target_link_libraries(tour PRIVATE mx::maxima_cpp)
+
 # --- Installation ---------------------------------------------------------
 
 include(GNUInstallDirs)
