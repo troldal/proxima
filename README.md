@@ -78,8 +78,11 @@ produced them.
 | `contains(e, x)` `replace(e, x, v)` | local, no kernel: find a symbol, or rewrite it (normalised, not evaluated) |
 | `visit(e, f)` `anyOf(e, p)` `transform(e, f)` | local, no kernel: walk every node, search, or rewrite bottom-up |
 
-Builders for `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `log`,
-`abs`, `exp`, `sqrt`, and the constants `%pi`, `%e`, `%i`, `inf`, `minf`.
+Builders for `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`,
+`asinh`, `acosh`, `atanh`, `log`, `abs`, `erf`, `floor`, `ceiling`, `signum`,
+`exp`, `sqrt`, and the constants `%pi`, `%e`, `%i`, `inf`, `minf`. They take an
+`Expr` or a `Symbol` and nothing else, so they never compete with `<cmath>` for
+a plain number: `mx::sqrt(Expr(2))`, not `mx::sqrt(2)`.
 Relations are built by name — `eq`, `ne`, `lt`, `le`, `gt`, `ge` — so that `==`
 can keep its ordinary meaning.
 

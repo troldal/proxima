@@ -673,7 +673,7 @@ TEST_CASE("MathML output is well formed for every kind of node") {
         Expr(-2.5) * Expr(x),
         Expr(1e300),
         Expr(std::numeric_limits<double>::infinity()),
-        mx::minusInf(),
+        mx::minf(),
         mx::sin(Expr(x)) / mx::cos(Expr(x)),
         pow(pow(Expr(x), 2), 3),
         pow(Expr(x) * Expr(y), Expr::rational(1, 3)),

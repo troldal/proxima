@@ -38,6 +38,15 @@ concept IntegralNumber
 template <typename T>
 concept BooleanOrCharacter = std::same_as<T, bool> || CharacterType<T>;
 
+class Integer;
+
+namespace detail {
+// The implementations behind mx::abs and mx::gcd, which are templates only to
+// constrain what they accept.
+Integer absOf(const Integer &value);
+Integer gcdOf(const Integer &a, const Integer &b);
+} // namespace detail
+
 /// An exact integer of unbounded size.
 ///
 /// Maxima produces large integers in ordinary use — `30!` has 33 digits, and a
@@ -130,8 +139,8 @@ public:
     std::strong_ordering operator<=>(const Integer &other) const;
 
 private:
-    friend Integer abs(const Integer &value);
-    friend Integer gcd(const Integer &a, const Integer &b);
+    friend Integer detail::absOf(const Integer &value);
+    friend Integer detail::gcdOf(const Integer &a, const Integer &b);
 
     using Backend = boost::multiprecision::cpp_int;
 
@@ -140,10 +149,36 @@ private:
     Backend value_ = 0;
 };
 
-Integer abs(const Integer &value);
+/// The absolute value. Takes an Integer and nothing else: a plain
+/// `const Integer &` would make this a candidate for abs(-3) through the
+/// implicit constructor, which is <cstdlib>'s call to answer. See
+/// mx::ExprArgument for why that matters.
+template <std::same_as<Integer> T>
+Integer abs(const T &value) {
+    return detail::absOf(value);
+}
+
+namespace detail {
+inline const Integer &asInteger(const Integer &value) {
+    return value;
+}
+template <IntegralNumber T>
+Integer asInteger(T value) {
+    return Integer(value);
+}
+} // namespace detail
 
 /// Greatest common divisor, non-negative. gcd(0, 0) is 0.
-Integer gcd(const Integer &a, const Integer &b);
+///
+/// At least one argument must be an Integer, and the other may be an integral
+/// number — `gcd(n, 1001)` — so that gcd(12, 18) stays std::gcd's, for the
+/// reason abs takes only an Integer.
+template <typename A, typename B>
+    requires(std::same_as<A, Integer> && (std::same_as<B, Integer> || IntegralNumber<B>))
+            || (IntegralNumber<A> && std::same_as<B, Integer>)
+Integer gcd(const A &a, const B &b) {
+    return detail::gcdOf(detail::asInteger(a), detail::asInteger(b));
+}
 
 /// Writes the decimal digits, as toString() does.
 std::ostream &operator<<(std::ostream &out, const Integer &value);

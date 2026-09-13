@@ -17,6 +17,19 @@
 namespace mx {
 
 class Expr;
+class Symbol;
+
+/// An Expr, or a Symbol, which converts to one.
+///
+/// What mx::pow insists on for at least one argument, and the builders in
+/// <mx/functions.hpp> for theirs. They share names with <cmath>, and an
+/// argument of plain `const Expr &` would accept a plain number too, through
+/// Expr's implicit constructor — so under `using namespace mx`, `pow(2, 3)` or
+/// `abs(-3)` would find an mx candidate: losing overload resolution today, and
+/// an ambiguity the day someone adds an overload. With this constraint, a call
+/// on plain numbers alone has no mx candidate at all.
+template <typename T>
+concept ExprArgument = std::same_as<T, Expr> || std::same_as<T, Symbol>;
 
 namespace detail {
 struct Node;
@@ -236,7 +249,16 @@ Expr operator/(const Expr &lhs, const Expr &rhs);
 Expr operator-(const Expr &operand);
 Expr operator+(const Expr &operand);
 
-Expr pow(const Expr &base, const Expr &exponent);
+/// base^exponent. Either side may be a plain number — `pow(x, 2)` — but not
+/// both: `pow(2, 3)` belongs to std::pow, and this is no candidate for it. See
+/// ExprArgument.
+template <typename Base, typename Exponent>
+    requires(ExprArgument<Base> || ExprArgument<Exponent>)
+            && std::convertible_to<const Base &, Expr>
+            && std::convertible_to<const Exponent &, Expr>
+Expr pow(const Base &base, const Exponent &exponent) {
+    return Expr::pow(Expr(base), Expr(exponent));
+}
 
 /// Relation builders. Named rather than spelled with comparison operators, so
 /// that `==` can keep its ordinary meaning — see the note on Expr.

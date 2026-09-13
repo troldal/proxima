@@ -156,6 +156,8 @@ bool namedConstant(std::string_view name, double &value) {
         value = std::numbers::e;
     } else if (name == "%phi") {
         value = std::numbers::phi;
+    } else if (name == "%gamma") {
+        value = std::numbers::egamma;
     } else if (name == "inf") {
         value = std::numeric_limits<double>::infinity();
     } else if (name == "minf") {

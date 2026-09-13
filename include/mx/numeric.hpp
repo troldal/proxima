@@ -29,7 +29,8 @@ using Bindings = std::map<std::string, double, std::less<>>;
 /// For repeated evaluation use mx::Compiled, which is far faster: this looks
 /// every symbol up by name, in a map, on every occurrence.
 ///
-/// Named constants are recognised as Maxima spells them: `%pi`, `%e`, `inf`,
+/// Named constants are recognised as Maxima spells them: `%pi`, `%e`, `%phi`
+/// (the golden ratio), `%gamma` (the Euler–Mascheroni constant), `inf` and
 /// `minf`. An explicit binding wins over them, so a symbol called `%e` can be
 /// given a different value if that is genuinely what is wanted.
 ///
@@ -91,7 +92,8 @@ public:
     /// Prepares `expr` as a function of `variables`, in that order.
     ///
     /// Any other symbol must have a value in `constants` or be one of the named
-    /// constants (`%pi`, `%e`, `inf`, `minf`), and is folded in now. A name in
+    /// constants (`%pi`, `%e`, `%phi`, `%gamma`, `inf`, `minf`), and is folded
+    /// in now. A name in
     /// `variables` shadows both.
     ///
     /// Throws mx::EvalError if the expression cannot be turned into numbers.

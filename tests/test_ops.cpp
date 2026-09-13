@@ -11,7 +11,9 @@
 #include <mx/symbol.hpp>
 
 #include <cmath>
+#include <concepts>
 #include <numbers>
+#include <numeric>
 #include <span>
 #include <string>
 #include <vector>
@@ -106,6 +108,73 @@ TEST_CASE("derivative builds the noun a differential equation is written with") 
     CHECK(mx::derivative(Expr(y), x)
           == Expr::function("'diff", {Expr(y), Expr(x), Expr(1)}));
     CHECK(mx::derivative(Expr(y), x, 2).arg(2) == Expr(2));
+}
+
+namespace {
+template <typename T>
+concept BuildsFrom = requires(const T &value) {
+    mx::abs(value);
+    mx::floor(value);
+    mx::sqrt(value);
+};
+
+template <typename T>
+concept PowersFrom = requires(const T &value) { mx::pow(value, value); };
+
+template <typename T>
+concept GcdFrom = requires(const T &value) { mx::gcd(value, value); };
+} // namespace
+
+TEST_CASE("mx functions named like <cmath> ones take no plain numbers") {
+    // Taking `const Expr &` or `const Integer &`, mx::abs was a candidate for
+    // abs(-3), and mx::pow for pow(2, 3), through the implicit constructors:
+    // losing overload resolution, but one added overload from an ambiguity.
+    static_assert(BuildsFrom<Expr>);
+    static_assert(BuildsFrom<Symbol>);
+    static_assert(!BuildsFrom<int>);
+    static_assert(!BuildsFrom<double>);
+
+    static_assert(PowersFrom<Expr>);
+    static_assert(PowersFrom<Symbol>);
+    static_assert(!PowersFrom<int>);
+    static_assert(!PowersFrom<double>);
+
+    static_assert(GcdFrom<mx::Integer>);
+    static_assert(!GcdFrom<int>);
+    static_assert(!GcdFrom<long long>);
+
+    using namespace mx; // NOLINT: the situation being guarded against.
+    using std::abs;
+    using std::floor;
+    using std::gcd;
+    using std::pow;
+    static_assert(std::same_as<decltype(abs(-3)), int>);
+    static_assert(std::same_as<decltype(pow(2.0, 3)), double>);
+    CHECK(abs(-3) == 3);
+    CHECK(floor(2.5) == 2.0);
+    CHECK(gcd(12, 18) == 6);
+    CHECK(abs(Symbol("x")) == Expr::function("abs", {Expr::symbol("x")}));
+
+    SUBCASE("while one side may still be a plain number") {
+        const Symbol x("x");
+        CHECK(pow(x, 2) == Expr::pow(Expr(x), Expr(2)));
+        CHECK(pow(2, Expr(x)) == Expr::pow(Expr(2), Expr(x)));
+        CHECK(mx::gcd(mx::Integer(12), 18) == mx::Integer(6));
+        CHECK(mx::gcd(30, mx::Integer(12)) == mx::Integer(6));
+    }
+}
+
+TEST_CASE("every builder is spelled as Maxima spells the function") {
+    const Symbol x("x");
+    CHECK(mx::tanh(x).str() == "tanh(x)");
+    CHECK(mx::asinh(x).str() == "asinh(x)");
+    CHECK(mx::acosh(x).str() == "acosh(x)");
+    CHECK(mx::atanh(x).str() == "atanh(x)");
+    CHECK(mx::erf(x).str() == "erf(x)");
+    CHECK(mx::floor(x).str() == "floor(x)");
+    CHECK(mx::ceiling(x).str() == "ceiling(x)");
+    CHECK(mx::signum(x).str() == "signum(x)");
+    CHECK(mx::minf().str() == "minf");
 }
 
 // --- Against a real kernel -------------------------------------------------
@@ -550,6 +619,24 @@ TEST_CASE("ode2 solves an ordinary differential equation, or says it cannot") {
             mx::eq(pow(mx::derivative(Expr(y), x), 2), mx::sin(Expr(y)) * Expr(x)), y, x);
         REQUIRE_FALSE(nonlinear.has_value());
         CHECK(mx::expand(pow(Expr(x) + 1, 2)) == Expr(1) + 2 * Expr(x) + pow(Expr(x), 2));
+    }
+}
+
+TEST_CASE("every builder round-trips through Maxima unchanged") {
+    // Sent as structure and read back: the names are Maxima's, and so is
+    // the shape, or the two would disagree about what was built.
+    const Symbol x("x");
+    const std::vector<Expr> built{
+        mx::sin(x),   mx::cos(x),   mx::tan(x),     mx::asin(x),   mx::acos(x),
+        mx::atan(x),  mx::sinh(x),  mx::cosh(x),    mx::tanh(x),   mx::asinh(x),
+        mx::acosh(x), mx::atanh(x), mx::log(x),     mx::abs(x),    mx::erf(x),
+        mx::floor(x), mx::ceiling(x), mx::signum(x), mx::exp(x),   mx::sqrt(x),
+    };
+    for (const Expr &expression : built) {
+        CAPTURE(expression.str());
+        const auto back = mx::toExpr(mx::sharedKernel().evalPure(expression));
+        REQUIRE(back.has_value());
+        CHECK(*back == expression);
     }
 }
 

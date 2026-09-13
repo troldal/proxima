@@ -130,7 +130,10 @@ TEST_CASE("constants are recognised as Maxima spells them") {
     CHECK(mx::evalNumeric(mx::pi()) == doctest::Approx(std::numbers::pi));
     CHECK(mx::evalNumeric(mx::e()) == doctest::Approx(std::numbers::e));
     CHECK(std::isinf(mx::evalNumeric(mx::inf())));
-    CHECK(mx::evalNumeric(mx::minusInf()) < 0);
+    CHECK(mx::evalNumeric(mx::minf()) < 0);
+    CHECK(mx::evalNumeric(mx::Expr::symbol("%phi")) == doctest::Approx(std::numbers::phi));
+    CHECK(mx::evalNumeric(mx::Expr::symbol("%gamma"))
+          == doctest::Approx(std::numbers::egamma));
 
     SUBCASE("but an explicit binding still wins") {
         // So a symbol that happens to be named %e can be given a value.

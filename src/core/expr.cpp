@@ -409,10 +409,6 @@ Expr operator+(const Expr &operand) {
     return operand;
 }
 
-Expr pow(const Expr &base, const Expr &exponent) {
-    return Expr::pow(base, exponent);
-}
-
 Expr eq(Expr lhs, Expr rhs) {
     return Expr::relation(RelOp::Equal, std::move(lhs), std::move(rhs));
 }

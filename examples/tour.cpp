@@ -262,10 +262,13 @@ void functionsAndConstants() {
 
     // <mx/functions.hpp> has builders for the common functions. Nothing is
     // evaluated here: sin(0) stays sin(0) until Maxima is asked.
+    //
+    // They take an Expr or a Symbol, never a plain number — so mx::sin never
+    // competes with std::sin for sin(0.5) — which is why the 0 is spelled out.
     const mx::Symbol x("x");
     show("sin(x) * cos(x)", mx::sin(x) * mx::cos(x));
     show("log(abs(x))", mx::log(mx::abs(x)));
-    show("sin(0)", mx::sin(0));
+    show("sin(0)", mx::sin(mx::Expr(0)));
 
     // Two are not functions at all, because Maxima has no node for them:
     // sqrt is a power of 1/2 and exp is a power of %e. Building them that way

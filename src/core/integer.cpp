@@ -151,11 +151,11 @@ std::strong_ordering Integer::operator<=>(const Integer &other) const {
 
 // --- free functions -------------------------------------------------------
 
-Integer abs(const Integer &value) {
+Integer detail::absOf(const Integer &value) {
     return Integer(Integer::Backend(boost::multiprecision::abs(value.value_)));
 }
 
-Integer gcd(const Integer &a, const Integer &b) {
+Integer detail::gcdOf(const Integer &a, const Integer &b) {
     // Boost's gcd is already non-negative and already gives gcd(0, 0) == 0,
     // which are this function's two documented edge cases.
     return Integer(
