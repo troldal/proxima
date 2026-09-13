@@ -82,6 +82,55 @@ TEST_CASE("facts reports what is in force") {
     CHECK(facts.front().kind() == mx::Kind::Relation);
 }
 
+TEST_CASE("facts lists this scope's facts and every enclosing scope's") {
+    // Maxima's facts(name) lists one context's facts and a bare facts() lists
+    // the current context's. facts() used to be the bare call, so it disagreed
+    // with its documentation twice over: an inner scope did not report what it
+    // inherited, and an outer scope reported whichever scope was current.
+    const Symbol a("lineage_a");
+    const Symbol b("lineage_b");
+    const Symbol k("lineage_k");
+    const Expr outerFact = gt(Expr(a), Expr(0));
+    const Expr innerFact = gt(Expr(b), Expr(0));
+    const Expr declaration = Expr::function("kind", {Expr(k), Expr::symbol("integer")});
+
+    const auto position = [](const std::vector<Expr> &facts, const Expr &fact) {
+        for (std::size_t i = 0; i < facts.size(); ++i) {
+            if (facts[i] == fact) {
+                return static_cast<long>(i);
+            }
+        }
+        return -1L;
+    };
+
+    Context outer;
+    outer.assume(outerFact);
+    {
+        Context inner;
+        inner.assume(innerFact);
+        inner.declare(k, Feature::Integer);
+
+        const std::vector<Expr> innerFacts = inner.facts();
+        CHECK(position(innerFacts, innerFact) >= 0);
+        CHECK(position(innerFacts, declaration) >= 0);
+        CHECK(position(innerFacts, outerFact) >= 0);
+        // Innermost first.
+        CHECK(position(innerFacts, innerFact) < position(innerFacts, outerFact));
+
+        // The outer scope, asked while the inner one is current, describes
+        // itself.
+        const std::vector<Expr> outerFacts = outer.facts();
+        CHECK(position(outerFacts, outerFact) >= 0);
+        CHECK(position(outerFacts, innerFact) < 0);
+        CHECK(position(outerFacts, declaration) < 0);
+    }
+
+    // Maxima's own type facts, from its `global` context, are not assumptions.
+    const Expr builtIn
+        = Expr::function("kind", {Expr::symbol("%e"), Expr::symbol("irrational")});
+    CHECK(position(outer.facts(), builtIn) < 0);
+}
+
 TEST_CASE("a contradictory assumption is refused") {
     // Maxima detects the contradiction; carrying on with an inconsistent set of
     // facts would make every later result in the scope meaningless.

@@ -628,8 +628,8 @@ void assumptions() {
             show("    sin(k*pi), k declared integer",
                  mx::expand(mx::sin(k * mx::pi())));
 
-            // facts() lists the facts established in the scope itself, not
-            // those it inherited: here, only the declaration.
+            // facts() lists every fact in force here, innermost first: the
+            // declaration, then the outer scope's n > 0 and x > 0.
             show("    inner.facts()", joined(inner.facts()));
         } // k is no longer an integer here.
 

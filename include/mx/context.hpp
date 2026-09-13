@@ -92,7 +92,17 @@ public:
     /// Declares a standing property of a symbol.
     void declare(const Symbol &symbol, Feature feature);
 
-    /// Every assumption in force, this context's and its parents'.
+    /// Every fact in force in this scope, innermost first: this context's own
+    /// assumptions and declarations, then each enclosing scope's, then those
+    /// made outside any Context (Maxima's `initial` context). Maxima's built-in
+    /// facts about its own type system, such as `kind(%e, irrational)`, are
+    /// left out.
+    ///
+    /// Describes *this* context whichever is current, so calling it on an
+    /// outer scope while an inner one is open lists the outer scope's facts.
+    /// The walk outward stops at the first context this library did not open
+    /// — one created by hand through Kernel::eval, say — after listing that
+    /// context's own facts.
     std::vector<Expr> facts() const;
 
     /// What was assumed in *this* scope, in the order it was assumed.

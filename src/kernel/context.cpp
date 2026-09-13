@@ -6,7 +6,9 @@
 #include <mx/errors.hpp>
 
 #include <atomic>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -19,6 +21,26 @@ std::string nextContextName() {
     static std::atomic<unsigned long long> counter{0};
     return "mx_ctx_" + std::to_string(++counter);
 }
+
+/// The parent of every context this library has opened and not yet closed.
+///
+/// Maxima can list one context's facts, but not a context's ancestry, and a
+/// Context only learns its immediate parent when it opens. This is what lets
+/// facts() walk further out than that. Process-wide, like the names it is keyed
+/// by, and locked, because separate kernels may be used from separate threads.
+struct Lineage {
+    std::mutex mutex;
+    std::unordered_map<std::string, std::string> parentOf;
+};
+
+Lineage &lineage() {
+    static Lineage instance;
+    return instance;
+}
+
+/// Maxima's root context: the built-in facts of its type system, such as
+/// `kind(%e, irrational)`, seventy-odd of them. Not anything a caller assumed.
+constexpr std::string_view kBuiltInContext = "global";
 
 /// Every statement a Context issues changes Maxima's state in a way the
 /// kernel's journal accounts for — either recorded here, or undoing something
@@ -99,6 +121,9 @@ Context::Context(Kernel &kernel) : kernel_(&kernel), name_(nextContextName()) {
         = call("supcontext", {Expr::symbol(name_), Expr::symbol(parent_)});
     evaluateOrThrow(*kernel_, create);
     replayHandles_.push_back(kernel_->remember(create));
+
+    const std::lock_guard lock(lineage().mutex);
+    lineage().parentOf[name_] = parent_;
 }
 
 Context::~Context() {
@@ -106,6 +131,10 @@ Context::~Context() {
     // process, and failing to tidy up a context is not worth that. The next
     // kernel restart clears it regardless.
     try {
+        {
+            const std::lock_guard lock(lineage().mutex);
+            lineage().parentOf.erase(name_);
+        }
         // Drop the replay entries first: a restart triggered by the teardown
         // itself must not rebuild a scope that is ending.
         for (auto handle = replayHandles_.rbegin();
@@ -144,11 +173,36 @@ void Context::declare(const Symbol &symbol, Feature feature) {
 }
 
 std::vector<Expr> Context::facts() const {
-    const Expr result = evaluateOrThrow(*kernel_, call("facts", {}));
-    if (result.is(Kind::Function) && result.name() == "list") {
-        return {result.args().begin(), result.args().end()};
+    // Maxima's facts(name) lists the facts of that one context, not its
+    // ancestors'; and a bare facts() lists whichever context happens to be
+    // current, which is not necessarily this one. This used to be a bare
+    // facts(), so an inner scope reported only its own declarations, and an
+    // outer scope asked while an inner one was open reported the inner one's.
+    std::vector<std::string> chain{name_};
+    {
+        const std::lock_guard lock(lineage().mutex);
+        std::string next = parent_;
+        while (next != kBuiltInContext) {
+            chain.push_back(next);
+            const auto found = lineage().parentOf.find(next);
+            if (found == lineage().parentOf.end()) {
+                // Not one of ours — normally `initial`, where facts assumed
+                // outside any Context live. Its parent is `global`.
+                break;
+            }
+            next = found->second;
+        }
     }
-    return {};
+
+    std::vector<Expr> all;
+    for (const std::string &name : chain) {
+        const Expr result
+            = evaluateOrThrow(*kernel_, call("facts", {Expr::symbol(name)}));
+        if (result.is(Kind::Function) && result.name() == "list") {
+            all.insert(all.end(), result.args().begin(), result.args().end());
+        }
+    }
+    return all;
 }
 
 } // namespace mx
