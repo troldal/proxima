@@ -213,7 +213,10 @@ refused. `declare` covers `Integer`, `Even`, `Odd`, `Rational`, `Real`,
   Every key carries the Maxima version, this library's version *and* the
   assumption state, so an entry can only be read back under the conditions that
   produced it — `sqrt(x^2)` cached under `assume(x > 0)` is not visible to a
-  process that never made the assumption.
+  process that never made the assumption. A raw `eval` may change Maxima in a
+  way no key can describe, so it stops persistence for that kernel;
+  `Kernel::persistenceActive()` says so, and `Kernel::restart()` resumes it by
+  replaying the kernel's recorded state into a fresh Maxima.
 - **Cannot be deadlocked by a prompt.** Maxima asks the user for facts it lacks,
   and reads the answer from standard input; over a pipe that would block and
   then swallow the next request. Questions become errors instead — see *When

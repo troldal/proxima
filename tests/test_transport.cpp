@@ -288,6 +288,32 @@ TEST_CASE("a session with no way to build another transport does not restart") {
     CHECK_THROWS_AS(scripted.session->eval(Payload::text("1+1")), mx::KernelError);
 }
 
+TEST_CASE("restart() replaces the process and replays the journal") {
+    int built = 0;
+    auto factory = [&]() -> std::unique_ptr<mx::detail::ITransport> {
+        ++built;
+        std::vector<std::string> script = handshakeScript();
+        if (built > 1) {
+            // The replayed statement, then a question.
+            script.push_back(frame(2, true, "$DONE"));
+            script.push_back(frame(3, true, "$FRESH"));
+        }
+        return std::make_unique<FakeTransport>(std::move(script));
+    };
+
+    MaximaSession session(factory, mx::Config{});
+    session.remember(Payload::text("assume(x > 0)"));
+
+    session.restart();
+    CHECK(built == 2);
+    CHECK(session.eval(Payload::text("question")).value == "$FRESH");
+
+    SUBCASE("unless there is no way to start another") {
+        ScriptedSession scripted({});
+        CHECK_THROWS_AS(scripted.session->restart(), mx::KernelError);
+    }
+}
+
 TEST_CASE("forgetting a statement stops it being replayed") {
     int built = 0;
     auto factory = [&]() -> std::unique_ptr<mx::detail::ITransport> {

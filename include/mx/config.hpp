@@ -53,7 +53,8 @@ struct Config {
     /// the kernel's assumption state, so an entry can only ever be read back
     /// under the conditions that produced it. Persistence switches itself off
     /// for a kernel whose state has been changed by a raw Kernel::eval, since
-    /// that change is not part of the key.
+    /// that change is not part of the key; Kernel::persistenceActive says
+    /// whether that has happened, and Kernel::restart undoes it.
     std::filesystem::path cacheDirectory;
 
     /// Whether to let Maxima load the user's maxima-init.mac at startup.

@@ -490,6 +490,28 @@ void MaximaSession::recover() {
                               + entry.payload.str() + " failed: " + reply.reason);
         }
     }
+
+    // A fresh process with the journal replayed is exactly what the journal
+    // describes. Whatever unrecorded change once switched persistence off died
+    // with the old process, so it can resume — it used to stay off for good,
+    // even across restarts that had discarded the change. The in-memory
+    // answers belonged to the old process and go with it.
+    cache_.clear();
+    stateAccounted_ = true;
+}
+
+void MaximaSession::restart() {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    if (!factory_) {
+        throw KernelError("this session cannot be restarted: it was built "
+                          "without a way to start another Maxima");
+    }
+    recover();
+}
+
+bool MaximaSession::persistenceActive() const {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    return usingPersistence();
 }
 
 void MaximaSession::writeLine(std::string_view line) {

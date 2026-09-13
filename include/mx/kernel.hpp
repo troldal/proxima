@@ -67,6 +67,11 @@ public:
     /// returns a stale answer is a correctness bug, and a needlessly emptied
     /// cache is merely slower. Use evalPure for anything known to be a
     /// question rather than an instruction.
+    ///
+    /// **Stops Config::cacheDirectory for this kernel,** for the same reason: a
+    /// persistent answer is keyed on the state this kernel has recorded, and an
+    /// eval may have changed Maxima in a way nothing recorded. It stays off
+    /// until restart(); persistenceActive() says which way things stand.
     Reply eval(std::string_view expression);
     Reply eval(const Expr &form);
 
@@ -130,6 +135,24 @@ public:
     /// Changes the per-call deadline for this kernel. Config::startupTimeout,
     /// which governs launching and restarting, is unaffected.
     void setTimeout(std::chrono::milliseconds timeout);
+
+    /// True while answers are read from and written to Config::cacheDirectory.
+    ///
+    /// False when no directory was configured, and also after a raw eval():
+    /// that call may have changed Maxima's state in a way nothing recorded,
+    /// and a persistent answer is keyed on the recorded state, so persistence
+    /// stops rather than file answers under conditions that may not hold.
+    /// restart() brings it back.
+    bool persistenceActive() const;
+
+    /// Replaces Maxima with a fresh process and replays what this kernel
+    /// remembers — every mx::Context's assumptions and declarations — so the
+    /// session is exactly what that record describes.
+    ///
+    /// Anything else is lost, which is the point: bindings and definitions made
+    /// through a raw eval() are discarded, and with them the reason persistence
+    /// had stopped, so it resumes. Costs a Maxima startup.
+    void restart();
 
 private:
     std::unique_ptr<detail::MaximaSession> session_;

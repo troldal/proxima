@@ -7,6 +7,7 @@
 
 #include <mx/config.hpp>
 #include <mx/context.hpp>
+#include <mx/errors.hpp>
 #include <mx/expr.hpp>
 #include <mx/functions.hpp>
 #include <mx/kernel.hpp>
@@ -281,8 +282,10 @@ TEST_CASE("a raw eval switches persistence off for that kernel") {
     mx::expand(pow(Expr(x) + 1, 5), kernel);
     const std::size_t before = fileCount(directory);
     CHECK(before > 0);
+    CHECK(kernel.persistenceActive());
 
     kernel.eval("raw_eval_probe: 7");
+    CHECK_FALSE(kernel.persistenceActive());
     mx::expand(pow(Expr(x) + 1, 6), kernel);
 
     // Still working, just no longer writing entries it could not honestly key.
@@ -293,6 +296,37 @@ TEST_CASE("a raw eval switches persistence off for that kernel") {
     // session.
     mx::expand(pow(Expr(x) + 1, 5), kernel);
     CHECK(kernel.cacheStats().persistentHits == 0);
+
+    SUBCASE("until a restart discards the unrecorded change") {
+        // There used to be no way back short of a new Kernel.
+        kernel.restart();
+        CHECK(kernel.persistenceActive());
+        // The raw eval's binding went with the old process, which is exactly
+        // what makes the disk answers trustworthy again.
+        CHECK(kernel.eval("is(raw_eval_probe = 7)").value != "T");
+        // That check was a raw eval as well, and switched persistence off in
+        // turn — so restart once more before reading from disk.
+        CHECK_FALSE(kernel.persistenceActive());
+        kernel.restart();
+        mx::expand(pow(Expr(x) + 1, 5), kernel);
+        CHECK(kernel.cacheStats().persistentHits == 1);
+    }
+}
+
+TEST_CASE("a kernel restarted after dying resumes persistence") {
+    // Recovery replays the journal into a fresh process, which discards any
+    // unrecorded change just as restart() does. Persistence used to stay off
+    // regardless.
+    const auto directory = scratch("recovered");
+    mx::Config config;
+    config.cacheDirectory = directory;
+
+    mx::Kernel kernel(config);
+    kernel.eval("recovered_probe: 7");
+    REQUIRE_FALSE(kernel.persistenceActive());
+
+    CHECK_THROWS_AS(kernel.eval("quit()"), mx::KernelError);
+    CHECK(kernel.persistenceActive());
 }
 
 TEST_CASE("persistence is off unless a directory is asked for") {

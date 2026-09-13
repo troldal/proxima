@@ -70,4 +70,12 @@ void Kernel::setTimeout(std::chrono::milliseconds timeout) {
     session_->setTimeout(timeout);
 }
 
+bool Kernel::persistenceActive() const {
+    return session_->persistenceActive();
+}
+
+void Kernel::restart() {
+    session_->restart();
+}
+
 } // namespace mx

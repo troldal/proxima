@@ -171,6 +171,18 @@ public:
     /// Changes the per-call deadline. Does not affect Config::startupTimeout.
     void setTimeout(std::chrono::milliseconds timeout);
 
+    /// True while answers are read from and written to Config::cacheDirectory:
+    /// a directory was configured, and nothing has changed Maxima's state
+    /// without the journal recording it.
+    bool persistenceActive() const;
+
+    /// Replaces Maxima with a fresh process and replays the journal, which
+    /// returns the session to exactly the state the journal describes: every
+    /// unrecorded change, such as a raw eval's, is discarded, and persistence
+    /// resumes. Throws KernelError for a session built without a factory, which
+    /// has no way to make another process.
+    void restart();
+
     /// Builds the argv used to launch Maxima's SBCL image for `install`, with
     /// its paths in UTF-8. Exposed for testing; touches no filesystem and
     /// starts nothing.
