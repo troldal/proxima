@@ -132,8 +132,9 @@ tall as their contents, and leaves `negate()` for the library to fill in. Here
 is a root of `a*x^2 + b*x + c = 0`, as Maxima solves it and the demo prints it:
 
 ```
-  str()     ((b^2 - 4*a*c)^(1/2) - b)/(2*a)
-  toTeX()   \frac{\sqrt{b^{2} - 4 a c} - b}{2 a}
+  str()      ((b^2 - 4*a*c)^(1/2) - b)/(2*a)
+  toTeX()    \frac{\sqrt{b^{2} - 4 a c} - b}{2 a}
+  toMathML() <math xmlns="http://www.w3.org/1998/Math/MathML"><mfrac><mrow><msqrt><mrow><msup><mi>b</mi><mn>2</mn></msup><mo>&#x2212;</mo><mrow><mn>4</mn><mo>&#x2062;</mo><mi>a</mi><mo>&#x2062;</mo><mi>c</mi></mrow></mrow></msqrt><mo>&#x2212;</mo><mi>b</mi></mrow><mrow><mn>2</mn><mo>&#x2062;</mo><mi>a</mi></mrow></mfrac></math>
   text2d
         ___________
        /  2

@@ -2,14 +2,15 @@
 // C++ interface, with Maxima doing the work out of sight. There is no Maxima
 // syntax below, and no strings standing in for expressions.
 //
-// Results are shown three ways near the end — infix, TeX, and two-dimensional
-// text — and the third comes from examples/text2d.hpp, a renderer written the
-// way any user of the library would write one.
+// Results are shown four ways near the end — infix, TeX, MathML, and
+// two-dimensional text — and the last comes from examples/text2d.hpp, a
+// renderer written the way any user of the library would write one.
 
 #include <mx/context.hpp>
 #include <mx/errors.hpp>
 #include <mx/expr.hpp>
 #include <mx/functions.hpp>
+#include <mx/mathml.hpp>
 #include <mx/numeric.hpp>
 #include <mx/ops.hpp>
 #include <mx/symbol.hpp>
@@ -39,11 +40,12 @@ std::string indented(const std::string &block, std::size_t by) {
     return out;
 }
 
-/// One expression, in each of the three renderers.
+/// One expression, in each of the four renderers.
 void showRendered(const char *label, const mx::Expr &expr) {
     std::cout << '\n' << label << '\n'
-              << "  str()     " << expr.str() << '\n'
-              << "  toTeX()   " << mx::toTeX(expr) << '\n'
+              << "  str()      " << expr.str() << '\n'
+              << "  toTeX()    " << mx::toTeX(expr) << '\n'
+              << "  toMathML() " << mx::toMathML(expr) << '\n'
               << "  text2d\n" << indented(text2d::draw(expr), 4) << '\n';
 }
 
@@ -112,10 +114,10 @@ int main() {
             }
         }
 
-        // Rendering. str() is one renderer among several. TeX ships with the
-        // library; text2d::Renderer does not — it is a plain struct in
-        // examples/text2d.hpp that inherits nothing and that the library has
-        // never heard of. The same expression goes through all three, and
+        // Rendering. str() is one renderer among several. TeX and MathML ship
+        // with the library; text2d::Renderer does not — it is a plain struct
+        // in examples/text2d.hpp that inherits nothing and that the library
+        // has never heard of. The same expression goes through all four, and
         // the decisions about where brackets go are shared by every one.
         const mx::Symbol a("a");
         const mx::Symbol b("b");
