@@ -22,7 +22,7 @@ Items are ordered by how much they matter, not by file.
 
 ## Status since the review
 
-Updated after `e81c66c`. Resolved findings are ticked where they stand, with
+Updated after `539d93c`. Resolved findings are ticked where they stand, with
 an *Outcome* note; everything unticked is still open. The review's own text
 is left as written, so its measurements stay comparable.
 
@@ -84,12 +84,21 @@ Work since, and what it turned up that the review had not found:
   passed vacuously, because `Expr(nan);` declares a variable; and Maxima's
   `global` context holds 75 built-in type facts that `facts()` must not report
   as assumptions.
+- **§2's open items, one commit each** (`3133650` … `539d93c`). Where the
+  failure could be reproduced, a test showed it before the fix; where the old
+  behaviour was a crash (a moved-from Kernel, a Context outliving its Kernel)
+  it could not be. Found on the way: automatic recovery replays the journal
+  into a fresh process yet left persistence switched off; a Context ended out
+  of order took the survivor's *own* facts with it, not just inherited ones,
+  and Maxima quietly recreates a context that `context:` names after it was
+  killed; and splitting the session lock exposed a gap that was already
+  there, now listed as a new §2 item.
 
-Suite: 268 cases / 2931 assertions on Windows (GCC and clang-cl), 269 / 2929 on
+Suite: 278 cases / 2996 assertions on Windows (GCC and clang-cl), 279 / 2994 on
 Linux (222 when the review was written).
 
-§1 is closed. What remains is robustness (§2), performance (§3), ergonomics
-(§4) and the smaller sections after them.
+§1 is closed, and of §2 only the new item found while fixing it remains. After
+that: performance (§3), ergonomics (§4) and the smaller sections.
 
 ---
 
@@ -296,13 +305,18 @@ These produce a result that disagrees with Maxima, silently.
   now round-trips through Maxima as a bar-quoted symbol, so odd names are
   simply names. Fix 3 is `test_to_maxima.cpp`.
 
-- [ ] **`recover()` after a timeout pays the 2-second grace period for
+- [x] **`recover()` after a timeout pays the 2-second grace period for
   nothing.** `kill()` waits up to 2 s for a child that has been *asked to
   quit* — but on a timeout it was not asked; it is busy computing and will
   never leave voluntarily. Pass a flag so recovery terminates immediately.
   (`child_process_win32.cpp`, `child_process_posix.cpp`)
 
-- [ ] **`Kernel::eval` switches persistence off for the rest of the
+  *Outcome:* fixed in `3133650`. `ITransport` gained `terminate()`, which ends
+  the child without the grace period, and recovery uses it; the destructor
+  still asks Maxima to quit. *Measured:* the real-Maxima timeout test went from
+  2.56 s to 0.56 s, restart included.
+
+- [x] **`Kernel::eval` switches persistence off for the rest of the
   kernel's life.** `stateAccounted_ = false` is never reset. One diagnostic
   `eval("1+1")` and `Config::cacheDirectory` is dead until a new Kernel.
   The reasoning is sound (an unrecorded change cannot be keyed), but there
@@ -311,7 +325,14 @@ These produce a result that disagrees with Maxima, silently.
   restart the kernel with the journal replayed — which *does* restore an
   accounted state.
 
-- [ ] **`Context` destroyed out of LIFO order resets Maxima's active
+  *Outcome:* fixed in `cf6a0eb` with both halves, but not by making `eval`
+  restart — that would discard exactly the definitions `eval` is used to
+  make. `Kernel::persistenceActive()` reports the state and `Kernel::restart()`
+  replays the journal into a fresh Maxima, which resumes persistence. Found:
+  automatic recovery after a death or timeout did the same replay yet left
+  persistence off; it now resumes there too.
+
+- [x] **`Context` destroyed out of LIFO order resets Maxima's active
   context to the wrong parent.** Move is deleted, but heap-allocated
   Contexts (or two on different stack frames) can still die in any order;
   the destructor does `context: <my parent>`, which for an *outer* scope
@@ -320,23 +341,46 @@ These produce a result that disagrees with Maxima, silently.
   and throw/terminate on misuse) or only reset `context:` when this one is
   the active one.
 
-- [ ] **`PersistentCache::readField` trusts the stored length.** A corrupt
+  *Outcome:* fixed in `255e5d1`, by neither suggestion. Tests written first
+  showed it worse than described: the surviving inner scope lost its *own*
+  facts too, not only inherited ones, Maxima was left in a dead context, and a
+  restart could not rebuild the survivor. Probing Maxima showed why only
+  resetting `context:` would not do: `killcontext` on an outer context leaves
+  its subcontexts orphaned, and `context:` naming a killed context quietly
+  recreates it empty. An outer scope that ends with inner scopes open now
+  waits, keeping its facts and replay entries, and is torn down with the last
+  of them.
+
+- [x] **`PersistentCache::readField` trusts the stored length.** A corrupt
   or hostile `.reply` file with length `18446744073709551615` makes
   `text.resize()` throw `std::length_error` / `bad_alloc`, which escapes
   `evalPure` as a non-`mx::Error` exception. Cap the length (a reply cannot
   exceed the file size) and treat anything else as a miss.
 
-- [ ] **A moved-from `Kernel` is a null pointer waiting to be
+  *Outcome:* fixed in `a2a55fd`, capping each field at what remains of the
+  file. The test reproduced the `std::length_error` first.
+
+- [x] **A moved-from `Kernel` is a null pointer waiting to be
   dereferenced.** Every method does `session_->…` unchecked. Either
   document "moved-from is unusable" or throw `KernelError`.
 
-- [ ] **`sharedKernel()` and static destruction order.** A function-local
+  *Outcome:* both, in `c1b91eb`: every method goes through one checked
+  accessor that throws `KernelError`, and the move operations say so.
+
+- [x] **`sharedKernel()` and static destruction order.** A function-local
   static Kernel is destroyed at exit; a user's own static that holds a
   `Context` (which holds a raw `Kernel*`) and outlives it will call into a
   dead object. Also: `ops.hpp` says `sharedKernel` is "Not thread-safe —
   see PLAN.md step 13", which is wrong on both counts (C++11 statics are
   thread-safe to initialise, and step 13 serialised the Kernel). Fix the
   comment; consider `Context` holding a `shared_ptr` or a weak reference.
+
+  *Outcome:* fixed in `2a74041` with the weak reference. A Kernel owns a
+  lifetime token that moves with its session and expires before the session
+  is destroyed; a Context holds a `weak_ptr` to it, so once the Kernel is gone
+  its operations throw `KernelError` and its destructor does nothing. That
+  covers any Context outliving its Kernel, not only a static one outliving
+  `sharedKernel()`. The comment is corrected.
 
 - [x] **Win32 launch leaks every inheritable handle into every child.**
   `CreateProcessA(..., bInheritHandles = TRUE, ...)` with no
@@ -381,11 +425,32 @@ These produce a result that disagrees with Maxima, silently.
   an error, and an error marks the transport closed, so the next `receive()`
   and `alive()` report the dead child at once.
 
-- [ ] **The session mutex is held for the whole computation.**
+- [x] **The session mutex is held for the whole computation.**
   `cacheStats()` and `setTimeout()` take the same lock as `eval`, so both
   block for up to two minutes behind a running integral, and `setTimeout`
   cannot shorten an in-flight call. Separate a short lock for the
   bookkeeping from the long one for the pipe.
+
+  *Outcome:* fixed in `539d93c` as suggested: a pipe lock for the conversation
+  and a state lock for everything else, with `readFrame` re-reading the
+  timeout each poll so `setTimeout` shortens a waiting call. Splitting them
+  meant the journal can change mid-computation, so `evalPure` now caches an
+  answer only if a state generation counter is unchanged across the call.
+  `evalPure`'s cache lookups deliberately still take the pipe lock — see the
+  next item.
+
+- [ ] **A Context's statement and its journal record are two separate
+  calls.** `Context::assume` sends `assume(...)` through `evalTracked`, then
+  records it with `remember()`; `~Context` does `forget()`, then
+  `killcontext`. Each is locked on its own, so another thread's `evalPure` can
+  run in between, compute under Maxima's new state, and file the answer under
+  the journal's old one — in the in-memory cache, and in `cacheDirectory`,
+  where it outlives the process. The window predates `539d93c` (the old single
+  lock was also released between the two calls); the generation counter added
+  there closes only the case where the journal changes *during* a
+  computation. Fix: one session call that evaluates and records (or forgets
+  and evaluates) under the pipe lock, so the change and its record are
+  atomic. Found by reasoning while splitting the lock, not yet measured.
 
 ## 3. Performance
 
