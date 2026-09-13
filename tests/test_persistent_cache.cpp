@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vector>
 
 using mx::Expr;
 using mx::Symbol;
@@ -128,6 +129,77 @@ TEST_CASE("a file from an unknown writer is ignored") {
         out << "some-other-format-9\nwhatever\n";
     }
     CHECK_FALSE(cache.find("q").has_value());
+}
+
+TEST_CASE("a temporary is named for its writer, not only its order") {
+    // Named by an in-process counter alone, the first write in *every* process
+    // was <entry>.tmp0, so two processes writing one entry at once shared a
+    // file: one truncated the other's half-written content, and a corrupt entry
+    // could be renamed into place. The name now carries a per-process token.
+    const std::filesystem::path target
+        = std::filesystem::path("somewhere") / "0123456789abcdef.reply";
+    const std::filesystem::path first = mx::detail::temporaryPathFor(target);
+    const std::filesystem::path second = mx::detail::temporaryPathFor(target);
+
+    CHECK(first != second);
+    CHECK(first.parent_path() == target.parent_path());
+
+    const std::string prefix = "0123456789abcdef.reply.tmp-";
+    const std::string a = first.filename().generic_string();
+    const std::string b = second.filename().generic_string();
+    CAPTURE(a);
+    CAPTURE(b);
+    REQUIRE(a.rfind(prefix, 0) == 0);
+    REQUIRE(b.rfind(prefix, 0) == 0);
+    REQUIRE(a.size() > prefix.size() + 17);
+
+    // <token>-<n>: sixteen hex digits naming this process, the same on every
+    // call, then the count.
+    const std::string token = a.substr(prefix.size(), 16);
+    CHECK(token.find_first_not_of("0123456789abcdef") == std::string::npos);
+    CHECK(b.substr(prefix.size(), 16) == token);
+    CHECK(a[prefix.size() + 16] == '-');
+}
+
+TEST_CASE("another writer's temporaries are left alone") {
+    // Half-written files of another process, beside the entry this one writes:
+    // one under the old naming, which this process could have picked too, and
+    // two under the new naming with a token that is not ours.
+    //
+    // The cross-process guarantee itself rests on the token, checked above;
+    // this checks that insert touches nothing but its own file.
+    const auto directory = scratch("collide");
+    const PersistentCache cache(directory, "stamp");
+    cache.insert("q", valued("42"));
+    REQUIRE(fileCount(directory) == 1);
+    const std::filesystem::path entry
+        = std::filesystem::directory_iterator(directory)->path();
+    std::filesystem::remove(entry);
+
+    const std::string partial = "half-written by someone else";
+    std::vector<std::filesystem::path> foreign;
+    for (const char *suffix :
+         {".tmp0", ".tmp-ffffffffffffffff-0", ".tmp-ffffffffffffffff-1"}) {
+        std::filesystem::path path = entry;
+        path += suffix;
+        std::ofstream out(path, std::ios::binary);
+        out << partial;
+        foreign.push_back(path);
+    }
+
+    cache.insert("q", valued("42"));
+
+    for (const std::filesystem::path &path : foreign) {
+        CAPTURE(path.filename().generic_string());
+        std::ifstream in(path, std::ios::binary);
+        std::string contents;
+        std::getline(in, contents);
+        CHECK(contents == partial);
+    }
+    REQUIRE(cache.find("q").has_value());
+    CHECK(cache.find("q")->value == "42");
+    // The entry and the three foreign files: no temporary of ours left behind.
+    CHECK(fileCount(directory) == 4);
 }
 
 TEST_CASE("the hash is stable, and not std::hash") {

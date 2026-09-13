@@ -1,12 +1,44 @@
 #include "kernel/persistent_cache.hpp"
 
+#include <boost/process/v2/pid.hpp>
+
 #include <atomic>
+#include <chrono>
 #include <cstdint>
+#include <exception>
 #include <fstream>
+#include <random>
 #include <system_error>
 
 namespace mx::detail {
 namespace {
+
+/// Sixteen hex digits that name this process among every writer that may
+/// share a cache directory: other threads here, other processes, and other
+/// machines if the directory is on a share.
+///
+/// Random bits, mixed with the process id and the clock. The process id alone
+/// is not enough across machines, and std::random_device is allowed to be
+/// deterministic, or to throw, where no entropy source is available.
+const std::string &processToken() {
+    static const std::string token = [] {
+        std::uint64_t bits = 0;
+        try {
+            std::random_device device;
+            bits = (static_cast<std::uint64_t>(device()) << 32) ^ device();
+        } catch (const std::exception &) {
+            // No entropy source. The id and the clock still separate writers.
+        }
+        bits ^= static_cast<std::uint64_t>(boost::process::v2::current_pid())
+                * 0x9e3779b97f4a7c15ULL;
+        bits ^= static_cast<std::uint64_t>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        bits ^= static_cast<std::uint64_t>(
+            std::chrono::system_clock::now().time_since_epoch().count());
+        return stableHash(std::to_string(bits));
+    }();
+    return token;
+}
 
 /// Entries are length-prefixed, so a value or reason containing newlines needs
 /// no escaping and a truncated file fails to parse rather than reading short.
@@ -102,6 +134,23 @@ std::optional<Reply> PersistentCache::find(std::string_view source) const {
     return reply;
 }
 
+std::filesystem::path temporaryPathFor(const std::filesystem::path &target) {
+    // Named by this counter alone, as it used to be, the first write in every
+    // process was <entry>.tmp0. Two processes writing one entry at once opened
+    // the same file, one truncated the other's half-written content, and a
+    // corrupt entry could be renamed into place. The reader rejected it, so it
+    // came back as a miss — but only thanks to the length-prefixed format.
+    static std::atomic<std::uint64_t> counter{0};
+
+    // Appended to the path itself, not to target.string(): that round trip
+    // goes through the ANSI code page on Windows, and a cache directory with a
+    // character outside it would come back as a different, or no, path.
+    std::filesystem::path temporary = target;
+    temporary += ".tmp-" + processToken() + "-"
+                 + std::to_string(counter.fetch_add(1, std::memory_order_relaxed));
+    return temporary;
+}
+
 void PersistentCache::insert(std::string_view source, const Reply &reply) const {
     if (!usable_) {
         return;
@@ -110,16 +159,10 @@ void PersistentCache::insert(std::string_view source, const Reply &reply) const 
     const std::string key = keyFor(source);
     const std::filesystem::path target = pathFor(key);
 
-    // Written to a unique temporary and renamed into place, so a reader never
-    // sees a half-written entry and two writers race only to produce identical
-    // content.
-    static std::atomic<std::uint64_t> counter{0};
-    // Appended to the path itself, not to target.string(): that round trip
-    // goes through the ANSI code page on Windows, and a cache directory with a
-    // character outside it would come back as a different, or no, path.
-    std::filesystem::path temporary = target;
-    temporary += ".tmp"
-                 + std::to_string(counter.fetch_add(1, std::memory_order_relaxed));
+    // Written to a temporary of this writer's own and renamed into place, so a
+    // reader never sees a half-written entry, and two writers of the same entry
+    // race only over which identical copy is renamed last.
+    const std::filesystem::path temporary = temporaryPathFor(target);
 
     {
         std::ofstream out(temporary, std::ios::binary | std::ios::trunc);

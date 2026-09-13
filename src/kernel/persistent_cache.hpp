@@ -34,8 +34,10 @@ namespace mx::detail {
 ///
 /// ## Concurrency
 ///
-/// One file per entry, written to a temporary and renamed into place, so two
-/// processes writing the same entry race only to produce identical content. No
+/// One file per entry, written to a temporary and renamed into place. The
+/// temporary's name is unique to the writer (see temporaryPathFor), so two
+/// processes writing the same entry never share a half-written file; they race
+/// only over which of two identical entries is renamed into place last. No
 /// locking, no index to corrupt, and nothing to flush at exit — an entry is
 /// durable as soon as it is written.
 class PersistentCache {
@@ -67,5 +69,14 @@ private:
 /// Not std::hash: that varies between standard libraries, and a cache on disk
 /// outlives the build that wrote it.
 std::string stableHash(std::string_view text);
+
+/// Where PersistentCache::insert writes an entry before renaming it to
+/// `target`: beside it, as `<target>.tmp-<token>-<n>`.
+///
+/// The token is random per process, mixed with the process id and the clock,
+/// and `n` counts writes within the process, so no other writer — another
+/// thread, another process, another machine sharing the directory — picks the
+/// same name. Exposed for testing.
+std::filesystem::path temporaryPathFor(const std::filesystem::path &target);
 
 } // namespace mx::detail
