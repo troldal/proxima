@@ -22,7 +22,7 @@ Items are ordered by how much they matter, not by file.
 
 ## Status since the review
 
-Updated after `e310a01`. Resolved findings are ticked where they stand, with
+Updated after `edd45a1`. Resolved findings are ticked where they stand, with
 an *Outcome* note; everything unticked is still open. The review's own text
 is left as written, so its measurements stay comparable.
 
@@ -113,11 +113,23 @@ Work since, and what it turned up that the review had not found:
   and `pow`, not only the builders; and `ode2` writes onto the pipe when it
   fails. Verified with GCC and clang-cl on Windows, with MSVC, and with GCC on
   Linux.
+- **MinGW/clang 22** (`23e0449`). `std::set<Expr>` did not compile: libc++ 22's
+  tree replaces a `std::less<T>` comparator with the transparent `std::less<>`,
+  whatever `std::less<T>` has been specialised to, and that calls `<`, which
+  `Expr` deliberately lacks. A ten-line program with no library code shows the
+  same. The specialisations are gone; ordered containers name
+  `mx::CanonicalLess`.
+- **§5, one commit each** (`3ea48d5` … `edd45a1`). Three of the seven had
+  already been fixed by earlier work and are ticked with those commits. Found
+  on the way: the dead `Opaque` fallback in `mapRational` was not dead — a
+  `(RAT 1 0)` became the text `(1/0)`, which passes for an answer — and two
+  more comments, in `errors.hpp` and `tests/CMakeLists.txt`, still described
+  shipped work as future.
 
-Suite: 311 cases / 4639 assertions on Windows (GCC and clang-cl), 312 / 4637 on
+Suite: 311 cases / 4642 assertions on Windows (GCC and clang-cl), 312 / 4640 on
 Linux (222 when the review was written).
 
-§1 to §4 are closed. What remains is the smaller sections from §5 on.
+§1 to §5 are closed. What remains is the smaller sections from §6 on.
 
 ---
 
@@ -798,32 +810,45 @@ Fine at today's sizes; these are the walls you will hit.
 The comments are unusually good at saying *why*, which makes the stale ones
 stand out. All refer to plan steps as future work that has since shipped:
 
-- [ ] `include/mx/expr.hpp`, `Expr::parse` doc: a paragraph is truncated
+- [x] `include/mx/expr.hpp`, `Expr::parse` doc: a paragraph is truncated
   mid-sentence ("…becomes an Opaque node holding its") and then
   contradicted by the next one. Delete the stale paragraph.
+  *(Fixed in `3ea48d5`.)*
 - [x] `include/mx/reply.hpp`: "Text only for now: PLAN.md step 7 adds the
   reader… Until then this is the rawest useful thing". *(Fixed.)*
 - [x] `include/mx/kernel.hpp`: "This is the whole public surface for now…
   structured expressions arrive with the term layer (PLAN.md steps 7-9)".
   *(Fixed in `b71ccdf`.)*
-- [ ] `include/mx/ops.hpp`, `sharedKernel`: "Not thread-safe — see PLAN.md
-  step 13". Wrong, see §2.
-- [ ] `include/mx/context.hpp`: "so that PLAN.md step 14's cache key can
-  include them".
+- [x] `include/mx/ops.hpp`, `sharedKernel`: "Not thread-safe — see PLAN.md
+  step 13". Wrong, see §2. *(Already fixed in `2a74041`, which rewrote the
+  doc: starting it is thread-safe, and calls on it take turns.)*
+- [x] `include/mx/context.hpp`: "so that PLAN.md step 14's cache key can
+  include them". *(Fixed in `bddb2f0`. The step shipped differently: a change of
+  assumptions clears the reply cache, and the persistent cache keys on the replay
+  journal. The C++ copy only backs `assumptions()`.)*
 - [x] `src/core/printer.cpp` header: "which is also what the Expr →
   Maxima direction of the translation layer will need (PLAN.md step 9)".
   *(Fixed — and now the opposite is true: the printer is not on the path to
   Maxima at all.)*
-- [ ] `src/transport/child_process_win32.cpp`: "Step 13 replaces this
-  with a dedicated reader thread feeding a bounded queue".
-- [ ] `include/mx/config.hpp`, `timeout`: "Maxima keeps computing until it
+- [x] `src/transport/child_process_win32.cpp`: "Step 13 replaces this
+  with a dedicated reader thread feeding a bounded queue". *(Gone with the file
+  in `83f3bc8`, when Boost.Process replaced the hand-written transports.)*
+- [x] `include/mx/config.hpp`, `timeout`: "Maxima keeps computing until it
   is killed" — true, but `recover()` *does* kill it on timeout; say so,
   since the current wording suggests a runaway process is left behind.
-- [ ] `src/wire/from_maxima.cpp`: `mapInteger` and `mapRational` have
+  *(Fixed in `6f5a2a7`, which also says every timeout pays for a startup.)*
+- [x] `src/wire/from_maxima.cpp`: `mapInteger` and `mapRational` have
   `Opaque` fallbacks for "digits that do not parse" that can no longer
   happen — the lexer guarantees digits and `Integer` is unbounded. Dead
   code; remove or `assert`.
-- [ ] `src/kernel/persistent_cache.hpp`: the concurrency claim (see §1).
+
+  *Outcome:* fixed in `97faf78`, and only half dead. `mapInteger`'s fallback
+  could not be reached; `mapRational`'s could, by a denominator of zero or a
+  part that is not an integer, and turned `(RAT 1 0)` into the text `(1/0)`.
+  Both now throw `ParseError`, which `fromMaxima` promises for a term that is not
+  well formed. Tests written first failed on the old code.
+- [x] `src/kernel/persistent_cache.hpp`: the concurrency claim (see §1).
+  *(Already fixed in `f2de237`, with the per-writer temporaries it describes.)*
 
 ## 6. Things a library could do instead
 
