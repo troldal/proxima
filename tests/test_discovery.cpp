@@ -175,6 +175,11 @@ TEST_CASE("an explicit but wrong root is an error, not a reason to search on") {
         // An error that does not say what was wrong is not actionable.
         CHECK(message.find(abs("nowhere/at/all").string()) != std::string::npos);
         CHECK(message.find("maxima.core") != std::string::npos);
+        // And it names this platform's executable, not always the Windows one.
+        CHECK(message.find(std::string("/bin/") + kSbclName + " ") != std::string::npos);
+#ifndef _WIN32
+        CHECK(message.find("sbcl.exe") == std::string::npos);
+#endif
     }
 }
 

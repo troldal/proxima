@@ -279,9 +279,9 @@ MaximaInstall discoverMaxima(const Config &config, const EnvLookup &env) {
         throw KernelError(
             "Config::maximaRoot does not point at a usable Maxima "
             "installation: "
-            + describePath(config.maximaRoot)
-            + "\nExpected <root>/bin/sbcl.exe and "
-              "<root>/lib/maxima/<version>/binary-sbcl/maxima.core");
+            + describePath(config.maximaRoot) + "\nExpected <root>/bin/"
+            + kSbclName
+            + " and <root>/lib/maxima/<version>/binary-sbcl/maxima.core");
     }
 
     std::vector<fs::path> tried;
@@ -307,8 +307,9 @@ MaximaInstall discoverMaxima(const Config &config, const EnvLookup &env) {
     }
 
     std::string message
-        = "No usable Maxima installation found. Expected <root>/bin/sbcl.exe "
-          "and <root>/lib/maxima/<version>/binary-sbcl/maxima.core. ";
+        = std::string("No usable Maxima installation found. Expected <root>/bin/")
+          + kSbclName
+          + " and <root>/lib/maxima/<version>/binary-sbcl/maxima.core. ";
     if (tried.empty()) {
         message += "No candidate locations: set Config::maximaRoot or the "
                    "MAXIMA_ROOT environment variable.";

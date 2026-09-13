@@ -323,7 +323,7 @@ bool opaqueMentions(std::string_view text, std::string_view name) {
             // A string literal, escapes and all, mentions nothing.
             ++at;
             while (at < text.size() && text[at] != '"') {
-                at += text[at] == '\\' ? 2 : 1;
+                at += text[at] == '\\' ? std::size_t{2} : std::size_t{1};
             }
             ++at;
             continue;
