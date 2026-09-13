@@ -93,8 +93,12 @@ Expr factor(const Expr &expr, Kernel &kernel) {
     return evaluateOrThrow(kernel, call("factor", {expr}));
 }
 
-Expr simplify(const Expr &expr, Kernel &kernel) {
+Expr ratsimp(const Expr &expr, Kernel &kernel) {
     return evaluateOrThrow(kernel, call("ratsimp", {expr}));
+}
+
+Expr simplify(const Expr &expr, Kernel &kernel) {
+    return ratsimp(expr, kernel);
 }
 
 Expr subst(const Expr &expr, const Symbol &symbol, const Expr &value,

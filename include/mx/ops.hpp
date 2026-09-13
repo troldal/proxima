@@ -47,8 +47,15 @@ Expr diff(const Expr &expr, const Symbol &wrt, unsigned order = 1,
 Expr expand(const Expr &expr, Kernel &kernel = sharedKernel());
 Expr factor(const Expr &expr, Kernel &kernel = sharedKernel());
 
-/// Maxima's `ratsimp`: puts the expression over a common denominator and
-/// cancels. Not a general-purpose "make it nicer", which no CAS has.
+/// Rational simplification: puts the expression over a common denominator
+/// and cancels, so (x^2 - 1)/(x - 1) is x + 1. It treats a function
+/// application, sin(x) or sqrt(x), as an opaque variable, so it knows no
+/// identities: for those, see trigsimp, trigexpand and radcan.
+Expr ratsimp(const Expr &expr, Kernel &kernel = sharedKernel());
+
+/// The same as ratsimp, under the name it used to have. No CAS has a
+/// general-purpose "make it nicer", and this is not one; new code should say
+/// ratsimp, which says what happens.
 Expr simplify(const Expr &expr, Kernel &kernel = sharedKernel());
 
 /// Substitutes `value` for every occurrence of `symbol`, in Maxima, which

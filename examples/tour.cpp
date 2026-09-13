@@ -475,7 +475,7 @@ void calculusAndAlgebra() {
     show("diff(x^3 sin(x), x, 2)", mx::diff(f, x, 2)); // Second derivative.
     show("expand((x + y)^3)", mx::expand(pow(x + y, 3)));
     show("factor(x^2 - y^2)", mx::factor(pow(x, 2) - pow(y, 2)));
-    show("simplify((x^2 - 1)/(x - 1))", mx::simplify((pow(x, 2) - 1) / (x - 1)));
+    show("ratsimp((x^2 - 1)/(x - 1))", mx::ratsimp((pow(x, 2) - 1) / (x - 1)));
     show("subst(x^2 + y, x, 3)", mx::subst(pow(x, 2) + y, x, 3));
 
     // Results are expressions like any other, so they compare structurally
@@ -574,7 +574,7 @@ void whenThereIsNoAnswer() {
          oneSided ? oneSided->str() : "Failure: " + oneSided.error().message);
 
     // Operations with no ordinary way to fail — diff, expand, factor,
-    // simplify, subst — throw mx::MaximaError instead, because a failure
+    // ratsimp, subst — throw mx::MaximaError instead, because a failure
     // there means something is wrong with the question. An Opaque node holds
     // Maxima source the library never interpreted, and this one does not
     // parse.

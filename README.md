@@ -66,7 +66,7 @@ produced them.
 | `limit(f, x, a, side)` | two-sided, or from above or below |
 | `solve(equation, x)` | values for one unknown |
 | `solve(equations, unknowns)` | a system; one value per unknown, in the order asked for |
-| `expand` `factor` `simplify` `subst` | algebraic rearrangement |
+| `expand` `factor` `ratsimp` `subst` | algebraic rearrangement (`simplify` is an older name for `ratsimp`) |
 | `trigsimp` `trigexpand` `radcan` `partfrac(f, x)` `coeff(f, x, n)` | more rearrangement |
 | `taylor(f, x, a, n)` | Taylor expansion, as an ordinary expression |
 | `sum(t, k, a, b)` `product(t, k, a, b)` | closed forms; a `Failure` when there is none |

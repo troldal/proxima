@@ -211,7 +211,11 @@ TEST_CASE("algebraic rearrangement") {
 
     CHECK(mx::expand(pow(Expr(x) + 1, 2))
           == Expr(1) + 2 * Expr(x) + pow(Expr(x), 2));
+    CHECK(mx::ratsimp((pow(Expr(x), 2) - 1) / (Expr(x) - 1)) == Expr(x) + 1);
+    // simplify is the older name for the same thing.
     CHECK(mx::simplify((pow(Expr(x), 2) - 1) / (Expr(x) - 1)) == Expr(x) + 1);
+    // And it knows no identities: sin(x)^2 + cos(x)^2 is trigsimp's to reduce.
+    CHECK(mx::ratsimp(pow(mx::sin(Expr(x)), 2) + pow(mx::cos(Expr(x)), 2)).kind() == Kind::Add);
     CHECK(mx::subst(pow(Expr(x), 2) + 1, x, Expr(5)) == Expr(26));
 
     SUBCASE("factoring returns a product") {

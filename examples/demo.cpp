@@ -83,7 +83,7 @@ int main() {
         if (const auto integral = mx::integrate(integrand, x)) {
             std::cout << "int x^2 sin(x)   = " << integral->str() << '\n';
             std::cout << "  differentiated = "
-                      << mx::simplify(mx::diff(*integral, x)).str() << '\n';
+                      << mx::ratsimp(mx::diff(*integral, x)).str() << '\n';
         }
 
         if (const auto area = mx::integrate(x * x, x, mx::Expr(0), mx::Expr(1))) {
