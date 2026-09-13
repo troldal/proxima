@@ -57,12 +57,3 @@ struct std::formatter<mx::Symbol, char> : std::formatter<mx::Expr, char> {
         return std::formatter<mx::Expr, char>::format(symbol.expr(), context);
     }
 };
-
-/// The canonical order of the symbols as expressions — by name — so that
-/// std::set<Symbol> and std::map<Symbol, T> need no comparator.
-template <>
-struct std::less<mx::Symbol> {
-    bool operator()(const mx::Symbol &lhs, const mx::Symbol &rhs) const {
-        return mx::canonicalOrder(lhs.expr(), rhs.expr()) < 0;
-    }
-};

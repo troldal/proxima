@@ -63,24 +63,26 @@ TEST_CASE("comparing equal means being equal, across every kind") {
     }
 }
 
-TEST_CASE("expressions are keys of ordered containers, with no comparator") {
+TEST_CASE("expressions are keys of ordered containers, under CanonicalLess") {
+    // Named explicitly: libc++ 22 ignores a std::less<Expr> specialisation,
+    // swapping in std::less<>, which needs an operator< that Expr lacks.
     const Symbol x("x");
 
-    std::set<Expr> seen;
+    std::set<Expr, mx::CanonicalLess> seen;
     seen.insert(Expr(x) + 1);
     seen.insert(Expr(1) + Expr(x)); // The same expression.
     seen.insert(Expr(mx::Integer("1267650600228229401496703205376")));
     seen.insert(Expr(mx::Integer("1267650600228229401496703205377")));
     CHECK(seen.size() == 3);
 
-    std::map<Expr, int> counts;
+    std::map<Expr, int, mx::CanonicalLess> counts;
     ++counts[mx::sin(Expr(x))];
     ++counts[mx::sin(Expr(x))];
     ++counts[mx::cos(Expr(x))];
     CHECK(counts.size() == 2);
     CHECK(counts[mx::sin(Expr(x))] == 2);
 
-    const std::set<Symbol> symbols{Symbol("b"), Symbol("a"), Symbol("a")};
+    const std::set<Symbol, mx::CanonicalLess> symbols{Symbol("b"), Symbol("a"), Symbol("a")};
     CHECK(symbols.size() == 2);
     CHECK(symbols.begin()->name() == "a");
 

@@ -305,8 +305,14 @@ std::ostream &operator<<(std::ostream &out, const Expr &expr);
 /// comparison operator Expr has.
 std::weak_ordering canonicalOrder(const Expr &lhs, const Expr &rhs);
 
-/// canonicalOrder as a less-than, for std::sort and the like. std::less<Expr>
-/// is this too, so std::set<Expr> and std::map<Expr, T> need no comparator.
+/// canonicalOrder as a less-than, for std::sort and for ordered containers:
+/// `std::set<Expr, CanonicalLess>`, `std::map<Expr, T, CanonicalLess>`. It
+/// takes a Symbol too, through its conversion to Expr.
+///
+/// Name it explicitly. std::less is not specialised for Expr or Symbol,
+/// although the standard allows it, because libc++ 22 ignores such a
+/// specialisation: its tree swaps std::less<T> for the transparent std::less<>,
+/// which calls `<` directly, and Expr deliberately has none.
 struct CanonicalLess {
     bool operator()(const Expr &lhs, const Expr &rhs) const {
         return canonicalOrder(lhs, rhs) < 0;
@@ -331,11 +337,6 @@ struct std::hash<mx::Expr> {
         return value.hash();
     }
 };
-
-/// The canonical order, so std::set<Expr> and std::map<Expr, T> need no
-/// comparator. See mx::canonicalOrder.
-template <>
-struct std::less<mx::Expr> : mx::CanonicalLess {};
 
 /// `std::format("{}", expr)` is `expr.str()`, and a spec can ask for another
 /// notation: `{:tex}` is toTeX(), `{:mathml}` is toMathML(). After the

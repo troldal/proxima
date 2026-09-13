@@ -640,8 +640,12 @@ Fine at today's sizes; these are the walls you will hit.
   `Expr` converts implicitly from numbers and symbols, so `x < 0` would compile
   and mean "sorts before" rather than build `lt(x, 0)`. Instead there is
   `mx::canonicalOrder`, a `std::weak_ordering` since 0.0 and -0.0 are equal but
-  print differently; `mx::CanonicalLess`; and `std::less` specialised for `Expr`
-  and `Symbol`, so `std::set<Expr>` and `std::map<Expr, T>` need no comparator.
+  print differently; and `mx::CanonicalLess`, for sorting and for
+  `std::set<Expr, CanonicalLess>`. (`std::less` was specialised for `Expr` and
+  `Symbol` at first, so containers needed no comparator; removed after
+  MinGW/clang 22 failed to compile it. libc++ 22's tree replaces `std::less<T>`
+  with the transparent `std::less<>` whatever it is specialised to, and that
+  calls `<`. A ten-line program shows the same with no library involved.)
   Two expressions are equivalent exactly when they are `==`, tested over a
   corpus. Making that hold found that numbers compared as doubles, so 2^100 and
   2^100 + 1 were equivalent; exact numbers are now compared exactly when their

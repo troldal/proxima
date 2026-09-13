@@ -88,9 +88,11 @@ can keep its ordinary meaning.
 
 For the same reason there is no `<`: `x < 0` would compile and mean "sorts
 before". The canonical order the normaliser uses is `mx::canonicalOrder` instead,
-with `mx::CanonicalLess` for sorting, and `std::less` is specialised for `Expr`
-and `Symbol`, so `std::set<Expr>` and `std::map<Expr, T>` need no comparator.
+with `mx::CanonicalLess` for sorting and for ordered containers:
+`std::set<Expr, mx::CanonicalLess>`, `std::map<Expr, T, mx::CanonicalLess>`.
 Two expressions are equivalent in that order exactly when they are `==`.
+(`std::less` is not specialised for them: libc++ 22 ignores such a
+specialisation in its trees and calls `<` instead.)
 
 Results chain, because what comes back is an expression rather than text:
 
