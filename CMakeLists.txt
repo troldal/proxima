@@ -211,3 +211,13 @@ if (MAXIMA_CPP_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif ()
+
+# --- Fuzzing --------------------------------------------------------------
+
+# Fuzz targets for the two hand-written parsers; see fuzz/README.md. Off by
+# default: with a Clang that has libFuzzer they instrument the whole library.
+option(MAXIMA_CPP_BUILD_FUZZERS "Build fuzz targets for the maxima_cpp parsers" OFF)
+
+if (MAXIMA_CPP_BUILD_FUZZERS)
+    add_subdirectory(fuzz)
+endif ()

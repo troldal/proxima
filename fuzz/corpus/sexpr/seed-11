@@ -1,0 +1,1 @@
+((MLIST SIMP) ((MEQUAL SIMP) $X -1) ((MEQUAL SIMP) $X 1))
