@@ -22,7 +22,7 @@ Items are ordered by how much they matter, not by file.
 
 ## Status since the review
 
-Updated after `aac36c1`. Resolved findings are ticked where they stand, with
+Updated after `64c9f17`. Resolved findings are ticked where they stand, with
 an *Outcome* note; everything unticked is still open. The review's own text
 is left as written, so its measurements stay comparable.
 
@@ -55,6 +55,10 @@ Work since, and what it turned up that the review had not found:
 - **`bool` and characters are no longer numbers** (`aac36c1`). Resolves the §1
   `Expr(true)` trap and its §8 test. Found: the wide character types got
   through too, into `Integer` as well as `Expr`, and so did `x + true`.
+- **Feature tour** (`64c9f17`): `examples/tour.cpp`, a commented walk through
+  every public feature that doubles as a quick-start guide. Writing it found
+  two new §1 items: `Context::facts()` contradicting its documentation, and
+  `limit` treating `ind` and `und` differently.
 
 Suite: 249 cases / 2770 assertions on Windows, 246 / 2759 on Linux (222 when
 the review was written).
@@ -148,6 +152,27 @@ These produce a result that disagrees with Maxima, silently.
 - [ ] **Discovery's error message hardcodes `sbcl.exe` on every
   platform.** Uses `kSbclName` everywhere else; two messages in
   `discoverMaxima` do not. (`src/kernel/discovery.cpp`)
+
+- [ ] **`Context::facts()` does not do what its documentation says.**
+  `context.hpp` promises "every assumption in force, this context's and its
+  parents'", but it returns only the facts established in the scope itself.
+  *Measured* by the feature tour (`64c9f17`): inside a nested scope, `facts()`
+  listed only that scope's own declaration, although the outer scope had
+  assumed `n > 0` and `x > 0` — and inheritance itself works, since
+  `sqrt(x^2)` still simplified to `x` in there. *From reading `context.cpp`*:
+  it evaluates a bare `facts()`, which is Maxima's currently active context,
+  so it also ignores which `Context` it is called on — an outer scope's
+  `facts()`, called while an inner one is active, would list the inner one's.
+  Either implement the documented behaviour (`facts(name)` for this scope and
+  each parent) or narrow the documentation to what it does.
+
+- [ ] **`limit` reports `und` as a Failure but returns `ind` as a success.**
+  `limit(abs(x)/x, x, 0)` comes back as the symbol `ind` — bounded, with no
+  single value — where Maxima's `und` would have been a Failure. To most
+  callers both mean "there is no limit", and nothing in `ops.hpp` says they
+  differ, so a caller who only checks the `std::expected` takes `ind` as an
+  answer. Decide whether `ind` is a Failure, or document it. (*Measured* by
+  the feature tour, `64c9f17`, which now shows how to check for it.)
 
 ## 2. Robustness — a typo costs two minutes
 
