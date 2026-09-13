@@ -6,6 +6,7 @@
 #include "wire/to_maxima.hpp"
 
 #include <mx/errors.hpp>
+#include <mx/traverse.hpp>
 
 #include <atomic>
 #include <memory>
@@ -119,15 +120,9 @@ Expr call(std::string head, std::vector<Expr> args) {
 /// True when Maxima's reply contains the symbol `name` — how it reports
 /// `redundant` and `inconsistent` from an assume.
 bool mentionsSymbol(const Expr &expr, std::string_view name) {
-    if (expr.is(Kind::Symbol)) {
-        return expr.name() == name;
-    }
-    for (const Expr &operand : expr.args()) {
-        if (mentionsSymbol(operand, name)) {
-            return true;
-        }
-    }
-    return false;
+    return anyOf(expr, [name](const Expr &node) {
+        return node.is(Kind::Symbol) && node.name() == name;
+    });
 }
 
 /// One scope to remove from Maxima, gathered under the registry lock and

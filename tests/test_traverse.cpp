@@ -3,6 +3,9 @@
 
 #include <doctest/doctest.h>
 
+#include <cmath>
+#include <vector>
+
 #include <mx/errors.hpp>
 #include <mx/expr.hpp>
 #include <mx/functions.hpp>
@@ -51,6 +54,68 @@ TEST_CASE("replace rewrites a symbol locally, and the result is normalised") {
         const Expr f = Expr(a) * pow(Expr(x), 2) + Expr(x);
         const mx::Compiled fixed(mx::replace(f, a, Expr(2.5)), x);
         CHECK(fixed(3.0) == doctest::Approx(mx::evalNumeric(f, {{"a", 2.5}, {"x", 3.0}})));
+    }
+}
+
+TEST_CASE("visit goes through every node, a node before its operands") {
+    const Symbol x("x");
+    // Normalised: the number sorts first, so this is the sum of 1 and sin(x).
+    const Expr e = mx::sin(Expr(x)) + 1;
+    std::vector<mx::Kind> seen;
+    mx::visit(e, [&seen](const Expr &node) { seen.push_back(node.kind()); });
+    CHECK(seen == std::vector{mx::Kind::Add, mx::Kind::Integer, mx::Kind::Function,
+                              mx::Kind::Symbol});
+}
+
+TEST_CASE("anyOf stops at the first node that answers yes") {
+    const Expr e = mx::sin(Expr(Symbol("x"))) + 1;
+    int asked = 0;
+    CHECK(mx::anyOf(e, [&asked](const Expr &node) {
+        ++asked;
+        return node.is(mx::Kind::Integer);
+    }));
+    CHECK(asked == 2); // The sum, then its first operand.
+
+    CHECK_FALSE(mx::anyOf(e, [](const Expr &node) { return node.is(mx::Kind::Real); }));
+}
+
+TEST_CASE("transform rewrites bottom-up and shares what it leaves alone") {
+    const Symbol x("x");
+    const Symbol y("y");
+
+    SUBCASE("each node once, operands first, parents rebuilt and normalised") {
+        const Expr e = 2 * Expr(x) + 3;
+        int calls = 0;
+        const Expr doubled = mx::transform(e, [&calls](const Expr &node) -> Expr {
+            ++calls;
+            return node.is(mx::Kind::Integer) ? Expr(node.integerValue()) * 2 : node;
+        });
+        CHECK(doubled == 4 * Expr(x) + 6);
+        CHECK(calls == 5); // 3, then 2 and x, then 2*x, then the sum.
+    }
+
+    SUBCASE("an untouched subtree is the same representation, not a copy") {
+        const Expr untouched = mx::sin(Expr(y));
+        const Expr e = Expr::function("f", {untouched, Expr(x)});
+        const Expr result = mx::replace(e, x, Expr(1));
+        CHECK(mx::detail::sameRepresentation(result.arg(0), untouched));
+        CHECK(mx::detail::sameRepresentation(mx::replace(e, Symbol("z"), Expr(1)), e));
+    }
+
+    SUBCASE("a rewrite to an equal but different value is kept") {
+        // 0.0 == -0.0, so a change between them is visible only by identity.
+        const Expr e = Expr::function("f", {Expr(-0.0)});
+        const Expr result = mx::transform(e, [](const Expr &node) -> Expr {
+            return node.is(mx::Kind::Real) ? Expr(0.0) : node;
+        });
+        CHECK_FALSE(std::signbit(result.arg(0).realValue()));
+    }
+
+    SUBCASE("and nothing is evaluated") {
+        const Expr result = mx::transform(mx::sin(Expr(x)), [&x](const Expr &node) -> Expr {
+            return node == Expr(x) ? Expr(0) : node;
+        });
+        CHECK(result == mx::sin(Expr(0)));
     }
 }
 

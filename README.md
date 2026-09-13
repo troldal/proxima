@@ -69,6 +69,7 @@ produced them.
 | `expand` `factor` `simplify` `subst` | algebraic rearrangement |
 | `parse(text)` | Maxima's own parser, for anything the offline one will not take |
 | `contains(e, x)` `replace(e, x, v)` | local, no kernel: find a symbol, or rewrite it (normalised, not evaluated) |
+| `visit(e, f)` `anyOf(e, p)` `transform(e, f)` | local, no kernel: walk every node, search, or rewrite bottom-up |
 
 Builders for `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `log`,
 `abs`, `exp`, `sqrt`, and the constants `%pi`, `%e`, `%i`, `inf`, `minf`.

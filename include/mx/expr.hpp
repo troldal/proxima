@@ -25,6 +25,12 @@ struct Node;
 /// representation enters the value type, so nothing outside src/core can build
 /// one directly.
 Expr makeExpr(std::shared_ptr<const Node> node);
+
+/// Whether two expressions share one representation. Implies ==, but not the
+/// other way round, which is why mx::transform asks this rather than == to
+/// tell an operand came back untouched: 0.0 and -0.0 are equal, and a rewrite
+/// from one to the other must not be mistaken for no change.
+bool sameRepresentation(const Expr &lhs, const Expr &rhs) noexcept;
 } // namespace detail
 
 enum class Kind {
@@ -214,6 +220,7 @@ private:
         : node_(std::move(node)) {}
 
     friend Expr detail::makeExpr(std::shared_ptr<const detail::Node> node);
+    friend bool detail::sameRepresentation(const Expr &lhs, const Expr &rhs) noexcept;
 
     std::shared_ptr<const detail::Node> node_;
 };

@@ -3,9 +3,82 @@
 #include <mx/expr.hpp>
 #include <mx/symbol.hpp>
 
+#include <concepts>
+#include <functional>
+#include <type_traits>
+#include <utility>
+#include <vector>
+
 namespace mx {
 
 // Local operations on the expression tree: no kernel, no round trip.
+//
+// The three generic walks come first — visit, anyOf, transform — so a caller
+// never needs to write the recursion over args() again. contains and replace
+// are those walks with a symbol in mind.
+
+namespace detail {
+/// `expr` rebuilt with new operands, as many as it had, through the builder
+/// for its kind — so normalised exactly as a freshly built expression is.
+/// A leaf, having no operands, comes back as it is.
+Expr withOperands(const Expr &expr, std::vector<Expr> operands);
+} // namespace detail
+
+/// Calls `f` on every node of `expr`, a node before its operands, operands in
+/// order. The nodes are the tree as built, so normalised: `x - 1` is visited as
+/// the sum of -1 and x.
+template <typename F>
+    requires std::invocable<F &, const Expr &>
+void visit(const Expr &expr, F &&f) {
+    std::invoke(f, expr);
+    for (const Expr &operand : expr.args()) {
+        visit(operand, f);
+    }
+}
+
+/// True when `predicate` holds for some node of `expr`. Asks in the order
+/// visit goes, and stops at the first yes.
+template <typename P>
+    requires std::predicate<P &, const Expr &>
+bool anyOf(const Expr &expr, P &&predicate) {
+    if (std::invoke(predicate, expr)) {
+        return true;
+    }
+    for (const Expr &operand : expr.args()) {
+        if (anyOf(operand, predicate)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// `expr` rewritten bottom-up: `f` is called on every node once its operands
+/// have been rewritten, and what it returns takes the node's place. Return the
+/// node unchanged to keep it.
+///
+/// A node whose operands changed is rebuilt through the builders before `f`
+/// sees it, so every result is normalised — but nothing is evaluated: a
+/// rewrite that produces `sin(0)` or `2^2` leaves exactly that. Parts of the
+/// tree `f` leaves alone are shared with `expr`, not copied.
+template <typename F>
+    requires std::is_invocable_r_v<Expr, F &, const Expr &>
+Expr transform(const Expr &expr, F &&f) {
+    const std::vector<Expr> &operands = expr.args();
+    if (operands.empty()) {
+        return std::invoke(f, expr);
+    }
+    std::vector<Expr> rewritten;
+    rewritten.reserve(operands.size());
+    bool changed = false;
+    for (const Expr &operand : operands) {
+        rewritten.push_back(transform(operand, f));
+        changed = changed || !detail::sameRepresentation(rewritten.back(), operand);
+    }
+    if (!changed) {
+        return std::invoke(f, expr);
+    }
+    return std::invoke(f, detail::withOperands(expr, std::move(rewritten)));
+}
 
 /// True when `symbol` occurs anywhere in `expr`.
 ///

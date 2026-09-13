@@ -71,88 +71,49 @@ bool opaqueMentions(std::string_view text, std::string_view name) {
     return false;
 }
 
-/// `expr` rebuilt with new operands, through the builder for its kind, so it
-/// is normalised exactly as a freshly built expression would be.
-Expr withOperands(const Expr &expr, std::vector<Expr> operands) {
+} // namespace
+
+Expr detail::withOperands(const Expr &expr, std::vector<Expr> operands) {
     switch (expr.kind()) {
     case Kind::Add:
         return Expr::add(std::move(operands));
     case Kind::Mul:
         return Expr::mul(std::move(operands));
     case Kind::Pow:
-        return Expr::pow(std::move(operands[0]), std::move(operands[1]));
+        return Expr::pow(std::move(operands.at(0)), std::move(operands.at(1)));
     case Kind::Function:
         return Expr::function(expr.name(), std::move(operands));
     case Kind::Relation:
-        return Expr::relation(expr.relationOp(), std::move(operands[0]),
-                              std::move(operands[1]));
+        return Expr::relation(expr.relationOp(), std::move(operands.at(0)),
+                              std::move(operands.at(1)));
     default:
         return expr; // A leaf has no operands to replace.
     }
 }
 
-/// replace, reporting whether anything changed, so an untouched subtree is
-/// returned as it is without being compared.
-Expr replaceIn(const Expr &expr, const Symbol &symbol, const Expr &value,
-               bool &changed) {
-    switch (expr.kind()) {
-    case Kind::Symbol:
-        if (expr.name() == symbol.name()) {
-            changed = true;
-            return value;
-        }
-        return expr;
-    case Kind::Opaque:
-        if (opaqueMentions(expr.opaqueText(), symbol.name())) {
-            throw Error("cannot replace " + symbol.name()
-                        + " inside the unmodelled expression " + expr.str()
-                        + " without parsing it; mx::subst has Maxima do it");
-        }
-        return expr;
-    case Kind::Integer:
-    case Kind::Rational:
-    case Kind::Real:
-        return expr;
-    default:
-        break;
-    }
-
-    const std::vector<Expr> &operands = expr.args();
-    std::vector<Expr> replaced;
-    replaced.reserve(operands.size());
-    bool anyChanged = false;
-    for (const Expr &operand : operands) {
-        replaced.push_back(replaceIn(operand, symbol, value, anyChanged));
-    }
-    if (!anyChanged) {
-        return expr;
-    }
-    changed = true;
-    return withOperands(expr, std::move(replaced));
-}
-
-} // namespace
-
 bool contains(const Expr &expr, const Symbol &symbol) {
-    if (expr.is(Kind::Symbol)) {
-        return expr.name() == symbol.name();
-    }
-    if (expr.is(Kind::Opaque)) {
+    return anyOf(expr, [&symbol](const Expr &node) {
+        if (node.is(Kind::Symbol)) {
+            return node.name() == symbol.name();
+        }
         // Unmodelled text can still name the symbol, and solve's check that a
         // solution no longer mentions its unknown depends on seeing it there.
-        return opaqueMentions(expr.opaqueText(), symbol.name());
-    }
-    for (const Expr &operand : expr.args()) {
-        if (contains(operand, symbol)) {
-            return true;
-        }
-    }
-    return false;
+        return node.is(Kind::Opaque) && opaqueMentions(node.opaqueText(), symbol.name());
+    });
 }
 
 Expr replace(const Expr &expr, const Symbol &symbol, const Expr &value) {
-    bool changed = false;
-    return replaceIn(expr, symbol, value, changed);
+    return transform(expr, [&symbol, &value](const Expr &node) -> Expr {
+        if (node.is(Kind::Symbol) && node.name() == symbol.name()) {
+            return value;
+        }
+        if (node.is(Kind::Opaque) && opaqueMentions(node.opaqueText(), symbol.name())) {
+            throw Error("cannot replace " + symbol.name()
+                        + " inside the unmodelled expression " + node.str()
+                        + " without parsing it; mx::subst has Maxima do it");
+        }
+        return node;
+    });
 }
 
 } // namespace mx

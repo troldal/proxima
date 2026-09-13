@@ -310,6 +310,10 @@ std::size_t Expr::hash() const {
     return node_->hash;
 }
 
+bool detail::sameRepresentation(const Expr &lhs, const Expr &rhs) noexcept {
+    return lhs.node_ == rhs.node_;
+}
+
 bool Expr::operator==(const Expr &other) const {
     if (node_ == other.node_) {
         return true; // Shared representation: the common case after a copy.
