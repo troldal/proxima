@@ -123,6 +123,12 @@ solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
 // --- Inspection -----------------------------------------------------------
 
 /// True when `symbol` occurs anywhere in `expr`. Local: no kernel involved.
+///
+/// Opaque nodes are looked inside too, since unmodelled Maxima text can still
+/// name a symbol. The text is not parsed: the name counts where it stands as a
+/// whole identifier outside string literals, or — for a name that is not a
+/// plain identifier, such as `x y` — wherever it appears with Maxima's
+/// backslash escapes removed. Inside Opaque text it errs towards true.
 bool contains(const Expr &expr, const Symbol &symbol);
 
 } // namespace mx

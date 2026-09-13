@@ -32,6 +32,35 @@ TEST_CASE("contains finds a symbol anywhere in an expression") {
     CHECK_FALSE(mx::contains(Expr::symbol("xy"), x));
 }
 
+TEST_CASE("contains looks inside Opaque text as well") {
+    // solve rejects an answer that still mentions its unknown — `[x = sin(x)]`
+    // is Maxima saying it could not finish. A mention hidden in unmodelled text
+    // used to get through that check.
+    const Symbol x("x");
+
+    CHECK(mx::contains(Expr::opaque("sin(x) + 1"), x));
+    CHECK(mx::contains(Expr::function("f", {Expr::opaque("x^2")}), x));
+    CHECK_FALSE(mx::contains(Expr::opaque("sin(y) + 1"), x));
+
+    SUBCASE("as a whole identifier, not part of a longer one") {
+        CHECK(mx::contains(Expr::opaque("2*x+1"), x));
+        CHECK_FALSE(mx::contains(Expr::opaque("xy + x_1 + %x + x2"), x));
+    }
+
+    SUBCASE("and not inside a string literal") {
+        CHECK_FALSE(mx::contains(Expr::opaque(R"("x marks the spot")"), x));
+        CHECK_FALSE(mx::contains(Expr::opaque(R"("say \"x\" twice")"), x));
+        CHECK(mx::contains(Expr::opaque(R"(concat("a", x))"), x));
+    }
+
+    SUBCASE("while a name that is not a plain identifier is found as written") {
+        // Maxima source spells the symbol `x y` with a backslash.
+        const Symbol spaced("x y");
+        CHECK(mx::contains(Expr::opaque(R"(f(x\ y))"), spaced));
+        CHECK_FALSE(mx::contains(Expr::opaque("f(x, y)"), spaced));
+    }
+}
+
 TEST_CASE("function builders produce uninterpreted applications") {
     const Symbol x("x");
 
