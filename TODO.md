@@ -22,7 +22,7 @@ Items are ordered by how much they matter, not by file.
 
 ## Status since the review
 
-Updated after `07e62bc`. Resolved findings are ticked where they stand, with
+Updated after `de0061e`. Resolved findings are ticked where they stand, with
 an *Outcome* note; everything unticked is still open. The review's own text
 is left as written, so its measurements stay comparable.
 
@@ -48,12 +48,16 @@ Work since, and what it turned up that the review had not found:
   `toMathML()`. Found: both padded small exponents, `10^{-07}`.
 - **Demo** (`2855343`, `07e62bc`): results through all four renderers,
   including the user-written `examples/text2d.hpp`.
+- **`mod` and `round` agree with Maxima** (`de0061e`). Resolves both §1 numeric
+  items and the §8 cross-check. Found: `mod(x, 0)` was NaN where Maxima gives
+  `x`; and Maxima's own float `mod` loses precision at large magnitudes, so
+  `mod(1e20, 3)` is deliberately exact here (1) rather than Maxima's 0.0.
 
-Suite: 246 cases / 2574 assertions on Windows, 243 / 2563 on Linux (222 when
+Suite: 248 cases / 2764 assertions on Windows, 245 / 2753 on Linux (222 when
 the review was written).
 
-Still open and worth doing first: §1's wrong numeric answers (`mod`, `round`),
-the `Expr(true)` trap, and §3's 15 ms Win32 round-trip floor.
+Still open and worth doing first: the `Expr(true)` trap in §1, and §3's 15 ms
+Win32 round-trip floor.
 
 ---
 
@@ -61,15 +65,26 @@ the `Expr(true)` trap, and §3's 15 ms Win32 round-trip floor.
 
 These produce a result that disagrees with Maxima, silently.
 
-- [ ] **`mod` in the numeric evaluator is `std::fmod`; Maxima's `mod` is
+- [x] **`mod` in the numeric evaluator is `std::fmod`; Maxima's `mod` is
   floored.** `evalNumeric(mod(-7, 3))` gives **-1**; Maxima gives **2**.
   A closed form containing `mod` evaluates to a different number here than
   in Maxima. Fix: `a - b * std::floor(a / b)`. (`src/core/numeric.cpp`,
   `kBuiltins`; measured.)
 
-- [ ] **`round` is `std::round` (half away from zero); Maxima rounds half to
+  *Outcome:* fixed in `de0061e`, as `fmod` plus a sign correction rather than the
+  suggested formula — that formula is how Maxima computes float `mod`, and it
+  rounds: `mod(1e20, 3)` is exactly 1, but Maxima answers 0.0. The exact answer
+  is kept and pinned. Also fixed, and not in the review: `mod(x, 0)` was NaN,
+  where Maxima gives `x`.
+
+- [x] **`round` is `std::round` (half away from zero); Maxima rounds half to
   even.** `round(2.5)` gives **3** here, **2** in Maxima. Fix:
   `std::nearbyint` under `FE_TONEAREST`, or `std::rint`. (Measured.)
+
+  *Outcome:* fixed in `de0061e`, with half-to-even written out rather than
+  `std::nearbyint`, which follows whatever rounding mode the host program has
+  set. Confirmed against Maxima for negative halves too: `round(-2.5)` is -2 and
+  `round(-0.5)` is an unsigned 0.
 
 - [ ] **`Expr(true)` is the Real `1.0`, and `Expr('a')` is the Real
   `97.0`.** The integral constructor template correctly excludes `bool` and
@@ -515,9 +530,11 @@ Maxima itself). Gaps, all cheap:
 - [ ] Two threads sharing one `Kernel` (the README promises it is safe;
   nothing exercises it).
 - [ ] `Kernel` after move.
-- [ ] `mod`/`round` against Maxima's own answers — the numeric builtins
+- [x] `mod`/`round` against Maxima's own answers — the numeric builtins
   are the one place the library computes something Maxima also computes,
   so cross-check them the way `test_integer.cpp` cross-checks bignums.
+  *(`de0061e`: `test_numeric.cpp` checks 66 `mod` pairs and 12 `round` values
+  against a live kernel. The other builtins are not yet cross-checked.)*
 - [ ] Parser: every Maxima operator the subset *claims* to reject should
   have a test that it does reject it, and `!!`, `**`, chained relations
   should be decided and pinned.
