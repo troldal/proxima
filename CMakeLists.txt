@@ -80,6 +80,8 @@ add_library(maxima_cpp
         src/core/numeric.cpp
         src/core/parser.cpp
         src/core/printer.cpp
+        src/core/render.cpp
+        src/core/tex.cpp
         src/kernel/cache.cpp
         src/kernel/context.cpp
         src/kernel/discovery.cpp

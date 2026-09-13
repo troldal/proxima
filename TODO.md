@@ -215,13 +215,19 @@ Fine at today's sizes; these are the walls you will hit.
   `operator+`/`operator*` (skip flatten/partition when neither side is the
   same kind and at most one is a number) would remove most of it.
 
-- [ ] **The printer runs the normaliser.** `negativeTerm()` rebuilds a
+- [x] **Resolved — the printer is a renderer now; see PLAN.md "Renderers".**
+  *Original finding:* the printer runs the normaliser. `negativeTerm()` rebuilds a
   product with `Expr::mul(std::move(factors))` — allocation, flatten, sort
   — for every negative term of every sum it prints, and `render(Add)`
   copies the terms vector to rotate it. Printing should be a read-only
   walk; carry the sign as a flag instead. Also `render()`'s `context`
   parameter is entirely unused (`static_cast<void>(context)`) — dead
   parameter, remove it.
+
+  *Outcome:* both gone. The sign is a flag on the display tree, the dead
+  parameter went with the rewrite, and a bug nobody had noticed went too:
+  `x - (1 + y)` printed as `x - 1 + y`, which re-parses to a different
+  expression. `tests/test_render.cpp` pins the round trip now.
 
 - [ ] **`readFrame` is O(n²) on large replies.** Every 4 KB chunk appends
   to `buffer` and then `buffer.find(end)` searches *from the beginning*.
@@ -261,7 +267,8 @@ Fine at today's sizes; these are the walls you will hit.
 
 - [ ] **No `operator<<` and no `std::formatter`** for `Expr`, `Integer`,
   `Symbol`. Every print in the demo is `.str()`. Ten lines, large quality
-  of life gain.
+  of life gain. *(Now also the natural place to hang a format spec that
+  selects a renderer: `std::format("{:tex}", e)`.)*
 
 - [ ] **`Expr` has no ordering.** It cannot be a `std::map` key, cannot be
   sorted, cannot be put in a `std::set` — yet a total order already exists

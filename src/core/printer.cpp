@@ -1,55 +1,29 @@
 #include <mx/expr.hpp>
+#include <mx/render.hpp>
 
-#include <algorithm>
 #include <charconv>
+#include <span>
 #include <string>
-#include <vector>
+#include <string_view>
+#include <system_error>
 
-// Written entirely against Expr's public accessors rather than Node, so that
-// the printer doubles as a check that the public API is sufficient to read a
-// tree. The output is Maxima-compatible infix, for people: diagnostics, test
-// failures, and anyone who wants to paste a result into a Maxima session.
+// Expr::str(), as a renderer like any other.
 //
-// It is *not* how expressions reach Maxima. That is wire/to_maxima.cpp, which
-// sends the internal s-expression; this printer is not part of the protocol,
-// and nothing about the kernel depends on what it emits.
+// This file is the proof that mx/render.hpp is sufficient: the library's own
+// printer is an ordinary user of it, with no privileged access, and it fits in
+// a plain struct that inherits nothing. Everything that used to be here —
+// precedence, when to parenthesise, hoisting a minus out of a term, rebuilding
+// a product to drop a leading `-1` — has moved into the shared presentation
+// layer, where every renderer gets it.
+//
+// The output is Maxima-compatible infix, for people: diagnostics, test
+// failures, and anyone who wants to paste a result into a Maxima session. It is
+// *not* how expressions reach Maxima — that is wire/to_maxima.cpp, which sends
+// the internal s-expression — so nothing about the protocol depends on what
+// this emits.
 
 namespace mx {
 namespace {
-
-// Binding strength, used to decide parentheses. A child is wrapped when it
-// binds more loosely than its position allows.
-enum Precedence {
-    kLoosest = 0,
-    kRelation = 10,
-    kAdd = 20,
-    kMul = 30,
-    kPow = 40,
-    kAtom = 50,
-};
-
-int precedenceOf(const Expr &expr) {
-    switch (expr.kind()) {
-    case Kind::Relation:
-        return kRelation;
-    case Kind::Add:
-        return kAdd;
-    case Kind::Mul:
-        return kMul;
-    case Kind::Pow:
-        return kPow;
-    case Kind::Rational:
-        // A fraction is a division, so it binds like a product.
-        return expr.isNegativeNumber() ? kAdd : kMul;
-    case Kind::Integer:
-    case Kind::Real:
-        // A negative literal carries a sign that would bind wrongly inside a
-        // product or a power: (-3)^2, not -3^2.
-        return expr.isNegativeNumber() ? kAdd : kAtom;
-    default:
-        return kAtom;
-    }
-}
 
 std::string renderReal(double value) {
     char buffer[40];
@@ -66,146 +40,87 @@ std::string renderReal(double value) {
     return text;
 }
 
-std::string render(const Expr &expr, int context);
-
-std::string wrap(const Expr &expr, int context) {
-    std::string text = render(expr, context);
-    if (precedenceOf(expr) < context) {
-        return "(" + text + ")";
+std::string joined(std::span<const std::string> parts,
+                   std::string_view separator) {
+    std::string out;
+    for (std::size_t i = 0; i < parts.size(); ++i) {
+        if (i != 0) {
+            out += separator;
+        }
+        out += parts[i];
     }
-    return text;
+    return out;
 }
 
-/// Splits a leading minus sign off a term so a sum can print `a - b` instead of
-/// `a + -b`. Returns false when the term is not negative-looking.
-bool negativeTerm(const Expr &term, std::string &rendered) {
-    if (term.isNegativeNumber()) {
-        rendered = render(-term, kAdd);
-        return true;
-    }
-    // A product whose first factor is a negative number: -1*x, -3*sin(x).
-    if (term.is(Kind::Mul) && term.arity() >= 2
-        && term.arg(0).isNegativeNumber()) {
-        std::vector<Expr> factors(term.args().begin() + 1, term.args().end());
-        const Expr positive = -term.arg(0);
+/// Maxima-compatible infix.
+///
+/// Note what is *absent*: no `root()`. The default synthesises one as
+/// `base^(1/n)`, which is what both Maxima and Expr::parse understand — there
+/// is no sqrt node in either, so emitting `sqrt(x)` here would print something
+/// that no longer reads back as the same expression. A renderer declining an
+/// optional operation is the mechanism working, not a gap.
+struct InfixRenderer {
+    std::string integer(const Integer &value) { return value.toString(); }
 
-        // -1*x reads better as just x, with the sign carried by the operator.
-        if (positive.is(Kind::Integer) && positive.integerValue() == Integer(1)) {
-            rendered = wrap(Expr::mul(std::move(factors)), kAdd);
-        } else {
-            factors.insert(factors.begin(), positive);
-            rendered = wrap(Expr::mul(std::move(factors)), kAdd);
-        }
-        return true;
-    }
-    return false;
-}
+    std::string real(double value) { return renderReal(value); }
 
-std::string render(const Expr &expr, int context) {
-    switch (expr.kind()) {
-    case Kind::Integer:
-        return expr.integerValue().toString();
+    std::string symbol(std::string_view name) { return std::string(name); }
 
-    case Kind::Rational:
-        return expr.numerator().toString() + "/"
-               + expr.denominator().toString();
+    /// Already Maxima source; reproduced verbatim.
+    std::string verbatim(std::string_view source) { return std::string(source); }
 
-    case Kind::Real:
-        return renderReal(expr.realValue());
-
-    case Kind::Symbol:
-        return expr.name();
-
-    case Kind::Opaque:
-        // Already Maxima source; reproduced verbatim.
-        return expr.opaqueText();
-
-    case Kind::Add: {
-        std::vector<Expr> terms(expr.args().begin(), expr.args().end());
-
-        // Canonical order puts the constant first, so `x - 1` would come out as
-        // `-1 + x`. Moving a *negative* leading constant to the end recovers the
-        // conventional reading without disturbing the canonical order itself —
-        // this is a display choice, not a change to the expression. A positive
-        // one stays put, since `1 - x` already reads better than `-x + 1`.
-        if (terms.size() > 1 && terms.front().isNegativeNumber()) {
-            std::rotate(terms.begin(), terms.begin() + 1, terms.end());
-        }
-
+    std::string sum(std::span<const Term<std::string>> terms) {
         std::string out;
         for (std::size_t i = 0; i < terms.size(); ++i) {
-            const Expr &term = terms[i];
-            std::string negated;
-            if (i != 0 && negativeTerm(term, negated)) {
-                out += " - ";
-                out += negated;
-                continue;
-            }
-            if (i != 0) {
-                out += " + ";
-            }
-            out += wrap(term, kAdd);
-        }
-        return out;
-    }
-
-    case Kind::Mul: {
-        std::string out;
-        for (std::size_t i = 0; i < expr.arity(); ++i) {
-            if (i != 0) {
-                out += "*";
-            }
-            const Expr &factor = expr.arg(i);
-            // A *leading* negative literal needs no parentheses: Maxima reads
-            // -2*x as -(2*x), which is the same value. A later one does need
-            // them, because `x*-2` is not valid Maxima at all. And a negative
-            // base of a power always does — -3^2 is -9, not 9.
-            if (i == 0 && factor.isNegativeNumber()) {
-                out += render(factor, kLoosest);
+            if (i == 0) {
+                if (terms[i].negated) {
+                    out += "-";
+                }
             } else {
-                out += wrap(factor, kMul);
+                out += terms[i].negated ? " - " : " + ";
             }
+            out += terms[i].value;
         }
         return out;
     }
 
-    case Kind::Pow:
-        // '^' is right-associative in Maxima, so the exponent needs no
-        // parentheses for nesting but the base does.
-        return wrap(expr.arg(0), kPow + 1) + "^" + wrap(expr.arg(1), kPow);
-
-    case Kind::Function: {
-        // Maxima has no textual `list(...)` constructor: `[a, b]` is the only
-        // way to write a list. This is the one head the printer knows by name,
-        // and it is here rather than in a typed node because a list otherwise
-        // behaves exactly like any other application.
-        const bool isList = expr.name() == "list";
-
-        std::string out = isList ? "[" : expr.name() + "(";
-        for (std::size_t i = 0; i < expr.arity(); ++i) {
-            if (i != 0) {
-                out += ", ";
-            }
-            out += render(expr.arg(i), kLoosest);
-        }
-        out += isList ? "]" : ")";
-        return out;
+    std::string product(std::span<const std::string> factors) {
+        return joined(factors, "*");
     }
 
-    case Kind::Relation:
-        return wrap(expr.arg(0), kRelation + 1) + " "
-               + std::string(symbolFor(expr.relationOp())) + " "
-               + wrap(expr.arg(1), kRelation + 1);
+    std::string fraction(const std::string &numerator,
+                         const std::string &denominator) {
+        return numerator + "/" + denominator;
     }
 
-    static_cast<void>(context);
-    return {};
-}
+    std::string power(const std::string &base, const std::string &exponent) {
+        return base + "^" + exponent;
+    }
+
+    std::string call(std::string_view head, std::span<const std::string> args) {
+        return std::string(head) + "(" + joined(args, ", ") + ")";
+    }
+
+    /// Maxima has no textual `list(...)` constructor; brackets are the only
+    /// spelling it has.
+    std::string list(std::span<const std::string> items) {
+        return "[" + joined(items, ", ") + "]";
+    }
+
+    std::string relation(RelOp op, const std::string &lhs,
+                         const std::string &rhs) {
+        return lhs + " " + std::string(symbolFor(op)) + " " + rhs;
+    }
+
+    std::string group(const std::string &inner) { return "(" + inner + ")"; }
+
+    std::string negate(const std::string &inner) { return "-" + inner; }
+};
 
 } // namespace
 
 std::string Expr::str() const {
-    return render(*this, kLoosest);
+    return render(*this, InfixRenderer{});
 }
 
 } // namespace mx

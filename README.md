@@ -95,6 +95,41 @@ Precedences are Maxima's, including the two that catch people out: `^` is
 right-associative (`x^2^3` is `x^(2^3)`) and unary minus binds looser than it
 (`-x^2` is `-(x^2)`).
 
+### Rendering, including your own
+
+`str()` gives Maxima-compatible infix and `toTeX()` gives LaTeX. Both are local
+— no kernel — and both are ordinary clients of `<mx/render.hpp>`, which is the
+supported way to add a third.
+
+```cpp
+std::cout << e.str();                 // (1 + x)/(x - 1)
+std::cout << mx::toTeX(e);            // \frac{1 + x}{x - 1}
+std::cout << mx::render(e, MyOwn{});  // whatever you like
+```
+
+A renderer is a **plain struct** — it inherits nothing, overrides nothing, and
+owes this library no base class. Conformance is a concept, and `mx::Renderer<T>`
+erases the type, so one value can hold any of them. Supply `integer`, `real`,
+`symbol`, `verbatim`, `sum`, `product`, `fraction`, `power`, `call`, `relation`
+and `group`; `root`, `list` and `negate` are synthesised from those if you omit
+them. Pass `std::ref(yours)` instead of the object to keep a renderer that
+accumulates state.
+
+**It is generic over what you return.** TeX returns strings; a two-dimensional
+text renderer returns boxes with a width, height and baseline, so a fraction can
+stack and an exponent can actually be raised. An interface fixed to
+`std::string` would rule that out.
+
+**The library decides when to bracket; you decide how.** That is the part worth
+having: a TeX renderer written directly against the expression tree had seven
+defects in under two hundred lines — `x - 1` printing as `-1 + x`, `x/3` as a
+product containing a fraction, `1/x` as a negative power, `-(x+1)` as
+`(-1)*(1+x)` — every one a presentation decision rather than a question about
+TeX. They are made once, in a shared layer, and every renderer inherits them.
+Two optional hooks, `strengthOf` and `contextFor`, let you declare that your
+notation delimits itself: that is the whole difference between
+`\frac{1+x}{x-1}` and `(1 + x)/(x - 1)`, from the same walk.
+
 ### Numeric evaluation
 
 Once a closed form exists, turning it into numbers is ordinary arithmetic — no

@@ -1199,6 +1199,77 @@ kernel and requires the mapped reply to equal the original — including
 none of which could be sent before — and checks every golden reply the
 inbound reader has ever accepted renders to a form the reader accepts back.
 
+### Renderers
+
+`Expr::str()` was the only way to turn an expression into text, and its logic —
+precedence, when to bracket, hoisting a minus out of a term — was private to
+`printer.cpp`. Anyone wanting TeX, MathML or two-dimensional text had to start
+again.
+
+The measurement that shaped the design: a TeX renderer written as an outside
+user would write it, against `Expr`'s public accessors alone, compiled and ran
+in 180 lines and had **seven defects** — `x - 1` printing as `-1 + x`, `x/3` as
+`\frac{1 \cdot x}{3}`, `1/x` as `x^{-1}`, redundant brackets inside `\frac{}{}`,
+`-(x+1)` as `\left(-1\right) \cdot \left(1+x\right)`, a spurious `\cdot` after a
+constant, and `bessel_j` emitted with an unescaped underscore that will not
+compile as TeX. Six of the seven are presentation decisions, not questions about
+TeX. So the extension point is not "walk the tree" — that was always possible
+and was never the hard part — but "receive the presentation decisions already
+made".
+
+Three layers, in `include/mx/render.hpp` and `src/core/render.cpp`:
+
+1. **Presentation.** `Expr` becomes a display tree: a leading negative constant
+   moves so `x - 1` does not read `-1 + x`; a product splits above and below the
+   line; `x^(1/2)` becomes a Root and `a*b^-1` a Fraction; a rational
+   coefficient is dismantled so `x/3` is a fraction containing `x`; negative sum
+   terms carry a flag instead of a `-1` factor.
+2. **Grouping.** Computed over the display tree from two queries the renderer
+   may override — `strengthOf(Construct)` and `contextFor(Slot)`. Both matter:
+   the first says a `\frac{}{}` needs no brackets *around* it, the second that it
+   needs none *inside* it. Declaring them is the entire difference between the
+   TeX renderer and the infix one.
+3. **The renderer.** A fold: children arrive already rendered, and it says how
+   to combine them.
+
+**Type-erased, not a base class.** A user's renderer is a plain struct owing
+this library nothing; conformance is a concept and `Renderer<T>` is a move-only
+value with a hand-written vtable and small-buffer storage, so nothing virtual
+appears in the user's own type and a small renderer never allocates. This is the
+opposite call from `ITransport`, deliberately: a transport is built by a factory,
+lives behind a `unique_ptr` for a kernel's whole life and is replaced on restart,
+so its polymorphism is real; a renderer is a value constructed at the call site.
+`std::ref` is supported because value semantics otherwise swallow a renderer
+that accumulates state.
+
+**Generic over the output type**, which is the load-bearing part rather than a
+flourish: two-dimensional text has to know each subexpression's width, height
+and baseline before it can place it, and an interface returning `std::string`
+would foreclose exactly that. `tests/test_render.cpp` carries a box-layout
+renderer that stacks fractions, raises exponents and draws brackets sized to
+their contents, to keep that honest.
+
+**Optional operations resolve where the concrete type is still visible**, so a
+renderer that never heard of roots still renders them through its own `power()`.
+That turned out to need care: the synthesised default builds its exponent
+outside the walk, so it has to apply the grouping rule itself — without that the
+infix renderer emitted `x^1/2`, which reads back as `(x^1)/2`. The existing
+tests caught it.
+
+`Expr::str()` is now an ordinary client, `InfixRenderer` in `printer.cpp`, with
+no privileged access — which is what proves the abstraction sufficient, since
+all 236 existing tests had to keep passing. Six outputs improved and one bug
+went with them: `x - (1 + y)` used to print `x - 1 + y`, which re-parses as a
+*different expression*. `1/x`, `-(1 + x)`, `-x - y`, `(-x)^2`, `sin(x)/cos(x)`
+and `x/0` all read better. `sqrt(x)` deliberately still prints `x^(1/2)`:
+`InfixRenderer` declines `root()` because neither Maxima nor `Expr::parse` has a
+sqrt node, so a radical would print something that no longer reads back.
+
+Rewritten on the new interface, the outside user's TeX renderer is 95 lines
+instead of 217, and all seven defects are gone — six fixed by the shared layer,
+the seventh (escaping) still the renderer's own business, which is where it
+belongs.
+
 ### Decided, but not built
 
 Nothing outstanding.

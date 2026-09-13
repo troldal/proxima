@@ -29,6 +29,7 @@ add_executable(mx_tests
         test_parser.cpp
         test_persistent_cache.cpp
         test_process_env.cpp
+        test_render.cpp
         test_sexpr.cpp
         test_to_maxima.cpp
         test_kernel.cpp
