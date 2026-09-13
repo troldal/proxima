@@ -22,7 +22,7 @@ Items are ordered by how much they matter, not by file.
 
 ## Status since the review
 
-Updated after `539d93c`. Resolved findings are ticked where they stand, with
+Updated after `6bc0f7d`. Resolved findings are ticked where they stand, with
 an *Outcome* note; everything unticked is still open. The review's own text
 is left as written, so its measurements stay comparable.
 
@@ -92,13 +92,13 @@ Work since, and what it turned up that the review had not found:
   of order took the survivor's *own* facts with it, not just inherited ones,
   and Maxima quietly recreates a context that `context:` names after it was
   killed; and splitting the session lock exposed a gap that was already
-  there, now listed as a new §2 item.
+  there, listed as a new §2 item and closed in `6bc0f7d`.
 
-Suite: 278 cases / 2996 assertions on Windows (GCC and clang-cl), 279 / 2994 on
+Suite: 279 cases / 3000 assertions on Windows (GCC and clang-cl), 280 / 2998 on
 Linux (222 when the review was written).
 
-§1 is closed, and of §2 only the new item found while fixing it remains. After
-that: performance (§3), ergonomics (§4) and the smaller sections.
+§1 and §2 are closed. What remains is performance (§3), ergonomics (§4) and
+the smaller sections after them.
 
 ---
 
@@ -439,7 +439,7 @@ These produce a result that disagrees with Maxima, silently.
   `evalPure`'s cache lookups deliberately still take the pipe lock — see the
   next item.
 
-- [ ] **A Context's statement and its journal record are two separate
+- [x] **A Context's statement and its journal record are two separate
   calls.** `Context::assume` sends `assume(...)` through `evalTracked`, then
   records it with `remember()`; `~Context` does `forget()`, then
   `killcontext`. Each is locked on its own, so another thread's `evalPure` can
@@ -451,6 +451,17 @@ These produce a result that disagrees with Maxima, silently.
   computation. Fix: one session call that evaluates and records (or forgets
   and evaluates) under the pipe lock, so the change and its record are
   atomic. Found by reasoning while splitting the lock, not yet measured.
+
+  *Outcome:* fixed in `6bc0f7d` as proposed. `MaximaSession::converseAtomically`
+  runs its steps under one hold of the pipe lock, offering `evalTracked`,
+  `remember` and `forget`, and Context makes every change that way: opening a
+  scope (reading the active context, `supcontext`, the record), each
+  assumption or declaration with its record, and each teardown. No public API
+  was added — Context reaches the session through its existing friendship with
+  Kernel. The race is a timing window with no deterministic reproduction, so
+  there was no failing test first; the new test pins the guarantee instead: a
+  question asked mid-conversation waits for the record, and its answer is then
+  cached under the recorded state.
 
 ## 3. Performance
 
