@@ -418,10 +418,22 @@ private:
         maxDepth_ = std::max(maxDepth_, depth_);
     }
 
+    /// Whether two constants can share a slot. Not ==, which holds for 0.0 and
+    /// -0.0 although atan2 and division tell them apart: the compiled form of
+    /// atan2(0.0, -1) + atan2(-0.0, -1) used to answer 2 pi instead of 0. And
+    /// NaN is not even equal to itself, so a NaN bound twice took two slots.
+    static bool sameConstant(double a, double b) {
+        if (std::isnan(a) || std::isnan(b)) {
+            return std::isnan(a) && std::isnan(b);
+        }
+        return a == b && std::signbit(a) == std::signbit(b);
+    }
+
     void pushConstant(double value) {
         // Folded here, so the same literal appearing twice costs one slot.
         const auto existing
-            = std::find(constants_.begin(), constants_.end(), value);
+            = std::find_if(constants_.begin(), constants_.end(),
+                           [value](double constant) { return sameConstant(constant, value); });
         const auto index = existing != constants_.end()
                                ? static_cast<std::uint32_t>(
                                      existing - constants_.begin())

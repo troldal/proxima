@@ -103,6 +103,29 @@ TEST_CASE("a long call and a refused expression evaluate as before") {
                          mx::EvalError);
 }
 
+TEST_CASE("the compiled form keeps 0.0 and -0.0 apart") {
+    // Compiled folds repeated literals into one constant slot, and used to
+    // match them with ==, which holds for 0.0 and -0.0. They are not
+    // interchangeable: atan2(0.0, -1) is pi and atan2(-0.0, -1) is -pi, so the
+    // compiled form of their sum answered 2 pi where evalNumeric answered 0.
+    const Symbol x("x");
+    const Expr signs = Expr::function("atan2", {Expr(0.0), Expr(-1)})
+                       + Expr::function("atan2", {Expr(-0.0), Expr(-1)}) + Expr(x);
+
+    const double walked = mx::evalNumeric(signs, {{"x", 0.0}});
+    CHECK(walked == doctest::Approx(0.0));
+    CHECK(mx::Compiled(signs, x)(0.0) == doctest::Approx(walked));
+
+    SUBCASE("and so does a reciprocal") {
+        // 1/0.0 is inf and 1/-0.0 is -inf; merged, they add to inf rather
+        // than to NaN.
+        const Expr reciprocals = pow(Expr(0.0), Expr(-1)) * Expr(x)
+                                 + pow(Expr(-0.0), Expr(-1)) * Expr(x);
+        CHECK(std::isnan(mx::evalNumeric(reciprocals, {{"x", 1.0}})));
+        CHECK(std::isnan(mx::Compiled(reciprocals, x)(1.0)));
+    }
+}
+
 TEST_CASE("constants are recognised as Maxima spells them") {
     CHECK(mx::evalNumeric(mx::pi()) == doctest::Approx(std::numbers::pi));
     CHECK(mx::evalNumeric(mx::e()) == doctest::Approx(std::numbers::e));
