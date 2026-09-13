@@ -1,8 +1,10 @@
 #include "core/normalize.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <numeric>
+#include <span>
 
 // Normalisation, not simplification.
 //
@@ -125,27 +127,27 @@ void flattenInto(const Expr &expr, Kind kind, std::vector<Expr> &flat) {
     }
 }
 
-/// Splits `operands` into its numeric and non-numeric parts, leaving the
-/// numbers in canonical order so that folding them is deterministic.
-std::vector<Expr> partitionNumbers(std::vector<Expr> &operands) {
-    std::vector<Expr> numbers;
-    std::vector<Expr> rest;
-    for (Expr &operand : operands) {
-        if (operand.isNumber()) {
-            numbers.push_back(std::move(operand));
-        } else {
-            rest.push_back(std::move(operand));
-        }
-    }
-    std::sort(numbers.begin(), numbers.end(),
-              [](const Expr &a, const Expr &b) { return compareExpr(a, b) < 0; });
-    operands = std::move(rest);
-    return numbers;
+bool canonicallyBefore(const Expr &a, const Expr &b) {
+    return compareExpr(a, b) < 0;
 }
 
 /// Folds sorted numeric operands into one. Always succeeds: exact arithmetic
 /// cannot fail now that mx::Integer is unbounded.
-Expr fold(const std::vector<Expr> &numbers, bool isProduct) {
+Expr fold(std::span<const Expr> numbers, bool isProduct) {
+    // One number is already its own fold, and rebuilding an equal node for it
+    // was an allocation on every `x + 1`. The one exception is a lone -0.0 in a
+    // sum: the arithmetic below computes 0.0 + -0.0, which is +0.0, and that
+    // result is kept.
+    if (numbers.size() == 1) {
+        const Expr &only = numbers.front();
+        const bool negativeZeroInSum = !isProduct && only.is(Kind::Real)
+                                       && only.realValue() == 0.0
+                                       && std::signbit(only.realValue());
+        if (!negativeZeroInSum) {
+            return only;
+        }
+    }
+
     Exact exact;
     if (isProduct) {
         exact.numerator = Integer(1);
@@ -183,31 +185,49 @@ Expr fold(const std::vector<Expr> &numbers, bool isProduct) {
 std::vector<Expr> normalize(std::vector<Expr> operands, Kind kind) {
     const bool isProduct = kind == Kind::Mul;
 
-    std::vector<Expr> flat;
-    flat.reserve(operands.size());
-    for (const Expr &operand : operands) {
-        flattenInto(operand, kind, flat);
+    // Flattened into a new vector only when some operand needs it. Otherwise
+    // the caller's vector is already flat, so it is worked on in place and
+    // handed back to become the node's operands. `x + y` used to copy its two
+    // operands through three more vectors before the node was built.
+    const auto nested = [kind](const Expr &operand) { return operand.is(kind); };
+    if (std::any_of(operands.begin(), operands.end(), nested)) {
+        std::vector<Expr> flat;
+        flat.reserve(operands.size());
+        for (const Expr &operand : operands) {
+            flattenInto(operand, kind, flat);
+        }
+        operands = std::move(flat);
     }
 
-    std::vector<Expr> numbers = partitionNumbers(flat);
+    // Numbers to the front, and there into canonical order, so that folding
+    // them is deterministic — for reals the order changes the result's last
+    // bits. std::partition rather than std::stable_partition, which may
+    // allocate; no order that matters is lost, since the numbers are sorted
+    // here and everything else at the end.
+    const auto numbersEnd
+        = std::partition(operands.begin(), operands.end(),
+                         [](const Expr &operand) { return operand.isNumber(); });
+    if (numbersEnd != operands.begin()) {
+        std::sort(operands.begin(), numbersEnd, canonicallyBefore);
+        const auto count = static_cast<std::size_t>(numbersEnd - operands.begin());
+        Expr constant = fold(std::span<const Expr>(operands.data(), count), isProduct);
+        operands.erase(operands.begin(), numbersEnd);
 
-    if (!numbers.empty()) {
-        const Expr constant = fold(numbers, isProduct);
         if (isProduct && isExactZero(constant)) {
-            return {Expr::integer(0)}; // Absorbing, so nothing else matters.
+            // Absorbing, so nothing else matters.
+            return {std::move(constant)};
         }
         const bool isIdentity
             = isProduct ? isExactOne(constant) : isExactZero(constant);
         // The identity is dropped, unless it is all that is left — `0` has to
         // remain `0`.
-        if (!isIdentity || flat.empty()) {
-            flat.push_back(constant);
+        if (!isIdentity || operands.empty()) {
+            operands.push_back(std::move(constant));
         }
     }
 
-    std::sort(flat.begin(), flat.end(),
-              [](const Expr &a, const Expr &b) { return compareExpr(a, b) < 0; });
-    return flat;
+    std::sort(operands.begin(), operands.end(), canonicallyBefore);
+    return operands;
 }
 
 } // namespace

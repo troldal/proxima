@@ -10,6 +10,7 @@
 #include <mx/expr.hpp>
 #include <mx/symbol.hpp>
 
+#include <cmath>
 #include <limits>
 #include <string>
 
@@ -175,6 +176,67 @@ TEST_CASE("nothing is expanded or factored") {
 TEST_CASE("powers are not combined") {
     const Symbol x("x");
     CHECK_FALSE(pow(Expr(x), 2) * pow(Expr(x), 3) == pow(Expr(x), 5));
+}
+
+TEST_CASE("building without extra copies keeps every normalisation rule") {
+    // The normaliser now works in the caller's vector and hands back a lone
+    // number instead of rebuilding it. These are the rules that could change
+    // without anything else in this file noticing.
+    const Symbol x("x");
+    const Symbol y("y");
+
+    SUBCASE("exact identities go, and an exact zero absorbs a product") {
+        CHECK(Expr(x) + 0 == Expr(x));
+        CHECK(Expr(0) + Expr(x) == Expr(x));
+        CHECK(Expr(x) * 1 == Expr(x));
+        CHECK((Expr(x) * 0).kind() == Kind::Integer);
+        CHECK(Expr(x) * 0 == Expr(0));
+    }
+
+    SUBCASE("inexact ones are not identities") {
+        CHECK((Expr(0.0) + Expr(x)).kind() == Kind::Add);
+        CHECK((Expr(1.0) * Expr(x)).kind() == Kind::Mul);
+        CHECK((Expr(0.0) * Expr(x)).kind() == Kind::Mul);
+    }
+
+    SUBCASE("a lone number is kept exactly as it was") {
+        const Expr third = Expr::rational(1, 3);
+        const Expr sum = third + Expr(x);
+        REQUIRE(sum.kind() == Kind::Add);
+        CHECK(sum.arg(0) == third);
+        CHECK((Expr(2.5) * Expr(x)).arg(0) == Expr(2.5));
+    }
+
+    SUBCASE("a lone -0.0 folds to +0.0 in a sum, and keeps its sign in a product") {
+        // What the folding arithmetic always did: 0.0 + -0.0 is +0.0, and
+        // 1.0 * -0.0 is -0.0. Returning the lone number untouched must not
+        // change either.
+        const Expr sum = Expr::add({Expr(-0.0), Expr(x)});
+        REQUIRE(sum.kind() == Kind::Add);
+        CHECK_FALSE(std::signbit(sum.arg(0).realValue()));
+
+        const Expr product = Expr::mul({Expr(-0.0), Expr(x)});
+        REQUIRE(product.kind() == Kind::Mul);
+        CHECK(std::signbit(product.arg(0).realValue()));
+    }
+
+    SUBCASE("reals handed over together fold in canonical order") {
+        // Not a chain of binary +: each + folds as it goes, so
+        // 0.1 + 0.2 + 0.3 and 0.3 + 0.2 + 0.1 add in different orders and can
+        // differ in the last bits, which is floating point, not the
+        // normaliser. Numbers given to one sum are sorted before folding, so
+        // their order does not matter.
+        CHECK(Expr::add({Expr(0.1), Expr(0.2), Expr(0.3), Expr(x)})
+              == Expr::add({Expr(0.3), Expr(x), Expr(0.2), Expr(0.1)}));
+    }
+
+    SUBCASE("flattening still folds a single number and sorts the rest") {
+        const Expr nested = (Expr(x) + 1) + Expr(y);
+        REQUIRE(nested.kind() == Kind::Add);
+        CHECK(nested.arity() == 3);
+        CHECK(nested == Expr(y) + Expr(1) + Expr(x));
+        CHECK((Expr(x) + 1) + (Expr(y) + 2) == Expr(x) + Expr(y) + 3);
+    }
 }
 
 TEST_CASE("exact and inexact stay distinguishable") {
