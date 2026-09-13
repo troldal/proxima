@@ -14,6 +14,8 @@
 #include <mx/ops.hpp>
 #include <mx/symbol.hpp>
 
+#include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -45,7 +47,7 @@ std::size_t fileCount(const std::filesystem::path &directory) {
     std::error_code ec;
     std::size_t count = 0;
     for (const auto &entry : std::filesystem::directory_iterator(directory, ec)) {
-        count += entry.is_regular_file() ? 1 : 0;
+        count += entry.is_regular_file() ? std::size_t{1} : std::size_t{0};
     }
     return count;
 }
@@ -234,6 +236,103 @@ TEST_CASE("another writer's temporaries are left alone") {
     CHECK(cache.find("q")->value == "42");
     // The entry and the three foreign files: no temporary of ours left behind.
     CHECK(fileCount(directory) == 4);
+}
+
+namespace {
+
+/// Total size of the entries in `directory`, temporaries excluded.
+std::uintmax_t entryBytes(const std::filesystem::path &directory) {
+    std::uintmax_t total = 0;
+    for (const auto &entry : std::filesystem::directory_iterator(directory)) {
+        if (entry.path().extension() == ".reply") {
+            total += entry.file_size();
+        }
+    }
+    return total;
+}
+
+/// Sets an entry's modification time `minutes` into the past, standing in for
+/// the passage of time without waiting for it.
+void age(const PersistentCache &cache, const std::string &source, int minutes) {
+    std::filesystem::last_write_time(cache.entryPath(source),
+                                     std::filesystem::file_time_type::clock::now()
+                                         - std::chrono::minutes{minutes});
+}
+
+} // namespace
+
+TEST_CASE("the cache directory is held under its limit, oldest entries first") {
+    // There used to be no limit at all: a cache directory grew for ever.
+    const auto directory = scratch("limit");
+    const PersistentCache cache(directory, "stamp", 10'000);
+    const std::string payload(1000, 'v'); // About 1 KB an entry.
+
+    for (int i = 0; i < 30; ++i) {
+        const std::string source = "q" + std::to_string(i);
+        cache.insert(source, valued(payload));
+        age(cache, source, 30 - i); // Each written a minute after the last.
+    }
+
+    CHECK(entryBytes(directory) <= 10'000);
+    CHECK(cache.find("q29").has_value());
+    CHECK(cache.find("q28").has_value());
+    CHECK_FALSE(cache.find("q0").has_value());
+    CHECK_FALSE(cache.find("q20").has_value());
+}
+
+TEST_CASE("reading an entry back keeps it from eviction") {
+    // Four entries of about 1 KB under a 4.5 KB limit; a fifth goes over it,
+    // and the sweep keeps three quarters of the limit, about three entries.
+    const auto directory = scratch("recency");
+    const PersistentCache cache(directory, "stamp", 4500);
+    const std::string payload(1000, 'v');
+
+    const std::vector<std::string> sources{"a", "b", "c", "d"};
+    for (std::size_t i = 0; i < sources.size(); ++i) {
+        cache.insert(sources[i], valued(payload));
+        age(cache, sources[i], 10 - static_cast<int>(i)); // a oldest, d newest.
+    }
+    REQUIRE(fileCount(directory) == 4);
+
+    // a is the oldest write, but the most recent read.
+    REQUIRE(cache.find("a").has_value());
+    cache.insert("e", valued(payload));
+
+    CHECK(cache.find("a").has_value());
+    CHECK(cache.find("e").has_value());
+    CHECK(cache.find("d").has_value());
+    CHECK_FALSE(cache.find("b").has_value());
+    CHECK_FALSE(cache.find("c").has_value());
+}
+
+TEST_CASE("a sweep clears orphaned temporaries and leaves a writer's fresh ones") {
+    const auto directory = scratch("orphans");
+    std::filesystem::create_directories(directory);
+    const std::filesystem::path orphan = directory / "0123456789abcdef.reply.tmp-ffffffffffffffff-0";
+    const std::filesystem::path fresh = directory / "fedcba9876543210.reply.tmp-ffffffffffffffff-1";
+    for (const auto &path : {orphan, fresh}) {
+        std::ofstream(path, std::ios::binary) << "half-written by someone else";
+    }
+    std::filesystem::last_write_time(orphan, std::filesystem::file_time_type::clock::now()
+                                                 - std::chrono::hours{2});
+
+    // The first write under a limit scans the directory, which sweeps it.
+    const PersistentCache cache(directory, "stamp", 1'000'000);
+    cache.insert("q", valued("42"));
+
+    CHECK_FALSE(std::filesystem::exists(orphan));
+    CHECK(std::filesystem::exists(fresh));
+    CHECK(cache.find("q").has_value());
+}
+
+TEST_CASE("a limit of zero keeps everything") {
+    const auto directory = scratch("unlimited");
+    const PersistentCache cache(directory, "stamp", 0);
+    const std::string payload(1000, 'v');
+    for (int i = 0; i < 20; ++i) {
+        cache.insert("q" + std::to_string(i), valued(payload));
+    }
+    CHECK(fileCount(directory) == 20);
 }
 
 TEST_CASE("the hash is stable, and not std::hash") {

@@ -2,6 +2,7 @@
 
 #include <boost/process/v2/pid.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -9,6 +10,7 @@
 #include <fstream>
 #include <random>
 #include <system_error>
+#include <vector>
 
 namespace mx::detail {
 namespace {
@@ -77,6 +79,24 @@ bool readField(std::istream &in, std::string &text) {
 
 constexpr const char *kFormat = "maxima_cpp-cache-1";
 
+/// How old a temporary must be before a sweep takes it for an orphan. No
+/// writer takes anything like this long to write one entry.
+constexpr auto kOrphanAge = std::chrono::hours{1};
+
+bool isEntry(const std::filesystem::path &path) {
+    return path.extension() == ".reply";
+}
+
+/// `<entry>.reply.tmp-<token>-<n>`, or the `<entry>.reply.tmp<n>` of older
+/// writers. Compared in the path's native encoding, so that a file with a name
+/// outside the ANSI code page, which nothing here wrote, cannot make the
+/// conversion to a narrow string throw.
+bool isTemporary(const std::filesystem::path &path) {
+    static const std::filesystem::path marker(".reply.tmp");
+    return path.filename().native().find(marker.native())
+           != std::filesystem::path::string_type::npos;
+}
+
 } // namespace
 
 std::string stableHash(std::string_view text) {
@@ -95,11 +115,78 @@ std::string stableHash(std::string_view text) {
 }
 
 PersistentCache::PersistentCache(std::filesystem::path directory,
-                                 std::string stamp)
-    : directory_(std::move(directory)), stamp_(std::move(stamp)) {
+                                 std::string stamp, std::uintmax_t byteLimit)
+    : directory_(std::move(directory)), stamp_(std::move(stamp)),
+      byteLimit_(byteLimit) {
     std::error_code ec;
     std::filesystem::create_directories(directory_, ec);
     usable_ = std::filesystem::is_directory(directory_, ec);
+}
+
+void PersistentCache::restamp(std::string stamp) {
+    stamp_ = std::move(stamp);
+}
+
+std::filesystem::path PersistentCache::entryPath(std::string_view source) const {
+    return pathFor(keyFor(source));
+}
+
+void PersistentCache::sweep() const {
+    struct Entry {
+        std::filesystem::path path;
+        std::uintmax_t size;
+        std::filesystem::file_time_type used;
+    };
+    std::vector<Entry> entries;
+    std::uintmax_t total = 0;
+    const auto now = std::filesystem::file_time_type::clock::now();
+
+    // Every failure below is skipped rather than reported: another process may
+    // be renaming or deleting the very file being looked at, and a sweep that
+    // misses a file this time will see it the next.
+    std::error_code ec;
+    for (std::filesystem::directory_iterator it(directory_, ec), end;
+         !ec && it != end; it.increment(ec)) {
+        std::error_code fileEc;
+        if (!it->is_regular_file(fileEc)) {
+            continue;
+        }
+        const auto modified = it->last_write_time(fileEc);
+        if (fileEc) {
+            continue;
+        }
+        if (isTemporary(it->path())) {
+            if (now - modified > kOrphanAge) {
+                std::filesystem::remove(it->path(), fileEc);
+            }
+            continue;
+        }
+        if (!isEntry(it->path())) {
+            continue;
+        }
+        const std::uintmax_t size = it->file_size(fileEc);
+        if (fileEc) {
+            continue;
+        }
+        entries.push_back({it->path(), size, modified});
+        total += size;
+    }
+
+    if (byteLimit_ != 0 && total > byteLimit_) {
+        const std::uintmax_t target = byteLimit_ / 4 * 3;
+        std::sort(entries.begin(), entries.end(),
+                  [](const Entry &a, const Entry &b) { return a.used < b.used; });
+        for (const Entry &entry : entries) {
+            if (total <= target) {
+                break;
+            }
+            std::error_code removeEc;
+            if (std::filesystem::remove(entry.path, removeEc)) {
+                total -= entry.size;
+            }
+        }
+    }
+    bytes_ = total;
 }
 
 std::string PersistentCache::keyFor(std::string_view source) const {
@@ -118,34 +205,45 @@ std::optional<Reply> PersistentCache::find(std::string_view source) const {
     }
 
     const std::string key = keyFor(source);
-    std::ifstream in(pathFor(key), std::ios::binary);
-    if (!in) {
-        return std::nullopt;
-    }
-
-    std::string format;
-    if (!std::getline(in, format) || format != kFormat) {
-        return std::nullopt;
-    }
-
-    std::string storedKey;
-    if (!readField(in, storedKey) || storedKey != key) {
-        // Either a hash collision or a file from an incompatible writer.
-        // Either way this is not the answer to the question being asked.
-        return std::nullopt;
-    }
-
-    std::string ok;
-    std::string value;
-    std::string reason;
-    if (!readField(in, ok) || !readField(in, value) || !readField(in, reason)) {
-        return std::nullopt; // Truncated, most likely a partial write.
-    }
-
+    const std::filesystem::path path = pathFor(key);
     Reply reply;
-    reply.ok = ok == "1";
-    reply.value = std::move(value);
-    reply.reason = std::move(reason);
+    {
+        std::ifstream in(path, std::ios::binary);
+        if (!in) {
+            return std::nullopt;
+        }
+
+        std::string format;
+        if (!std::getline(in, format) || format != kFormat) {
+            return std::nullopt;
+        }
+
+        std::string storedKey;
+        if (!readField(in, storedKey) || storedKey != key) {
+            // Either a hash collision or a file from an incompatible writer.
+            // Either way this is not the answer to the question being asked.
+            return std::nullopt;
+        }
+
+        std::string ok;
+        std::string value;
+        std::string reason;
+        if (!readField(in, ok) || !readField(in, value) || !readField(in, reason)) {
+            return std::nullopt; // Truncated, most likely a partial write.
+        }
+
+        reply.ok = ok == "1";
+        reply.value = std::move(value);
+        reply.reason = std::move(reason);
+    }
+
+    // A read is a use: it keeps the entry from eviction. After the stream has
+    // closed, since Windows may refuse to change the time of a file held open.
+    if (byteLimit_ != 0) {
+        std::error_code ec;
+        std::filesystem::last_write_time(
+            path, std::filesystem::file_time_type::clock::now(), ec);
+    }
     return reply;
 }
 
@@ -203,6 +301,24 @@ void PersistentCache::insert(std::string_view source, const Reply &reply) const 
         // Losing a cache entry is not worth reporting; the next call simply
         // asks Maxima again.
         std::filesystem::remove(temporary, ec);
+        return;
+    }
+
+    if (byteLimit_ == 0) {
+        return;
+    }
+    if (!bytes_) {
+        // The first write learns the directory's size, sweeping if a previous
+        // run left it over the limit.
+        sweep();
+        return;
+    }
+    // Counted as an addition even when it replaced an entry of the same key:
+    // an overestimate, which the sweep it may bring forward corrects.
+    const std::uintmax_t written = std::filesystem::file_size(target, ec);
+    *bytes_ += ec ? 0 : written;
+    if (*bytes_ > byteLimit_) {
+        sweep();
     }
 }
 

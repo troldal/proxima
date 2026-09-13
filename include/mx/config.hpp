@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 
 namespace mx {
@@ -58,6 +59,15 @@ struct Config {
     /// that change is not part of the key; Kernel::persistenceActive says
     /// whether that has happened, and Kernel::restart undoes it.
     std::filesystem::path cacheDirectory;
+
+    /// The most cacheDirectory may hold, in bytes, before the least recently
+    /// used answers are deleted. Zero means no limit.
+    ///
+    /// Recency is each entry's modification time, which reading it back
+    /// refreshes. Over the limit, entries are deleted oldest first until the
+    /// directory is at three quarters of it. Each process enforces the limit on
+    /// what it sees, so processes sharing a directory can overshoot it briefly.
+    std::uintmax_t cacheDirectoryLimit = std::uintmax_t{256} * 1024 * 1024;
 
     /// Whether to let Maxima load the user's maxima-init.mac at startup.
     ///

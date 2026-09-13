@@ -249,7 +249,8 @@ refused. `declare` covers `Integer`, `Even`, `Odd`, `Rational`, `Real`,
   Maxima needs a fact it has not been told*.
 
 `Config` covers `maximaRoot`, `timeout`, `startupTimeout`, `cacheEntries`,
-`cacheDirectory`, `loadUserInit` and `userDir`. The user's own `maxima-init.mac` is **not** loaded
+`cacheDirectory`, `cacheDirectoryLimit` (256 MB by default, evicting the least
+recently used answers), `loadUserInit` and `userDir`. The user's own `maxima-init.mac` is **not** loaded
 by default: a library should compute the same answer on every machine.
 
 ## Requirements

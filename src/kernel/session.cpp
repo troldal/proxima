@@ -159,8 +159,9 @@ bool MaximaSession::usingPersistence() const {
 
 void MaximaSession::restampPersistence() {
     if (persistent_ != nullptr) {
-        persistent_ = std::make_unique<PersistentCache>(persistent_->directory(),
-                                                        persistenceStamp());
+        // In place, not rebuilt: a rebuilt cache would rescan the directory to
+        // learn its size on its next write, once per assumption.
+        persistent_->restamp(persistenceStamp());
     }
 }
 
@@ -291,8 +292,8 @@ MaximaSession::MaximaSession(Config config)
     // formed without it.
     const std::lock_guard<std::mutex> state(stateMutex_);
     if (!config_.cacheDirectory.empty() && !maximaVersion_.empty()) {
-        persistent_ = std::make_unique<PersistentCache>(config_.cacheDirectory,
-                                                        persistenceStamp());
+        persistent_ = std::make_unique<PersistentCache>(
+            config_.cacheDirectory, persistenceStamp(), config_.cacheDirectoryLimit);
     }
 }
 
