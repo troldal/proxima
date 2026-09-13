@@ -68,7 +68,7 @@ produced them.
 | `solve(equations, unknowns)` | a system; one value per unknown, in the order asked for |
 | `expand` `factor` `simplify` `subst` | algebraic rearrangement |
 | `parse(text)` | Maxima's own parser, for anything the offline one will not take |
-| `contains(e, x)` | local; no kernel |
+| `contains(e, x)` `replace(e, x, v)` | local, no kernel: find a symbol, or rewrite it (normalised, not evaluated) |
 
 Builders for `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `log`,
 `abs`, `exp`, `sqrt`, and the constants `%pi`, `%e`, `%i`, `inf`, `minf`.

@@ -36,6 +36,7 @@ add_executable(mx_tests
         test_to_maxima.cpp
         test_kernel.cpp
         test_transport.cpp
+        test_traverse.cpp
 )
 target_link_libraries(mx_tests PRIVATE mx::maxima_cpp doctest::doctest)
 

@@ -3,6 +3,7 @@
 #include <mx/expr.hpp>
 #include <mx/kernel.hpp>
 #include <mx/symbol.hpp>
+#include <mx/traverse.hpp> // contains and replace, which need no kernel.
 
 #include <expected>
 #include <span>
@@ -60,7 +61,9 @@ Expr factor(const Expr &expr, Kernel &kernel = sharedKernel());
 /// cancels. Not a general-purpose "make it nicer", which no CAS has.
 Expr simplify(const Expr &expr, Kernel &kernel = sharedKernel());
 
-/// Substitutes `value` for every occurrence of `symbol`.
+/// Substitutes `value` for every occurrence of `symbol`, in Maxima, which
+/// evaluates the result: `sin(x)` with x = 0 comes back as 0. For a rewrite
+/// that needs no kernel and does not evaluate, see mx::replace.
 Expr subst(const Expr &expr, const Symbol &symbol, const Expr &value,
            Kernel &kernel = sharedKernel());
 
@@ -136,16 +139,5 @@ using Solution = std::vector<Expr>;
 std::expected<std::vector<Solution>, Failure>
 solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
       Kernel &kernel = sharedKernel());
-
-// --- Inspection -----------------------------------------------------------
-
-/// True when `symbol` occurs anywhere in `expr`. Local: no kernel involved.
-///
-/// Opaque nodes are looked inside too, since unmodelled Maxima text can still
-/// name a symbol. The text is not parsed: the name counts where it stands as a
-/// whole identifier outside string literals, or — for a name that is not a
-/// plain identifier, such as `x y` — wherever it appears with Maxima's
-/// backslash escapes removed. Inside Opaque text it errs towards true.
-bool contains(const Expr &expr, const Symbol &symbol);
 
 } // namespace mx

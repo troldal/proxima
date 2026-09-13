@@ -86,6 +86,7 @@ add_library(maxima_cpp
         src/core/printer.cpp
         src/core/render.cpp
         src/core/tex.cpp
+        src/core/traverse.cpp
         src/core/mathml.cpp
         src/kernel/cache.cpp
         src/kernel/context.cpp
