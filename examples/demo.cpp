@@ -1,6 +1,10 @@
 // The point of the library, in one file: symbolic mathematics through a pure
 // C++ interface, with Maxima doing the work out of sight. There is no Maxima
 // syntax below, and no strings standing in for expressions.
+//
+// Results are shown three ways near the end — infix, TeX, and two-dimensional
+// text — and the third comes from examples/text2d.hpp, a renderer written the
+// way any user of the library would write one.
 
 #include <mx/context.hpp>
 #include <mx/errors.hpp>
@@ -9,10 +13,41 @@
 #include <mx/numeric.hpp>
 #include <mx/ops.hpp>
 #include <mx/symbol.hpp>
+#include <mx/tex.hpp>
 
+#include "text2d.hpp"
+
+#include <cstddef>
 #include <exception>
 #include <iostream>
+#include <string>
 #include <vector>
+
+namespace {
+
+/// Indents every line of a multi-line block, so a drawn expression sits
+/// under its label.
+std::string indented(const std::string &block, std::size_t by) {
+    const std::string pad(by, ' ');
+    std::string out = pad;
+    for (const char ch : block) {
+        out += ch;
+        if (ch == '\n') {
+            out += pad;
+        }
+    }
+    return out;
+}
+
+/// One expression, in each of the three renderers.
+void showRendered(const char *label, const mx::Expr &expr) {
+    std::cout << '\n' << label << '\n'
+              << "  str()     " << expr.str() << '\n'
+              << "  toTeX()   " << mx::toTeX(expr) << '\n'
+              << "  text2d\n" << indented(text2d::draw(expr), 4) << '\n';
+}
+
+} // namespace
 
 int main() {
     try {
@@ -76,6 +111,22 @@ int main() {
                           << ", y = " << solution[1].str() << '\n';
             }
         }
+
+        // Rendering. str() is one renderer among several. TeX ships with the
+        // library; text2d::Renderer does not — it is a plain struct in
+        // examples/text2d.hpp that inherits nothing and that the library has
+        // never heard of. The same expression goes through all three, and
+        // the decisions about where brackets go are shared by every one.
+        const mx::Symbol a("a");
+        const mx::Symbol b("b");
+        const mx::Symbol c("c");
+        if (const auto quadratic
+                = mx::solve(eq(a * pow(mx::Expr(x), 2) + b * x + c, mx::Expr(0)), x);
+            quadratic && !quadratic->empty()) {
+            showRendered("a root of a*x^2 + b*x + c = 0:", quadratic->back());
+        }
+        showRendered("d/dx sin(x)/x:", mx::diff(mx::sin(x) / x, x));
+        std::cout << '\n';
 
         // The other parser hands the text to Maxima itself, which accepts
         // everything its own syntax allows — but evaluates as it reads, so the
