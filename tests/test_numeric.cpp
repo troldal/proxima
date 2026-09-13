@@ -392,7 +392,10 @@ TEST_CASE("mod and round are Maxima's, not the C library's") {
     SUBCASE("infinities and NaN pass through") {
         CHECK(std::isinf(round(std::numeric_limits<double>::infinity())));
         CHECK(round(-std::numeric_limits<double>::infinity()) < 0);
-        CHECK(std::isnan(round(std::nan(""))));
+        // A NaN cannot be an Expr, but it can still arrive through a binding.
+        const Symbol x("x");
+        CHECK(std::isnan(mx::evalNumeric(Expr::function("round", {Expr(x)}),
+                                         {{"x", std::nan("")}})));
     }
 
     SUBCASE("the compiled form agrees, since it shares the function table") {

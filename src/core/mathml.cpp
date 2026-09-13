@@ -94,9 +94,7 @@ std::string_view glyphFor(std::string_view name) {
 }
 
 std::string renderReal(double value) {
-    if (std::isnan(value)) {
-        return element("mi", "NaN");
-    }
+    // No NaN case: Expr::real refuses one, so no Real holds it.
     if (std::isinf(value)) {
         const std::string infinity = element("mi", kInfinity);
         return value > 0 ? infinity : mrow(mo(kMinus) + infinity);

@@ -79,9 +79,7 @@ std::string encodeWithSigil(char sigil, std::string_view name) {
 }
 
 std::string encodeReal(double value) {
-    if (std::isnan(value)) {
-        throw Error("cannot send NaN to Maxima: it has no symbolic meaning");
-    }
+    // No NaN case: Expr::real refuses one, so no Real can carry it this far.
     if (std::isinf(value)) {
         // Maxima's own names for the two infinities.
         return value > 0 ? "$INF" : "$MINF";

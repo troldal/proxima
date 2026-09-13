@@ -4,6 +4,7 @@
 
 #include <mx/errors.hpp>
 
+#include <cmath>
 #include <limits>
 #include <numeric>
 #include <utility>
@@ -37,7 +38,10 @@ std::size_t hashOf(const Node &node) {
         hashCombine(seed, std::hash<Integer>{}(node.denominator));
         break;
     case Kind::Real:
-        hashCombine(seed, std::hash<double>{}(node.real));
+        // 0.0 == -0.0, so the two must hash alike, and MSVC's std::hash<double>
+        // hashes the bit pattern, which differs. (NaN, the other value whose
+        // equality and bits disagree, is refused by Expr::real.)
+        hashCombine(seed, std::hash<double>{}(node.real == 0.0 ? 0.0 : node.real));
         break;
     case Kind::Symbol:
     case Kind::Opaque:
@@ -120,6 +124,18 @@ Expr Expr::rational(Integer numerator, Integer denominator) {
 }
 
 Expr Expr::real(double value) {
+    if (std::isnan(value)) {
+        // Refused here, once, rather than handled everywhere a Real is looked
+        // at: a NaN is not equal to itself, which broke both the equality/hash
+        // contract and the strict weak ordering the normaliser sorts by —
+        // undefined behaviour in std::sort, not merely a wrong order. It also
+        // has no meaning in Maxima and printed as `nan`, which reads back as a
+        // symbol. Infinities are fine: they compare, and Maxima has names for
+        // them.
+        throw Error("a Real cannot be NaN (from inf - inf, 0.0 * inf, or a NaN "
+                    "passed in): it has no value in Maxima and no place in an "
+                    "ordering");
+    }
     Node node;
     node.kind = Kind::Real;
     node.real = value;

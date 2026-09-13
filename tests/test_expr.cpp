@@ -259,6 +259,44 @@ TEST_CASE("equal expressions hash equally") {
     CHECK(Expr(2).hash() == Expr::rational(4, 2).hash());
 }
 
+TEST_CASE("a Real cannot be NaN, but can be infinite") {
+    // A NaN is not equal to itself. Held in an Expr it broke the ordering the
+    // normaliser sorts by (undefined behaviour in std::sort), made equality
+    // disagree with the hash, and printed as `nan`, a symbol to Maxima.
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double inf = std::numeric_limits<double>::infinity();
+
+    CHECK_THROWS_AS(Expr::real(nan), mx::Error);
+    // Braces: `Expr(nan);` as a statement declares a variable named nan.
+    CHECK_THROWS_AS(Expr{nan}, mx::Error);
+
+    SUBCASE("including one that arithmetic would fold to") {
+        CHECK_THROWS_AS(Expr(inf) + Expr(-inf), mx::Error);
+        CHECK_THROWS_AS(Expr(0.0) * Expr(inf), mx::Error);
+    }
+
+    SUBCASE("while infinities fold, sort and compare like any number") {
+        const Symbol x("x");
+        CHECK(Expr(inf) + Expr(1.0) == Expr(inf));
+        CHECK(Expr(x) + Expr(inf) == Expr(inf) + Expr(x));
+        CHECK(Expr(inf) == Expr(inf));
+        CHECK(Expr(inf).hash() == Expr(inf).hash());
+        CHECK_FALSE(Expr(-inf) == Expr(inf));
+    }
+}
+
+TEST_CASE("negative zero equals zero, so it hashes equally") {
+    // MSVC's std::hash<double> hashes the bit pattern, where libstdc++ special-
+    // cases zero; an unordered container then failed to find one by the other.
+    const Expr zero = Expr::real(0.0);
+    const Expr negativeZero = Expr::real(-0.0);
+    CHECK(zero == negativeZero);
+    CHECK(zero.hash() == negativeZero.hash());
+
+    const std::unordered_set<Expr> set{zero};
+    CHECK(set.count(negativeZero) == 1);
+}
+
 TEST_CASE("printing parenthesises by precedence") {
     const Symbol x("x");
     const Symbol y("y");

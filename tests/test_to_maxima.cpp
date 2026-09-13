@@ -93,7 +93,8 @@ TEST_CASE("atoms") {
     SUBCASE("infinities have Maxima's names, and NaN has none") {
         CHECK(toMaxima(Expr(std::numeric_limits<double>::infinity())) == "$INF");
         CHECK(toMaxima(Expr(-std::numeric_limits<double>::infinity())) == "$MINF");
-        CHECK_THROWS_AS(toMaxima(Expr(std::nan(""))), mx::Error);
+        // Refused before it gets this far: no Expr can hold a NaN.
+        CHECK_THROWS_AS(Expr(std::nan("")), mx::Error);
     }
 }
 
