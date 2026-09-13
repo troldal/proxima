@@ -13,6 +13,7 @@
 
 #include <atomic>
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <span>
 #include <string>
@@ -324,6 +325,132 @@ TEST_CASE("a definite integral agrees with sampling its antiderivative") {
     const auto f = mx::asFunction(*antiderivative, x);
 
     CHECK(f(1.0) - f(0.0) == doctest::Approx(mx::evalNumeric(*exact)));
+}
+
+} // TEST_SUITE("maxima")
+
+// --- functions whose C library namesakes mean something else ----------------
+
+TEST_CASE("mod and round are Maxima's, not the C library's") {
+    // Both used to be the <cmath> function of the same name, which answers a
+    // different question: std::fmod truncates towards zero and std::round
+    // rounds halves away from zero. Every expectation below is the answer
+    // Maxima itself gave.
+    const auto mod = [](double a, double b) {
+        return mx::evalNumeric(Expr::function("mod", {Expr(a), Expr(b)}));
+    };
+    const auto round = [](double value) {
+        return mx::evalNumeric(Expr::function("round", {Expr(value)}));
+    };
+
+    SUBCASE("mod takes the sign of the divisor") {
+        CHECK(mod(7, 3) == 1.0);
+        CHECK(mod(-7, 3) == 2.0); // Was -1.
+        CHECK(mod(7, -3) == -2.0);
+        CHECK(mod(-7, -3) == -1.0);
+        CHECK(mod(7.5, 2) == 1.5);
+        CHECK(mod(-7.5, 2) == 0.5);
+        CHECK(mod(7.5, -2) == -0.5);
+        CHECK(mod(5, 2.5) == 0.0);
+        CHECK(mod(0, 3) == 0.0);
+    }
+    SUBCASE("a remainder of zero is not a negative zero") {
+        CHECK(mod(-6, 3) == 0.0);
+        CHECK_FALSE(std::signbit(mod(-6, 3)));
+    }
+    SUBCASE("mod by zero is the dividend") {
+        // Was NaN.
+        CHECK(mod(7, 0) == 7.0);
+        CHECK(mod(-7.5, 0) == -7.5);
+    }
+    SUBCASE("mod is exact where Maxima's float arithmetic is not") {
+        // A deliberate difference. 1e20 is exactly representable and leaves a
+        // remainder of 1; Maxima computes x - y*floor(x/y) in floating point,
+        // which rounds, and answers 0.0.
+        CHECK(mod(1e20, 3) == 1.0);
+    }
+
+    SUBCASE("round sends halves to the even neighbour") {
+        CHECK(round(2.5) == 2.0); // Was 3.
+        CHECK(round(3.5) == 4.0);
+        CHECK(round(1.5) == 2.0);
+        CHECK(round(-2.5) == -2.0); // Was -3.
+        CHECK(round(-3.5) == -4.0);
+        CHECK(round(0.5) == 0.0);
+    }
+    SUBCASE("and anything else to the nearest") {
+        CHECK(round(2.4999) == 2.0);
+        CHECK(round(2.6) == 3.0);
+        CHECK(round(-2.6) == -3.0);
+        CHECK(round(7) == 7.0);
+        CHECK(round(4503599627370497.0) == 4503599627370497.0);
+    }
+    SUBCASE("rounding -0.5 gives a zero with no sign") {
+        CHECK(round(-0.5) == 0.0);
+        CHECK_FALSE(std::signbit(round(-0.5)));
+    }
+    SUBCASE("infinities and NaN pass through") {
+        CHECK(std::isinf(round(std::numeric_limits<double>::infinity())));
+        CHECK(round(-std::numeric_limits<double>::infinity()) < 0);
+        CHECK(std::isnan(round(std::nan(""))));
+    }
+
+    SUBCASE("the compiled form agrees, since it shares the function table") {
+        const Symbol x("x");
+        const mx::Compiled compiledMod(Expr::function("mod", {Expr(x), Expr(3)}),
+                                       x);
+        CHECK(compiledMod(-7.0) == 2.0);
+        CHECK(compiledMod(-6.0) == 0.0);
+        const mx::Compiled compiledRound(Expr::function("round", {Expr(x)}), x);
+        CHECK(compiledRound(2.5) == 2.0);
+        CHECK(compiledRound(-2.5) == -2.0);
+    }
+}
+
+TEST_SUITE("maxima") {
+
+TEST_CASE("mod and round agree with Maxima across signs and halves") {
+    // The builtins are the one place this library computes something Maxima
+    // also computes, so they are checked against it directly — the way
+    // test_integer.cpp checks bignum arithmetic — rather than against
+    // expectations written by whoever wrote the code.
+    mx::Kernel kernel;
+
+    // Integral values are sent as integers, which is how they would appear in
+    // a closed form, and which sidesteps asking what mod(x, 0.0) means.
+    const auto text = [](double value) {
+        if (std::floor(value) == value && std::fabs(value) < 1e15) {
+            return Expr(static_cast<long long>(value)).str();
+        }
+        return Expr(value).str();
+    };
+    const auto maxima = [&kernel](const std::string &source) {
+        const auto answer = mx::parse(source, kernel);
+        REQUIRE_MESSAGE(answer.has_value(), source);
+        return mx::evalNumeric(*answer);
+    };
+
+    const double dividends[] = {-7.5, -7, -6, -2.5, -0.5, 0, 0.5, 2.5, 6, 7, 7.5};
+    const double divisors[] = {-3, -2, 2, 2.5, 3, 0};
+    for (const double a : dividends) {
+        for (const double b : divisors) {
+            const std::string source = "mod(" + text(a) + ", " + text(b) + ")";
+            CAPTURE(source);
+            const double local
+                = mx::evalNumeric(Expr::function("mod", {Expr(a), Expr(b)}));
+            CHECK(sameNumber(local, maxima(source)));
+        }
+    }
+
+    const double values[] = {-3.5, -2.6, -2.5, -1.5, -0.5, 0.5,
+                             1.5,  2.4999, 2.5, 2.6, 3.5, 7};
+    for (const double value : values) {
+        const std::string source = "round(" + text(value) + ")";
+        CAPTURE(source);
+        const double local
+            = mx::evalNumeric(Expr::function("round", {Expr(value)}));
+        CHECK(sameNumber(local, maxima(source)));
+    }
 }
 
 } // TEST_SUITE("maxima")

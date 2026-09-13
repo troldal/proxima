@@ -45,6 +45,58 @@ double signumOf(const double *args, std::size_t) {
     return static_cast<double>((args[0] > 0) - (args[0] < 0));
 }
 
+// mod and round are not their <cmath> namesakes. std::fmod truncates towards
+// zero and std::round rounds halves away from zero; Maxima does neither, so a
+// closed form containing either used to evaluate to one number here and
+// another in Maxima — mod(-7, 3) was -1 against Maxima's 2, round(2.5) was 3
+// against its 2. Both behaviours below were checked against Maxima itself, and
+// test_numeric.cpp keeps checking them.
+
+/// Maxima's mod: the remainder takes the sign of the divisor, and mod(x, 0) is
+/// x rather than NaN.
+///
+/// Computed as fmod plus a sign correction rather than as x - y*floor(x/y),
+/// which is how Maxima computes it for floats. The two agree except where that
+/// formula loses precision: mod(1e20, 3) is exactly 1, since 1e20 is exactly
+/// representable, but Maxima's floating arithmetic answers 0.0. This returns 1.
+double flooredModulo(const double *args, std::size_t) {
+    const double dividend = args[0];
+    const double divisor = args[1];
+    if (divisor == 0.0) {
+        return dividend;
+    }
+    double remainder = std::fmod(dividend, divisor); // Exact; dividend's sign.
+    if (remainder != 0.0 && (remainder < 0.0) != (divisor < 0.0)) {
+        remainder += divisor;
+    }
+    // A zero takes the divisor's sign too, so mod(-6, 3) is 0 and not -0.
+    return remainder == 0.0 ? std::copysign(0.0, divisor) : remainder;
+}
+
+/// Maxima's round: halves go to the nearest even integer, in both directions.
+///
+/// Written out rather than delegated to std::nearbyint, which would do the
+/// same only while the floating-point rounding mode is the default — a mode
+/// the host program is free to change.
+double roundHalfToEven(const double *args, std::size_t) {
+    const double value = args[0];
+    const double below = std::floor(value);
+    // Exact: below is within one of value, so no bits are lost. For infinities
+    // and NaN this is NaN, which falls through to the last branch and returns
+    // the argument's own infinity or NaN.
+    const double fraction = value - below;
+    double result;
+    if (fraction < 0.5) {
+        result = below;
+    } else if (fraction > 0.5) {
+        result = below + 1.0;
+    } else {
+        result = std::fmod(below, 2.0) == 0.0 ? below : below + 1.0;
+    }
+    // -0.5 rounds to 0, and Maxima's 0 has no sign.
+    return result + 0.0;
+}
+
 double maximumOf(const double *args, std::size_t count) {
     double result = args[0];
     for (std::size_t i = 1; i < count; ++i) {
@@ -71,9 +123,9 @@ constexpr Builtin kBuiltins[] = {
     {"exp", 1, unary<std::exp>},       {"log", 1, unary<std::log>},
     {"sqrt", 1, unary<std::sqrt>},     {"abs", 1, unary<std::fabs>},
     {"floor", 1, unary<std::floor>},   {"ceiling", 1, unary<std::ceil>},
-    {"round", 1, unary<std::round>},   {"erf", 1, unary<std::erf>},
+    {"round", 1, roundHalfToEven},     {"erf", 1, unary<std::erf>},
     {"signum", 1, signumOf},           {"atan2", 2, binary<std::atan2>},
-    {"mod", 2, binary<std::fmod>},     {"max", -1, maximumOf},
+    {"mod", 2, flooredModulo},         {"max", -1, maximumOf},
     {"min", -1, minimumOf},
 };
 
