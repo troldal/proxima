@@ -1,6 +1,7 @@
 #include "transport/child_process.hpp"
 
 #include "transport/process_env.hpp"
+#include "util/utf8.hpp"
 
 #include <mx/errors.hpp>
 
@@ -135,9 +136,19 @@ ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &arg
     const std::vector<std::string> environment = mergeEnvironment(env);
     const std::vector<std::string> arguments(argv.begin() + 1, argv.end());
 
+    // The arguments and the environment are UTF-8, and Boost.Process converts
+    // them as such; the executable has to be read the same way. Constructing
+    // the path straight from the std::string would read it as the ANSI code
+    // page on Windows and launch a different — most likely no — file.
+    const auto executable = tryPathFromUtf8(argv.front());
+    if (!executable) {
+        throw KernelError("Failed to start child process: the executable path "
+                          "is not valid UTF-8");
+    }
+
     try {
         impl_->process.emplace(
-            impl_->context.get_executor(), bp::filesystem::path(argv.front()),
+            impl_->context.get_executor(), *executable,
             arguments,
             // The same write end twice. On Windows it then appears twice,
             // consecutively, in the list of handles the child inherits; the

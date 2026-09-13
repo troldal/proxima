@@ -9,13 +9,17 @@
 #include <mx/kernel.hpp>
 #include <mx/symbol.hpp>
 
+#include "kernel/discovery.hpp"
+#include "util/utf8.hpp"
 #include "wire/from_maxima.hpp"
 #include "wire/sexpr.hpp"
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <system_error>
 #include <vector>
 
 namespace {
@@ -334,6 +338,72 @@ TEST_CASE("two kernels are independent") {
     REQUIRE(first.eval("b: 1").ok);
     // `second` never saw the binding, so Maxima echoes the symbol back.
     CHECK(second.eval("b").value == "$B");
+}
+
+TEST_CASE("a Maxima reached through a non-ASCII path starts and answers") {
+    // The installation this machine has, reached through a link whose name
+    // holds a Latin letter and two CJK characters — more than any ANSI code
+    // page does — with a user directory named the same way. That exercises
+    // the whole path: discovery, the launch recipe, the transport, and then
+    // SBCL and Maxima, which have to decode the command line and environment
+    // they are given.
+    namespace fs = std::filesystem;
+    const mx::detail::MaximaInstall real
+        = mx::detail::discoverMaxima(mx::Config{}, mx::detail::systemEnv());
+
+    const std::string name
+        = std::string("mx_") + "m" "\xC3\xA6" "xima_" "\xE4\xB8\xAD" "\xE6\x96\x87";
+    const fs::path base = fs::temp_directory_path() / "maxima_cpp_unicode_test";
+    const fs::path link = base / mx::detail::pathFromUtf8(name);
+    const fs::path userDir = base / mx::detail::pathFromUtf8(name + "_userdir");
+
+    // Never remove_all on `link`: it could follow the link into the real
+    // installation. fs::remove takes away the link and nothing behind it.
+    std::error_code ec;
+    fs::create_directories(base, ec);
+    fs::remove(link, ec);
+
+    ec.clear();
+    fs::create_directory_symlink(real.root, link, ec);
+#ifdef _WIN32
+    if (ec) {
+        // A symbolic link needs Developer Mode or elevation on Windows; a
+        // junction needs neither. _wsystem, so the name reaches cmd intact.
+        ec.clear();
+        const std::wstring command = L"mklink /J \"" + link.native() + L"\" \""
+                                     + real.root.native() + L"\" >nul";
+        if (_wsystem(command.c_str()) != 0) {
+            ec = std::make_error_code(std::errc::operation_not_permitted);
+        }
+    }
+#endif
+    if (ec || !fs::is_directory(link)) {
+        MESSAGE("Could not link to the Maxima installation; skipped.");
+        return;
+    }
+
+    {
+        mx::Config config;
+        config.maximaRoot = link;
+        config.userDir = userDir;
+        mx::Kernel maxima(config);
+
+        const mx::Reply sum = maxima.eval("1 + 1");
+        REQUIRE(sum.ok);
+        CHECK(sum.value == "2");
+
+        // Maxima's own idea of its user directory came from MAXIMA_USERDIR, so
+        // this is the environment value after SBCL decoded it and after the
+        // reply came back over the pipe.
+        const mx::Reply where = maxima.eval("maxima_userdir");
+        REQUIRE(where.ok);
+        CAPTURE(where.value);
+        CHECK(where.value.find(name + "_userdir") != std::string::npos);
+    }
+
+    fs::remove(link, ec);
+    fs::remove_all(userDir, ec);
+    fs::remove(base, ec);
 }
 
 } // TEST_SUITE("maxima")

@@ -25,6 +25,11 @@ class ChildProcessTransport final : public ITransport {
 public:
     /// Launches `argv[0]` with the remaining entries as its arguments.
     ///
+    /// Every string — the executable, the arguments, the environment names
+    /// and values — is UTF-8 on every platform, as it is everywhere inside the
+    /// library (see util/utf8.hpp). Not the ANSI code page: a path taken from
+    /// std::filesystem::path::string() on Windows is the wrong encoding here.
+    ///
     /// `argv[0]` is executed as given rather than searched for on PATH, so
     /// callers pass a resolved path. `env` entries are merged over the parent's
     /// environment rather than replacing it, so the child keeps PATH and

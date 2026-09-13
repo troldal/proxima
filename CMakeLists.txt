@@ -92,6 +92,7 @@ add_library(maxima_cpp
         src/kernel/persistent_cache.cpp
         src/kernel/kernel.cpp
         src/kernel/ops.cpp
+        src/kernel/sbcl_path.cpp
         src/kernel/session.cpp
         src/transport/child_process.cpp
         src/transport/fake_transport.cpp

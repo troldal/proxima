@@ -29,10 +29,11 @@ struct MaximaInstall {
     bool raiseDynamicSpaceSize = false;
 };
 
-/// Reads an environment variable; absent means unset.
+/// Reads an environment variable; absent means unset. Values are UTF-8.
 using EnvLookup = std::function<std::optional<std::string>(std::string_view)>;
 
-/// The real process environment.
+/// The real process environment, read through the wide API on Windows so that
+/// values outside the ANSI code page arrive intact.
 EnvLookup systemEnv();
 
 /// Candidate installation roots in precedence order:
@@ -61,6 +62,21 @@ std::vector<std::filesystem::path> knownInstallRoots();
 /// unrelated sbcl.exe. Only <root>/bin and <root>/lib are consulted, and the
 /// bounded fallback within them runs only if the standard layout is absent.
 std::optional<MaximaInstall> inspectRoot(const std::filesystem::path &root);
+
+/// The spelling of `path` to put on SBCL's command line.
+///
+/// On Windows SBCL's C runtime reads its command line through the ANSI API, so
+/// an executable or core under a path outside ASCII cannot be opened by the
+/// name the transport passes, even though the launch itself is wide. For such
+/// a path this returns its 8.3 short form, which is ASCII. Where the volume has
+/// no short names it returns the path unchanged, and SBCL may still fail.
+///
+/// ASCII paths, and every path on other platforms, come back unchanged. Only
+/// the two command-line paths need this: SBCL reads the environment, and Maxima
+/// the files under its prefix, in full Unicode.
+///
+/// Consults the filesystem on Windows, so the path should exist.
+std::filesystem::path sbclReadablePath(const std::filesystem::path &path);
 
 /// Returns the first usable installation, or throws KernelError naming every
 /// location tried.

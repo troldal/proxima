@@ -1343,12 +1343,80 @@ Smaller things found on the way:
   arriving, and on POSIX awkward arguments arriving intact. None of them can
   catch the completion-port bug; the Maxima integration suite is what guards
   that.
-- `session.cpp` still builds the SBCL command line with `path::string()`, so a
-  Maxima under a non-ASCII path is only half fixed: the launch is wide now, the
-  string handed to it is not.
+- `session.cpp` still built the SBCL command line with `path::string()`, so a
+  Maxima under a non-ASCII path was only half fixed: the launch was wide, the
+  string handed to it was not. See "Paths outside ASCII", next.
 
 Suite after: 250 cases / 2771 assertions on Windows (GCC and clang-cl),
 251 / 2771 on Linux; no warnings under the strict set on either.
+
+### Paths outside ASCII
+
+**The convention.** Inside the library every `std::string` holding a path, an
+argument or an environment value is UTF-8, on every platform. That is not a
+choice so much as the only encoding that works: Boost.Process v2 converts
+narrow strings to the wide Windows API as UTF-8 (`libs/process/src/detail/
+utf8.cpp`), whereas `std::filesystem::path::string()` on Windows is the ANSI
+code page. The two disagreed at every place a path became a string, and a
+Maxima under `C:\Programmer\mæxima` was mangled on its way to SBCL.
+
+**The conversions are the standard library's.** `src/util/utf8.hpp` holds
+`toUtf8` and `pathFromUtf8`, which go through `path::u8string()` and a `path`
+built from `std::u8string`; the functions only move bytes between `char8_t`
+and `char`. No UTF-8 library was added. A library would only have changed
+what happens to input that is not valid Unicode — a Windows file name with a
+lone surrogate, which NTFS permits — and the right response to that here is
+to skip the entry, which `tryToUtf8` and `tryPathFromUtf8` do. What the
+standard library throws for it differs by implementation (`std::system_error`,
+`std::range_error`), so they catch anything but `std::bad_alloc`.
+
+Places that changed:
+
+- `launchCommand` and the environment paths use `toUtf8`.
+- The transport builds the executable path with `pathFromUtf8`; it had been
+  reading `argv[0]` as ANSI while Boost.Process read the arguments as UTF-8.
+- Discovery reads `MAXIMA_ROOT`, `MAXIMA_PREFIX` and `PATH` through
+  Boost.Process's wide environment instead of `std::getenv`, which on Windows
+  replaces anything outside the code page with `?`. It compares directory
+  names in native encoding, so an unconvertible neighbour of `C:\maxima-*` is
+  not an exception, and its messages go through `describePath`.
+- The persistent cache names its temporaries with `path +=` rather than
+  `target.string() + ".tmp"`.
+
+**SBCL was the other half.** With all of that in place, Maxima reached through
+a junction named `mx_mæxima_中文` still died at startup. Probing SBCL 2.6.7 (as
+shipped with Maxima 5.50) one variable at a time:
+
+| handed to SBCL through the non-ASCII name | result |
+|---|---|
+| the core, on the command line | `could not open file "…\mx_m\xe6xima_??\…\maxima.core"`, exit |
+| the executable | starts, but warns that `*RUNTIME-PATHNAME*` cannot be decoded |
+| `SBCL_HOME`, `MAXIMA_USERDIR` | read intact, every code point right |
+| `MAXIMA_PREFIX`, with the core by a short name | Maxima loads `functs` and finds `lapack` under it |
+
+SBCL's C runtime reads its command line through the ANSI API; everything Lisp
+reads afterwards is Unicode-clean, and its default external format is UTF-8,
+so replies come back over the pipe as UTF-8 too. The command line is the one
+place a C++ fix cannot reach. `sbclReadablePath` (`src/kernel/sbcl_path.cpp`)
+therefore hands SBCL the 8.3 short form of the executable and the core when
+their paths are not ASCII — short names are ASCII — and leaves them alone
+otherwise, so ordinary installs keep readable names. The environment keeps the
+long UTF-8 paths, so `maxima_userdir` is the directory the user configured.
+
+The limit: a volume with 8.3 name generation turned off has no short names,
+and there `sbclReadablePath` returns the long path and SBCL fails as before.
+The system drive normally has them; other volumes often do not. The fix
+belongs in SBCL — reading the command line with `GetCommandLineW` — and is
+worth reporting upstream.
+
+Tests: conversions checked against spelled-out UTF-8 bytes; the real
+environment read back after `_wputenv_s`/`setenv`; candidate roots and the
+launch recipe with a non-ASCII install; the transport launching a shell copied
+into a non-ASCII directory, and comparing a non-ASCII argument with a
+non-ASCII environment value inside the child; `sbclReadablePath` on a real
+directory; and an integration test that starts the machine's own Maxima
+through a non-ASCII junction (a symlink on Linux) with a non-ASCII user
+directory, and checks `maxima_userdir` comes back byte for byte.
 
 ### Decided, but not built
 

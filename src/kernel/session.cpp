@@ -2,6 +2,7 @@
 
 #include "kernel/discovery.hpp"
 #include "transport/child_process.hpp"
+#include "util/utf8.hpp"
 #include "wire/to_maxima.hpp"
 
 #include <mx/errors.hpp>
@@ -21,9 +22,11 @@ namespace {
 constexpr std::chrono::milliseconds kPollInterval{50};
 
 // Maxima expects Windows paths with forward slashes; upstream's maxima.bat
-// performs the same substitution before exporting maxima_prefix.
+// performs the same substitution before exporting maxima_prefix. UTF-8, like
+// every string handed to the transport; '\\' is ASCII, so replacing it in the
+// encoded bytes cannot touch part of a longer character.
 std::string toMaximaPath(const std::filesystem::path &p) {
-    std::string text = p.string();
+    std::string text = toUtf8(p);
     std::replace(text.begin(), text.end(), '\\', '/');
     return text;
 }
@@ -106,9 +109,18 @@ std::unique_ptr<ITransport> launchMaxima(const Config &config,
                                          std::string &versionTag) {
     const MaximaInstall install = discoverMaxima(config, systemEnv());
     versionTag = install.versionTag;
+
+    // SBCL's runtime opens its executable and core by the names on its
+    // command line, which it reads through the ANSI API on Windows; those two
+    // get a spelling it can open. The root stays as it is: it only reaches the
+    // environment, which SBCL and Maxima read in full Unicode.
+    MaximaInstall launchable = install;
+    launchable.sbclExe = sbclReadablePath(install.sbclExe);
+    launchable.maximaCore = sbclReadablePath(install.maximaCore);
+
     return std::make_unique<ChildProcessTransport>(
-        MaximaSession::launchCommand(install),
-        MaximaSession::launchEnvironment(install, config));
+        MaximaSession::launchCommand(launchable),
+        MaximaSession::launchEnvironment(launchable, config));
 }
 
 } // namespace
@@ -185,8 +197,11 @@ std::string MaximaSession::requestFor(std::uint64_t id, const Payload &payload) 
 
 std::vector<std::string>
 MaximaSession::launchCommand(const MaximaInstall &install) {
-    std::vector<std::string> argv{install.sbclExe.string(), "--core",
-                                  install.maximaCore.string(), "--noinform"};
+    // UTF-8, as the transport takes every string. path::string() would be the
+    // ANSI code page on Windows, which mangles a Maxima installed under a path
+    // outside it before SBCL ever sees it.
+    std::vector<std::string> argv{toUtf8(install.sbclExe), "--core",
+                                  toUtf8(install.maximaCore), "--noinform"};
 
     if (install.raiseDynamicSpaceSize) {
         // What maxima.bat does on 64-bit builds, and for the same reason:

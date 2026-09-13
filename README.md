@@ -228,6 +228,10 @@ by default: a library should compute the same answer on every machine.
 - A C++23 compiler.
 - Maxima built on SBCL, found at runtime.
   - Windows: the official installer. `C:\maxima-5.50.0` or wherever you put it.
+    A path with non-ASCII characters works, with one caveat that comes from
+    SBCL: its runtime can only open its executable and core by an ASCII name,
+    so the library passes their 8.3 short names, and those exist only on
+    volumes with short-name generation enabled — normally the system drive.
   - openSUSE: `zypper install maxima maxima-exec-sbcl`
   - Debian/Ubuntu: `apt install maxima maxima-sbcl`
 

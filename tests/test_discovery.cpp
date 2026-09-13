@@ -6,11 +6,14 @@
 
 #include "kernel/discovery.hpp"
 #include "kernel/session.hpp"
+#include "util/utf8.hpp"
 
 #include <mx/config.hpp>
 #include <mx/errors.hpp>
 
+#include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <initializer_list>
 #include <map>
@@ -199,7 +202,8 @@ TEST_CASE("launch command wires the core and installs the Lisp helper") {
         = MaximaSession::launchCommand(fakeInstall());
 
     REQUIRE_FALSE(argv.empty());
-    CHECK(argv.front() == (abs("maxima-5.50.0") / "bin" / kSbclName).string());
+    CHECK(argv.front()
+          == mx::detail::toUtf8(abs("maxima-5.50.0") / "bin" / kSbclName));
 
     const std::string text = joined(argv);
     CHECK(text.find("maxima.core") != std::string::npos);
@@ -304,4 +308,159 @@ TEST_CASE("opting into the user's configuration leaves MAXIMA_USERDIR alone") {
     for (const auto &[key, value] : env) {
         CHECK(key != "MAXIMA_USERDIR");
     }
+}
+
+// --- paths outside ASCII -------------------------------------------------------
+//
+// One name with a Latin letter and two CJK characters: no single ANSI code
+// page holds all three, so on Windows anything still going through one fails
+// here. Spelled with universal character names, so the test does not depend on
+// the encoding the compiler assumes for this file.
+
+namespace {
+
+constexpr const char8_t *kUnicodeName = u8"mæxima_中文";
+
+/// kUnicodeName's UTF-8 bytes, written out so the expectation is not computed
+/// by the code under test.
+constexpr const char *kUnicodeNameBytes
+    = "m" "\xC3\xA6" "xima_" "\xE4\xB8\xAD" "\xE6\x96\x87";
+
+std::filesystem::path unicodePath(std::string_view relative = {}) {
+    std::filesystem::path path = abs("apps") / std::filesystem::path(kUnicodeName);
+    if (!relative.empty()) {
+        path /= relative;
+    }
+    return path;
+}
+
+std::string utf8(const std::filesystem::path &path) {
+    return mx::detail::toUtf8(path);
+}
+
+} // namespace
+
+TEST_CASE("paths convert to and from UTF-8 exactly") {
+    const std::filesystem::path name(kUnicodeName);
+    CHECK(mx::detail::toUtf8(name) == kUnicodeNameBytes);
+    CHECK(mx::detail::pathFromUtf8(kUnicodeNameBytes) == name);
+#ifdef _WIN32
+    // And the native, wide, spelling is the right one — not bytes widened one
+    // at a time, which would round-trip just as well.
+    CHECK(name.native() == L"mæxima_中文");
+#endif
+
+    // Text that is not UTF-8 is refused, not guessed at. Only Windows has to
+    // transcode, so only Windows can notice.
+#ifdef _WIN32
+    CHECK_FALSE(mx::detail::tryPathFromUtf8("bad\xFF" "byte").has_value());
+#endif
+    CHECK(mx::detail::describePath(name) == kUnicodeNameBytes);
+}
+
+TEST_CASE("the real environment is read without loss") {
+    // What std::getenv could not do on Windows: its ANSI copy of the
+    // environment replaces the CJK characters with '?'.
+#ifdef _WIN32
+    REQUIRE(_wputenv_s(L"MX_UTF8_TEST", L"mæxima_中文") == 0);
+#else
+    REQUIRE(setenv("MX_UTF8_TEST", kUnicodeNameBytes, 1) == 0);
+#endif
+    const auto value = mx::detail::systemEnv()("MX_UTF8_TEST");
+#ifdef _WIN32
+    _wputenv_s(L"MX_UTF8_TEST", L"");
+#else
+    unsetenv("MX_UTF8_TEST");
+#endif
+
+    REQUIRE(value.has_value());
+    CHECK(*value == kUnicodeNameBytes);
+    CHECK_FALSE(mx::detail::systemEnv()("MX_UTF8_TEST").has_value());
+}
+
+TEST_CASE("non-ASCII environment values become the right candidate roots") {
+    const auto roots = candidateRoots(
+        mx::Config{},
+        fakeEnv({{"MAXIMA_ROOT", utf8(unicodePath("root"))},
+                 {"PATH", utf8(unicodePath("tools/bin"))}}));
+
+    REQUIRE(roots.size() == 2);
+    CHECK(roots[0] == unicodePath("root"));
+    CHECK(roots[1] == unicodePath("tools"));
+}
+
+TEST_CASE("an environment value that is not UTF-8 is skipped, not thrown") {
+    // Only reachable through an injected environment — the real one is
+    // converted to UTF-8 on the way in — but discovery must not turn it into
+    // an exception that is not a KernelError.
+    // Built as a string: a path cannot hold it on Windows, which is the point.
+    const std::string bad = std::string(kPrefix) + "bad\xFF" "root";
+    std::vector<std::filesystem::path> roots;
+    CHECK_NOTHROW(roots = candidateRoots(mx::Config{},
+                                         fakeEnv({{"MAXIMA_ROOT", bad},
+                                                  {"MAXIMA_PREFIX",
+                                                   abs("good").generic_string()}})));
+    CHECK(std::find(roots.begin(), roots.end(), abs("good")) != roots.end());
+}
+
+TEST_CASE("the launch recipe carries non-ASCII paths as UTF-8") {
+    MaximaInstall install = fakeInstall();
+    install.root = unicodePath("maxima-5.50.0");
+    install.sbclExe = install.root / "bin" / kSbclName;
+    install.maximaCore = install.root / "lib" / "maxima" / "5.50.0"
+                         / "binary-sbcl" / "maxima.core";
+
+    const std::vector<std::string> argv = MaximaSession::launchCommand(install);
+    REQUIRE(argv.size() > 2);
+    CHECK(argv[0] == utf8(install.sbclExe));
+    CHECK(argv[0].find(kUnicodeNameBytes) != std::string::npos);
+    CHECK(argv[2] == utf8(install.maximaCore));
+
+    mx::Config config;
+    config.userDir = unicodePath("userdir");
+    const auto env = MaximaSession::launchEnvironment(install, config);
+    for (const auto &[key, value] : env) {
+        // Every path in the environment names the install or the user
+        // directory, and each must be the UTF-8 bytes.
+        CAPTURE(key);
+        CHECK(value.find(kUnicodeNameBytes) != std::string::npos);
+    }
+}
+
+TEST_CASE("an ASCII path is handed to SBCL unchanged") {
+    // Not shortened just because it could be: messages and SBCL's own
+    // *CORE-PATHNAME* should keep the names a person recognises.
+    const std::filesystem::path path = abs("Program Files/maxima-5.50.0/bin");
+    CHECK(mx::detail::sbclReadablePath(path) == path);
+}
+
+TEST_CASE("a non-ASCII path is handed to SBCL in a form it can open") {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path()
+                         / fs::path(std::u8string(u8"mx_sbcl_") + kUnicodeName);
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    REQUIRE_FALSE(ec);
+
+    const fs::path readable = mx::detail::sbclReadablePath(dir);
+    // Whatever comes back names the same directory.
+    CHECK(fs::equivalent(readable, dir, ec));
+
+#ifdef _WIN32
+    const std::string spelled = mx::detail::toUtf8(readable);
+    const bool ascii = std::all_of(spelled.begin(), spelled.end(), [](char c) {
+        return static_cast<unsigned char>(c) < 0x80;
+    });
+    if (readable == dir) {
+        // Short-name generation is off on this volume; nothing to do but
+        // pass the long name and let SBCL try.
+        MESSAGE("No 8.3 short names on the temp volume; the path is unchanged.");
+    } else {
+        CHECK(ascii);
+    }
+#else
+    CHECK(readable == dir);
+#endif
+
+    fs::remove_all(dir, ec);
 }

@@ -114,9 +114,12 @@ void PersistentCache::insert(std::string_view source, const Reply &reply) const 
     // sees a half-written entry and two writers race only to produce identical
     // content.
     static std::atomic<std::uint64_t> counter{0};
-    const std::filesystem::path temporary
-        = target.string() + ".tmp"
-          + std::to_string(counter.fetch_add(1, std::memory_order_relaxed));
+    // Appended to the path itself, not to target.string(): that round trip
+    // goes through the ANSI code page on Windows, and a cache directory with a
+    // character outside it would come back as a different, or no, path.
+    std::filesystem::path temporary = target;
+    temporary += ".tmp"
+                 + std::to_string(counter.fetch_add(1, std::memory_order_relaxed));
 
     {
         std::ofstream out(temporary, std::ios::binary | std::ios::trunc);

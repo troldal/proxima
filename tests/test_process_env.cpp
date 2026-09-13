@@ -11,12 +11,15 @@
 
 #include "transport/child_process.hpp"
 #include "transport/process_env.hpp"
+#include "util/utf8.hpp"
 
 #include <mx/errors.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -59,10 +62,24 @@ std::string readUntil(ChildProcessTransport &child, std::string_view token,
 }
 
 #ifdef _WIN32
+/// cmd.exe, in UTF-8 like every string the transport takes. SystemRoot is read
+/// through mergeEnvironment rather than std::getenv, which on Windows gives the
+/// ANSI code page's copy of the environment.
 std::string commandShell() {
-    const char *root = std::getenv("SystemRoot");
-    return std::string(root != nullptr ? root : "C:\\Windows")
-           + "\\System32\\cmd.exe";
+    std::string root = "C:\\Windows";
+    for (const std::string &entry : mergeEnvironment({})) {
+        const std::string name = entry.substr(0, entry.find('='));
+        if (name.size() == 10
+            && std::equal(name.begin(), name.end(), "SYSTEMROOT",
+                          [](char a, char b) {
+                              return std::toupper(static_cast<unsigned char>(a))
+                                     == b;
+                          })) {
+            root = entry.substr(name.size() + 1);
+            break;
+        }
+    }
+    return root + "\\System32\\cmd.exe";
 }
 #endif
 
@@ -226,6 +243,89 @@ TEST_CASE("an environment override reaches the child") {
 #endif
     // Without the override the output would be the unexpanded name, or empty.
     CHECK(readUntil(child, "value42").find("value42") != std::string::npos);
+}
+
+// --- non-ASCII ------------------------------------------------------------------
+//
+// A Latin letter and two CJK characters, which no single ANSI code page holds,
+// in UTF-8 — the encoding the transport takes on every platform. Written as
+// bytes so the test does not depend on the source encoding.
+
+namespace {
+constexpr const char *kUnicodeBytes
+    = "m" "\xC3\xA6" "xima_" "\xE4\xB8\xAD" "\xE6\x96\x87";
+}
+
+TEST_CASE("an executable under a non-ASCII directory starts") {
+    // The shell copied into a directory with the name, then launched from
+    // there. If the executable path went through the ANSI code page the file
+    // would not be found and the constructor would throw.
+    const std::filesystem::path dir
+        = std::filesystem::temp_directory_path()
+          / mx::detail::pathFromUtf8(std::string("mx_transport_") + kUnicodeBytes);
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    REQUIRE_FALSE(ec);
+
+#ifdef _WIN32
+    const std::filesystem::path shell = dir / "cmd.exe";
+    std::filesystem::copy_file(commandShell(), shell,
+                               std::filesystem::copy_options::overwrite_existing,
+                               ec);
+#else
+    const std::filesystem::path shell = dir / "sh";
+    std::filesystem::copy_file("/bin/sh", shell,
+                               std::filesystem::copy_options::overwrite_existing,
+                               ec);
+    std::filesystem::permissions(shell, std::filesystem::perms::owner_exec,
+                                 std::filesystem::perm_options::add);
+#endif
+    REQUIRE_FALSE(ec);
+
+    {
+#ifdef _WIN32
+        ChildProcessTransport child({mx::detail::toUtf8(shell), "/c",
+                                     "echo mx_unicode^_ok"});
+#else
+        ChildProcessTransport child({mx::detail::toUtf8(shell), "-c",
+                                     "echo mx_unicode'_'ok"});
+#endif
+        CHECK(readUntil(child, "mx_unicode_ok").find("mx_unicode_ok")
+              != std::string::npos);
+    }
+
+    std::filesystem::remove_all(dir, ec);
+}
+
+TEST_CASE("non-ASCII arguments and environment values arrive intact") {
+#ifdef _WIN32
+    // cmd.exe compares the two in UTF-16, so the answer does not depend on
+    // the console code page its output would be written in. Both have to be
+    // the same characters — and the variable expanded at all — to match.
+    ChildProcessTransport child(
+        {commandShell(), "/c",
+         std::string("if \"%MX_TRANSPORT_TEST%\"==\"") + kUnicodeBytes
+             + "\" (echo mx_same) else (echo mx_different)"},
+        {{"MX_TRANSPORT_TEST", kUnicodeBytes}});
+    const std::string output = readUntil(child, "mx_");
+    CHECK(output.find("mx_same") != std::string::npos);
+#else
+    // POSIX passes bytes through untouched, so they can be compared directly.
+    ChildProcessTransport child(
+        {"/bin/sh", "-c", "printf '[%s][%s]' \"$1\" \"$MX_TRANSPORT_TEST\"", "sh",
+         kUnicodeBytes},
+        {{"MX_TRANSPORT_TEST", kUnicodeBytes}});
+    const std::string expected
+        = std::string("[") + kUnicodeBytes + "][" + kUnicodeBytes + "]";
+    CHECK(readUntil(child, expected).find(expected) != std::string::npos);
+#endif
+}
+
+TEST_CASE("an executable path that is not UTF-8 is a KernelError") {
+    // Only Windows transcodes, so only Windows can reject it; on POSIX the
+    // bytes are a legitimate, if nonexistent, file name.
+    CHECK_THROWS_AS(ChildProcessTransport({"no_such\xFF" "program"}),
+                    mx::KernelError);
 }
 
 #ifndef _WIN32

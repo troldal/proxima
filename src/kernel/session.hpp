@@ -171,12 +171,14 @@ public:
     /// Changes the per-call deadline. Does not affect Config::startupTimeout.
     void setTimeout(std::chrono::milliseconds timeout);
 
-    /// Builds the argv used to launch Maxima's SBCL image for `install`.
-    /// Exposed for testing; touches no filesystem and starts nothing.
+    /// Builds the argv used to launch Maxima's SBCL image for `install`, with
+    /// its paths in UTF-8. Exposed for testing; touches no filesystem and
+    /// starts nothing.
     static std::vector<std::string> launchCommand(const MaximaInstall &install);
 
-    /// Builds the environment overrides layered over the parent's environment.
-    /// Exposed for testing; may create Config::userDir but starts nothing.
+    /// Builds the environment overrides layered over the parent's environment,
+    /// with its paths in UTF-8 and forward slashes. Exposed for testing; may
+    /// create Config::userDir but starts nothing.
     static std::vector<EnvOverride> launchEnvironment(const MaximaInstall &install,
                                                       const Config &config);
 

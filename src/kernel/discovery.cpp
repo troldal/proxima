@@ -1,9 +1,12 @@
 #include "kernel/discovery.hpp"
 
+#include "util/utf8.hpp"
+
 #include <mx/errors.hpp>
 
+#include <boost/process/v2/environment.hpp>
+
 #include <algorithm>
-#include <cstdlib>
 #include <system_error>
 
 namespace mx::detail {
@@ -45,7 +48,23 @@ std::vector<fs::path> sortedChildren(const fs::path &dir) {
     return children;
 }
 
-/// Splits a PATH-style variable on the platform's separator.
+/// Whether a directory's name starts "maxima" or "Maxima".
+///
+/// Compared in the path's native encoding rather than converted first, so a
+/// neighbouring directory whose name will not convert — anything can sit in
+/// C:\Program Files — is simply not a match instead of an exception.
+bool namedLikeMaxima(const fs::path &p) {
+    const fs::path::string_type name = p.filename().native();
+    for (const fs::path &prefix : {fs::path("maxima"), fs::path("Maxima")}) {
+        if (name.rfind(prefix.native(), 0) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Splits a PATH-style variable, given as UTF-8, on the platform's separator.
+/// The separator is ASCII, so splitting the encoded bytes is safe.
 std::vector<fs::path> splitSearchPath(const std::string &value) {
     std::vector<fs::path> entries;
     size_t start = 0;
@@ -55,7 +74,9 @@ std::vector<fs::path> splitSearchPath(const std::string &value) {
             = value.substr(start, end == std::string::npos ? std::string::npos
                                                            : end - start);
         if (!piece.empty()) {
-            entries.emplace_back(piece);
+            if (auto entry = tryPathFromUtf8(piece)) {
+                entries.push_back(std::move(*entry));
+            }
         }
         if (end == std::string::npos) {
             break;
@@ -79,8 +100,11 @@ findCore(const fs::path &root) {
         const std::vector<fs::path> versions = sortedChildren(packageDir);
         for (auto it = versions.rbegin(); it != versions.rend(); ++it) {
             const fs::path core = *it / "binary-sbcl" / "maxima.core";
-            if (isRegularFile(core)) {
-                return std::pair{core, it->filename().string()};
+            if (!isRegularFile(core)) {
+                continue;
+            }
+            if (auto tag = tryToUtf8(it->filename())) {
+                return std::pair{core, std::move(*tag)};
             }
         }
         return std::nullopt;
@@ -120,13 +144,22 @@ findCore(const fs::path &root) {
 
 EnvLookup systemEnv() {
     return [](std::string_view name) -> std::optional<std::string> {
-        // std::getenv wants a NUL-terminated string.
-        const std::string key(name);
-        if (const char *value = std::getenv(key.c_str());
-            value != nullptr && *value != '\0') {
-            return std::string(value);
+        // Not std::getenv: on Windows that reads the environment through the
+        // ANSI code page, so a MAXIMA_ROOT or PATH entry with a character
+        // outside it arrives mangled. Boost.Process reads the wide
+        // environment and hands the value back as UTF-8.
+        namespace environment = boost::process::v2::environment;
+        boost::system::error_code ec;
+        const environment::value value
+            = environment::get(environment::key(std::string(name)), ec);
+        if (ec) {
+            return std::nullopt;
         }
-        return std::nullopt;
+        std::string text = value.string();
+        if (text.empty()) {
+            return std::nullopt;
+        }
+        return text;
     };
 }
 
@@ -142,11 +175,14 @@ std::vector<fs::path> candidateRoots(const Config &config, const EnvLookup &env)
     if (!config.maximaRoot.empty()) {
         add(config.maximaRoot);
     }
-    if (const auto value = env("MAXIMA_ROOT")) {
-        add(*value);
-    }
-    if (const auto value = env("MAXIMA_PREFIX")) {
-        add(*value);
+    // Environment values are UTF-8 (see EnvLookup). One that does not convert
+    // cannot name a directory anyway, so it is skipped rather than thrown.
+    for (const char *name : {"MAXIMA_ROOT", "MAXIMA_PREFIX"}) {
+        if (const auto value = env(name)) {
+            if (auto root = tryPathFromUtf8(*value)) {
+                add(*root);
+            }
+        }
     }
     if (const auto value = env("PATH")) {
         // Maxima's launcher lives at <root>/bin/maxima.bat, so a PATH entry
@@ -170,8 +206,7 @@ std::vector<fs::path> knownInstallRoots() {
                                  "C:\\Program Files (x86)"};
     for (const fs::path &parent : searchIn) {
         for (const fs::path &child : sortedChildren(parent)) {
-            const std::string name = child.filename().string();
-            if (name.rfind("maxima", 0) == 0 || name.rfind("Maxima", 0) == 0) {
+            if (namedLikeMaxima(child)) {
                 roots.push_back(child);
             }
         }
@@ -188,8 +223,7 @@ std::vector<fs::path> knownInstallRoots() {
 
     // Self-contained installs under /opt still get their own directory.
     for (const fs::path &child : sortedChildren("/opt")) {
-        const std::string name = child.filename().string();
-        if (name.rfind("maxima", 0) == 0 || name.rfind("Maxima", 0) == 0) {
+        if (namedLikeMaxima(child)) {
             roots.push_back(child);
         }
     }
@@ -245,7 +279,7 @@ MaximaInstall discoverMaxima(const Config &config, const EnvLookup &env) {
         throw KernelError(
             "Config::maximaRoot does not point at a usable Maxima "
             "installation: "
-            + config.maximaRoot.string()
+            + describePath(config.maximaRoot)
             + "\nExpected <root>/bin/sbcl.exe and "
               "<root>/lib/maxima/<version>/binary-sbcl/maxima.core");
     }
@@ -281,7 +315,7 @@ MaximaInstall discoverMaxima(const Config &config, const EnvLookup &env) {
     } else {
         message += "Tried:";
         for (const fs::path &root : tried) {
-            message += "\n  " + root.string();
+            message += "\n  " + describePath(root);
         }
     }
     throw KernelError(message);
