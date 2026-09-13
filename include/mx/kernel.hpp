@@ -1,18 +1,18 @@
 #pragma once
 
 #include <mx/config.hpp>
+#include <mx/expr.hpp>
 #include <mx/reply.hpp>
 
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <memory>
 #include <string>
 #include <string_view>
 
 namespace mx {
-
-class Expr;
 
 namespace detail {
 class MaximaSession;
@@ -105,6 +105,17 @@ public:
     Reply evalTracked(std::string_view statement);
     Reply evalTracked(const Expr &form);
 
+    /// eval, with the reply read into an expression: the way to call a Maxima
+    /// function this library has not wrapped without reading s-expressions.
+    /// `kernel.evalExpr("gcd(12, 18)")` is 6.
+    ///
+    /// A Maxima error is the Failure, carrying Maxima's message. Everything
+    /// eval's notes say about the reply cache and Config::cacheDirectory holds
+    /// here too; for a question known to change nothing, read an evalPure
+    /// reply with mx::toExpr instead, which keeps both.
+    std::expected<Expr, Failure> evalExpr(std::string_view expression);
+    std::expected<Expr, Failure> evalExpr(const Expr &form);
+
     /// Forgets every cached reply. Rarely needed directly — state changes made
     /// through this library already do it — but the escape hatch if Maxima has
     /// been changed some other way.
@@ -175,5 +186,13 @@ private:
     /// session_, so it expires first.
     std::shared_ptr<const int> lifetime_ = std::make_shared<const int>(0);
 };
+
+/// A reply read into an expression: its value when `ok`, and a Failure
+/// carrying the reason when not. How every operation in mx/ops.hpp reads its
+/// reply, and how to read one from evalPure or evalTracked.
+///
+/// Throws mx::ParseError if the value is not a Maxima term. No reply from a
+/// kernel should be one: it would mean the protocol itself had failed.
+std::expected<Expr, Failure> toExpr(const Reply &reply);
 
 } // namespace mx

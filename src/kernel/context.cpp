@@ -91,10 +91,11 @@ detail::Payload formOf(const Expr &expr) {
 }
 
 Expr replyOrThrow(const Reply &reply) {
-    if (!reply.ok) {
-        throw MaximaError(reply.reason);
+    auto result = toExpr(reply);
+    if (!result) {
+        throw MaximaError(result.error().message);
     }
-    return detail::fromMaxima(detail::parseSExpr(reply.value));
+    return std::move(*result);
 }
 
 /// Every statement a Context issues changes Maxima's state in a way the

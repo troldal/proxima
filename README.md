@@ -216,7 +216,9 @@ refused. `declare` covers `Integer`, `Even`, `Odd`, `Rational`, `Real`,
   can be misread by Maxima's parser, and nothing Maxima *cannot* read (a
   malformed string given to `Kernel::eval`) costs more than one round trip
   and a message. `Kernel::eval`, `evalPure` and `evalTracked` take an `Expr`
-  as well as text.
+  as well as text. `Kernel::evalExpr` evaluates and reads the reply back into
+  an `Expr` — `kernel.evalExpr("gcd(12, 18)")` is 6 — for a Maxima function
+  this library does not wrap.
 - **Remembers answers.** An LRU keyed on the request, discarded whenever
   anything might have changed it — any raw `eval`, any assumption added or
   dropped. Sized by `Config::cacheEntries`; zero disables it.

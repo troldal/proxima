@@ -13,17 +13,6 @@
 
 namespace mx {
 
-/// Why an operation produced no result.
-///
-/// An ordinary outcome, not a malfunction: Maxima genuinely cannot integrate
-/// every integrand or solve every equation. Infrastructure failures — the
-/// kernel died, nothing answered in time — throw mx::KernelError instead, and
-/// operations with no ordinary failure mode throw mx::MaximaError.
-struct Failure {
-    /// Human-readable, and usually Maxima's own wording.
-    std::string message;
-};
-
 /// The process-wide kernel, started on first use and shut down at exit.
 ///
 /// Convenient rather than obligatory: every operation below takes a Kernel to

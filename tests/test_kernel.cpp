@@ -44,6 +44,21 @@ mx::detail::SExpr stripSimplificationFlags(const mx::detail::SExpr &form) {
 
 } // namespace
 
+// No Maxima needed: a Reply is plain data.
+TEST_CASE("toExpr reads a reply into an expression, or into its failure") {
+    const auto read = mx::toExpr(mx::Reply{true, "((MPLUS SIMP) 1 $X)", ""});
+    REQUIRE(read.has_value());
+    CHECK(*read == mx::Expr::symbol("x") + 1);
+
+    const auto failed = mx::toExpr(mx::Reply{false, "", "expt: undefined: 0 to a negative exponent."});
+    REQUIRE_FALSE(failed.has_value());
+    CHECK(failed.error().message == "expt: undefined: 0 to a negative exponent.");
+
+    // Not a Maxima term at all: the protocol failing, not the mathematics.
+    CHECK_THROWS_AS(static_cast<void>(mx::toExpr(mx::Reply{true, "((MPLUS", ""})),
+                    mx::ParseError);
+}
+
 TEST_SUITE("maxima") {
 
 TEST_CASE("kernel evaluates arithmetic") {
@@ -452,6 +467,31 @@ TEST_CASE("a large reply arrives whole") {
         const mx::Reply deep = kernel.evalPure(nested);
         REQUIRE(deep.ok);
         CHECK(mx::detail::fromMaxima(mx::detail::parseSExpr(deep.value)) == nested);
+    }
+}
+
+TEST_CASE("evalExpr answers an unwrapped function with an expression") {
+    mx::Kernel kernel;
+
+    const auto gcd = kernel.evalExpr("gcd(12, 18)");
+    REQUIRE(gcd.has_value());
+    CHECK(*gcd == mx::Expr(6));
+
+    SUBCASE("sent as structure too") {
+        const mx::Expr x = mx::Expr::symbol("x");
+        const auto derivative
+            = kernel.evalExpr(mx::Expr::function("diff", {pow(x, mx::Expr(3)), x}));
+        REQUIRE(derivative.has_value());
+        CHECK(*derivative == 3 * pow(x, mx::Expr(2)));
+    }
+
+    SUBCASE("a Maxima error is the Failure, with Maxima's message") {
+        const auto failed = kernel.evalExpr("1/0");
+        REQUIRE_FALSE(failed.has_value());
+        CHECK_FALSE(failed.error().message.empty());
+
+        // Unparseable text too: read inside the error trap, so no stall.
+        CHECK_FALSE(kernel.evalExpr("(1").has_value());
     }
 }
 

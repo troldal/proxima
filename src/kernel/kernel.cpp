@@ -1,6 +1,8 @@
 #include <mx/kernel.hpp>
 
 #include "kernel/session.hpp"
+#include "wire/from_maxima.hpp"
+#include "wire/sexpr.hpp"
 #include "wire/to_maxima.hpp"
 
 #include <mx/errors.hpp>
@@ -55,6 +57,21 @@ Reply Kernel::evalTracked(std::string_view statement) {
 
 Reply Kernel::evalTracked(const Expr &form) {
     return session().evalTracked(detail::Payload::form(detail::toMaxima(form)));
+}
+
+std::expected<Expr, Failure> Kernel::evalExpr(std::string_view expression) {
+    return toExpr(eval(expression));
+}
+
+std::expected<Expr, Failure> Kernel::evalExpr(const Expr &form) {
+    return toExpr(eval(form));
+}
+
+std::expected<Expr, Failure> toExpr(const Reply &reply) {
+    if (!reply.ok) {
+        return std::unexpected(Failure{reply.reason});
+    }
+    return detail::fromMaxima(detail::parseSExpr(reply.value));
 }
 
 void Kernel::invalidateCache() {

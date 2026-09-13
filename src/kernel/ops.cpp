@@ -1,7 +1,5 @@
 #include <mx/ops.hpp>
 
-#include "wire/from_maxima.hpp"
-#include "wire/sexpr.hpp"
 #include "wire/to_maxima.hpp"
 
 #include <mx/errors.hpp>
@@ -26,11 +24,7 @@ std::expected<Expr, Failure> evaluate(Kernel &kernel, const Expr &form) {
     // instruction, so the answer can be remembered. The promise that goes with
     // evalPure is exactly what these functions are — nothing below assigns,
     // assumes or defines anything.
-    const Reply reply = kernel.evalPure(form);
-    if (!reply.ok) {
-        return std::unexpected(Failure{reply.reason});
-    }
-    return detail::fromMaxima(detail::parseSExpr(reply.value));
+    return toExpr(kernel.evalPure(form));
 }
 
 /// For the operations with no ordinary failure mode.
