@@ -22,7 +22,7 @@ Items are ordered by how much they matter, not by file.
 
 ## Status since the review
 
-Updated after `83f3bc8`. Resolved findings are ticked where they stand, with
+Updated after `39dad91`. Resolved findings are ticked where they stand, with
 an *Outcome* note; everything unticked is still open. The review's own text
 is left as written, so its measurements stay comparable.
 
@@ -67,8 +67,16 @@ Work since, and what it turned up that the review had not found:
   overlapped-write completions to this process's completion port and corrupted
   memory at startup — Windows only, Maxima only, invisible to tests using
   cmd.exe. PLAN.md "Boost.Process" has the details.
+- **Paths outside ASCII work** (`39dad91`). Resolves the rest of §2's
+  ANSI item. Every internal path string is UTF-8 now, converted by the
+  standard library, with no UTF-8 library added. Found: discovery read the
+  environment through `std::getenv`, which is ANSI on Windows. And SBCL's own
+  runtime reads its command line through the ANSI API, so it cannot open a
+  core under a non-ASCII path whatever the caller passes. The library hands it
+  8.3 short names instead, which only works on volumes that have them. PLAN.md
+  "Paths outside ASCII" has the measurements.
 
-Suite: 250 cases / 2771 assertions on Windows (GCC and clang-cl), 251 / 2771 on
+Suite: 261 cases / 2805 assertions on Windows (GCC and clang-cl), 262 / 2802 on
 Linux (222 when the review was written).
 
 Still open and worth doing first: §1's NaN ordering, which is undefined
@@ -281,7 +289,7 @@ These produce a result that disagrees with Maxima, silently.
   passes `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` with only the child's three
   standard handles.
 
-- [ ] **Win32 uses the ANSI API family.** `CreateProcessA`,
+- [x] **Win32 uses the ANSI API family.** `CreateProcessA`,
   `GetEnvironmentStringsA`, `STARTUPINFOA`. A Maxima installed under a
   non-ASCII path — or a non-ASCII `Config::userDir` — will fail or be
   mangled. Use the `W` variants and convert.
@@ -291,6 +299,15 @@ These produce a result that disagrees with Maxima, silently.
   `session.cpp` still builds the SBCL argv with `path::string()`, which is
   narrow on Windows, so a non-ASCII install path is still mangled before it
   reaches the launch. Left open for that.
+
+  *Outcome:* finished in `39dad91`. Every internal path string is
+  UTF-8, which is what Boost.Process converts from, and discovery reads the
+  environment through the wide API. An integration test starts Maxima through
+  a junction named `mx_mæxima_中文` with a user directory named the same way.
+  Getting there needed a workaround SBCL forced: its C runtime reads the core
+  path from the ANSI command line, so the executable and core are passed by
+  their 8.3 short names when they are not ASCII. On a volume with short names
+  disabled a non-ASCII install still fails, now inside SBCL rather than here.
 
 - [x] **Win32 `send` ignores `WriteFile`'s return value.** A failed or
   short write is silently dropped; the next `readFrame` then times out
