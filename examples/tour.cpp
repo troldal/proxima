@@ -686,7 +686,11 @@ void theKernel() {
     const mx::Expr question = pow(x, 5) * mx::exp(x);
     {
         mx::Kernel first(config);
-        mx::integrate(question, x, first); // Computed by Maxima, written to disk.
+        // Computed by Maxima and written to disk. Only that side effect is
+        // wanted here, so the answer is discarded — explicitly, because
+        // integrate's std::expected is [[nodiscard]]: ignoring a result that
+        // may be a Failure is usually a mistake.
+        static_cast<void>(mx::integrate(question, x, first));
     }
     mx::Kernel second(config); // A fresh Maxima process, same directory.
     const auto fromDisk = mx::integrate(question, x, second);
