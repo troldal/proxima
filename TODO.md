@@ -22,7 +22,7 @@ Items are ordered by how much they matter, not by file.
 
 ## Status since the review
 
-Updated after `edd45a1`. Resolved findings are ticked where they stand, with
+Updated after `9baaffe`. Resolved findings are ticked where they stand, with
 an *Outcome* note; everything unticked is still open. The review's own text
 is left as written, so its measurements stay comparable.
 
@@ -125,11 +125,22 @@ Work since, and what it turned up that the review had not found:
   `(RAT 1 0)` became the text `(1/0)`, which passes for an answer — and two
   more comments, in `errors.hpp` and `tests/CMakeLists.txt`, still described
   shipped work as future.
+- **§6, the recommended items only** (`e4dd610` … `9baaffe`); the rest are
+  struck with the reason. The persistent cache now has a size limit. The fuzz
+  targets found six bugs within minutes of their first runs, none of which the
+  suite had: a stack overflow on deeply nested text, long zero-padded integers
+  read in octal, a `;` that made the reply reader loop until memory ran out,
+  and three ways printed expressions read back in a different shape. Found on
+  the way: a fixed depth limit that was safe for GCC still overflowed the
+  stack in clang-cl's and MSVC's Debug builds, so the parser now measures the
+  stack it uses; and running three compilers' suites at once showed that the
+  non-ASCII path test shared one directory between runs.
 
-Suite: 311 cases / 4642 assertions on Windows (GCC and clang-cl), 312 / 4640 on
+Suite: 320 cases / 4707 assertions on Windows (GCC and clang-cl), 321 / 4705 on
 Linux (222 when the review was written).
 
-§1 to §5 are closed. What remains is the smaller sections from §6 on.
+§2 to §6 are closed; §1 has one new open item, found by fuzzing and left
+for a decision. What remains besides is §7 (build and process) and §8 (tests).
 
 ---
 
@@ -310,6 +321,19 @@ These produce a result that disagrees with Maxima, silently.
   found a second bug: bar-quoted symbols went through the same path as bare
   atoms, so `|123|` read as the integer 123. Quoted symbols now have their own
   token kind. Tests written first failed on the old code.
+
+- [ ] **A Real infinity prints as the symbol `inf`.** *Found by fuzzing, after
+  the review.* `Expr::real` allows infinities, and they reach Maxima as `inf`
+  and `minf`, so that is how one prints — and `Expr::parse` reads `inf` back as
+  the symbol, a different expression. A Real infinity is also reached from
+  finite input: a fold of an exact number with a real converts the exact one
+  to double, and overflows silently, so an integer of a few hundred digits
+  divided by `5.0` is `inf`. The literal `1e400`, meanwhile, is refused as out
+  of range (`e310a01`). Options: refuse a fold that overflows to infinity, as a
+  fold to NaN is refused; turn a Real infinity into the symbol `inf` or `minf`
+  at construction, which changes how infinities fold; or keep both, and
+  document that an infinity does not survive printing. `fuzz_parser` skips its
+  round-trip check for expressions holding one until this is decided.
 
 ## 2. Robustness — a typo costs two minutes
 
@@ -873,31 +897,82 @@ candidates, most valuable first.
   confined to `child_process.cpp`. `process_env.cpp` stays, smaller, because
   the session merges overrides into the inherited environment.
 
-- [ ] **`boost::container::small_vector` for `Node::args` and the
+- [x] ~~**`boost::container::small_vector` for `Node::args` and the
   normaliser's scratch vectors.** Already compiled as a transitive
-  dependency of multiprecision. See §3.
+  dependency of multiprecision. See §3.~~
 
-- [ ] **`std::variant` for the Node payload.** Standard library, no
+  *Struck:* not recommended in the end. §3's allocation work (`8908cb0`)
+  measured the gain without it, and Boost.Container is a compiled library:
+  linking it into this static one would have added a dependency to the
+  installed package.
+
+- [x] **`std::variant` for the Node payload.** Standard library, no
   dependency. See §3.
 
-- [ ] **A real database for the persistent cache?** SQLite would give
+  *Outcome:* done in `bfcdea6`, under §3.
+
+- [x] ~~**A real database for the persistent cache?** SQLite would give
   bounded size (there is *no eviction* today — `Config::cacheDirectory`
   grows forever), atomic multi-entry writes and a proper cross-process
   story. It is a compiled dependency, though, and the one-file-per-entry
-  design is genuinely simple. Recommendation: keep the files, add a size
+  design is genuinely simple.~~ Recommendation: keep the files, add a size
   cap with LRU-by-mtime eviction, and fix the temp-name collision (§1).
 
-- [ ] **Keep hand-written:** the LRU cache (70 lines, nothing to gain),
+  *Outcome:* SQLite struck; the recommendation done. The temp-name collision
+  was fixed in `f2de237`. The size cap is `e4dd610`: `Config::cacheDirectoryLimit`,
+  256 MB by default. A read refreshes an entry's modification time. Over the
+  limit, the oldest entries go until the directory is at three quarters of it,
+  and temporaries over an hour old go too. The first write learns the
+  directory's size, so a change of assumptions — which used to rebuild the
+  cache object — now restamps it in place rather than rescanning.
+
+- [x] **Keep hand-written:** the LRU cache (70 lines, nothing to gain),
   FNV-1a (stability across builds is the whole point; `std::hash` and
   `boost::hash` do not promise it), the s-expression reader (small,
   tested against golden files), and the Pratt parser (you asked for no
   third-party parser, and it is the right call — its bugs in §1 are
   semantic, not structural).
 
-- [ ] **A fuzz target for the two parsers.** libFuzzer/AFL on
+  *Outcome:* kept, as recommended. The fuzzing below is what the reader and the
+  parser needed instead.
+
+- [x] **A fuzz target for the two parsers.** libFuzzer/AFL on
   `parseSExpr` and `Expr::parse` is an afternoon and is how hand-written
   readers earn trust. `kMaxSExprDepth` exists, so someone already thought
   about hostile input; a fuzzer would find what the depth limit does not.
+
+  *Outcome:* done in `377a397`, behind `-DMAXIMA_CPP_BUILD_FUZZERS=ON`: libFuzzer
+  targets with AddressSanitizer where Clang has libFuzzer (Linux here; MinGW's
+  Clang has none), replay programs elsewhere, and a corpus that runs as CTest
+  tests. `fuzz_parser` also checks that what parses prints back to the same
+  expression. It found six bugs, each fixed with a test and its input kept in
+  the corpus:
+
+  - `Expr::parse` had no depth limit, so deeply nested text overflowed the stack
+    (`890bb5d`). The reader's `kMaxSExprDepth` had never had a counterpart. A
+    count alone was not enough: clang-cl's and MSVC's Debug builds overflowed
+    Windows' 1 MB stack before 1000 levels, so the parser also stops at 256 KB
+    of stack used (`69c534a`).
+  - `Integer::parse` handed zero-padded literals of more than eighteen digits
+    to `cpp_int`, which reads a leading 0 as octal. With an 8 or 9 that threw
+    an exception that escaped the reader; without, the value was silently wrong
+    (`9715c42`).
+  - `;` ended an atom but nothing consumed it, so the reply reader returned
+    empty atoms at the same place until memory ran out (`71de9ac`).
+  - The printer writes negative powers as divisions, which read back in a
+    different shape: `x^-2` as `(x^2)^-1`, `2^-1` as the Rational, and
+    `s/(n*f)` as a reciprocal of a product. The normaliser now keeps one form,
+    as Maxima does (`0d16e20`).
+  - A reciprocal of a number went below the line too, where it was multiplied
+    into the coefficient's denominator and folded when read back: `4/269*0^-1`
+    printed as `4/(269*0)`. It stays a power now (`db25b4b`).
+  - `-0.0` is not below zero, so the renderer took it for positive, yet it
+    prints with a minus: as a base, `(-0.0)^-1` printed as `-0.0^(-1)`, which
+    reads back as `-(0.0^-1)`. The sign now comes from the sign bit (`8cd67fd`).
+
+  A seventh finding is left open, being a question of design rather than a
+  slip: a Real infinity prints as `inf`, which reads back as the symbol. See
+  the new item at the end of §1.
 
 ## 7. Build, repo, process
 
