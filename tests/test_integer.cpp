@@ -172,6 +172,21 @@ TEST_CASE("gcd") {
     }
 }
 
+TEST_CASE("leading zeros are decimal, however long the literal") {
+    // Found by fuzzing: past eighteen digits the text went to cpp_int, which
+    // takes a leading 0 for an octal prefix. With an 8 or 9 in it that threw
+    // an exception nothing here expected; without, the value was silently wrong.
+    CHECK(Integer::parse("000000000000000000017") == Integer(17));
+    CHECK(Integer::parse("-000000000000000000017") == Integer(-17));
+    CHECK(Integer::parse("000000000000000000000") == Integer(0));
+    REQUIRE(Integer::parse("00525285981219105863630848000000").has_value());
+    CHECK(Integer::parse("00525285981219105863630848000000")->toString()
+          == "525285981219105863630848000000");
+    REQUIRE(Integer::parse("0012345670123456701234567").has_value());
+    CHECK(Integer::parse("0012345670123456701234567")->toString()
+          == "12345670123456701234567");
+}
+
 TEST_CASE("conversion out") {
     CHECK(Integer(42).toInt64() == 42);
     CHECK(Integer(kMinInt64).toInt64() == std::numeric_limits<std::int64_t>::min());

@@ -44,11 +44,23 @@ std::optional<Integer> Integer::parse(std::string_view text) {
     }
 
     // cpp_int's reader accepts rather more than a decimal literal -- 0x and 0b
-    // prefixes among it -- so the digits are checked here first. A leading zero
-    // is fine; it is not an octal prefix to this class.
+    // prefixes among it -- so the digits are checked here first.
     if (!std::all_of(text.begin(), text.end(),
                      [](char c) { return c >= '0' && c <= '9'; })) {
         return std::nullopt;
+    }
+
+    // And a leading zero is an octal prefix to it. Found by fuzzing: a literal
+    // of more than eighteen digits starting with 0 was read in base 8, so
+    // "0052...8..." threw an exception that escaped the reader of Maxima's
+    // replies, and one with no 8 or 9 in it silently had the wrong value.
+    const std::size_t firstSignificant = text.find_first_not_of('0');
+    if (firstSignificant == std::string_view::npos) {
+        return Integer(0);
+    }
+    text.remove_prefix(firstSignificant);
+    if (text.size() <= 18) {
+        return parse(negative ? "-" + std::string(text) : std::string(text));
     }
 
     Backend value;
