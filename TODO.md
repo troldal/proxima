@@ -22,7 +22,7 @@ Items are ordered by how much they matter, not by file.
 
 ## Status since the review
 
-Updated after `de0061e`. Resolved findings are ticked where they stand, with
+Updated after `aac36c1`. Resolved findings are ticked where they stand, with
 an *Outcome* note; everything unticked is still open. The review's own text
 is left as written, so its measurements stay comparable.
 
@@ -52,12 +52,15 @@ Work since, and what it turned up that the review had not found:
   items and the §8 cross-check. Found: `mod(x, 0)` was NaN where Maxima gives
   `x`; and Maxima's own float `mod` loses precision at large magnitudes, so
   `mod(1e20, 3)` is deliberately exact here (1) rather than Maxima's 0.0.
+- **`bool` and characters are no longer numbers** (`aac36c1`). Resolves the §1
+  `Expr(true)` trap and its §8 test. Found: the wide character types got
+  through too, into `Integer` as well as `Expr`, and so did `x + true`.
 
-Suite: 248 cases / 2764 assertions on Windows, 245 / 2753 on Linux (222 when
+Suite: 249 cases / 2770 assertions on Windows, 246 / 2759 on Linux (222 when
 the review was written).
 
-Still open and worth doing first: the `Expr(true)` trap in §1, and §3's 15 ms
-Win32 round-trip floor.
+Still open and worth doing first: §3's 15 ms Win32 round-trip floor, and
+§1's NaN ordering, which is undefined behaviour in the normaliser's sort.
 
 ---
 
@@ -86,7 +89,7 @@ These produce a result that disagrees with Maxima, silently.
   set. Confirmed against Maxima for negative halves too: `round(-2.5)` is -2 and
   `round(-0.5)` is an unsigned 0.
 
-- [ ] **`Expr(true)` is the Real `1.0`, and `Expr('a')` is the Real
+- [x] **`Expr(true)` is the Real `1.0`, and `Expr('a')` is the Real
   `97.0`.** The integral constructor template correctly excludes `bool` and
   `char`, but that only diverts them to the non-template `Expr(double)`,
   which accepts them by standard conversion. The exclusion achieves the
@@ -94,6 +97,15 @@ These produce a result that disagrees with Maxima, silently.
   constrained on `std::floating_point`, or `= delete` the `bool` and `char`
   overloads explicitly. Same hazard exists on `mx::Integer`'s constructors
   for anything that later adds a floating constructor. (Measured.)
+
+  *Outcome:* fixed in `aac36c1`, with both suggested fixes together. The trap
+  was wider than described: the wide character types were never excluded, so
+  `Expr(u'a')` was the Integer 97 and `Integer(u'7')` compiled and meant 55,
+  and `x + true` quietly built `1.0 + x`. Two concepts in `integer.hpp` —
+  `IntegralNumber` and `BooleanOrCharacter` — now decide it for both classes,
+  keeping `std::int8_t` and `std::uint8_t` (spelled with `signed char` and
+  `unsigned char`) as numbers. The deleted constructors make the error name
+  the type: `use of deleted function 'mx::Expr::Expr(T) [with T = bool]'`.
 
 - [ ] **`Expr::parse("x!!")` gives `factorial(factorial(x))`.** In Maxima
   `!!` is the double factorial — a different function. The parser claims to
@@ -525,7 +537,9 @@ Maxima itself). Gaps, all cheap:
   with a `$`, a `Symbol` with a space. *(`test_to_maxima.cpp`, against a
   live kernel, with a 10 s bound that a regression to the old behaviour
   would blow through.)*
-- [ ] `Expr(true)`, `Expr('a')` — pin the intended behaviour.
+- [x] `Expr(true)`, `Expr('a')` — pin the intended behaviour. *(`aac36c1`:
+  compile-time checks in `test_expr.cpp` and `test_integer.cpp` for both
+  directions, which fail against the previous code.)*
 - [ ] Out-of-order `Context` destruction.
 - [ ] Two threads sharing one `Kernel` (the README promises it is safe;
   nothing exercises it).
