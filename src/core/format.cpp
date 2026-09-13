@@ -18,6 +18,10 @@ std::ostream &operator<<(std::ostream &out, const Integer &value) {
     return out << value.toString();
 }
 
+std::ostream &operator<<(std::ostream &out, Kind kind) {
+    return out << kindName(kind);
+}
+
 namespace detail {
 
 std::string notate(const Expr &expr, Notation notation) {

@@ -278,6 +278,13 @@ Expr rhs(const Expr &relation);
 /// Maxima's spelling of a relation operator: "=", "#", "<", "<=", ">", ">=".
 std::string_view symbolFor(RelOp op);
 
+/// The kind's name as the enumerator spells it: "Integer", "Add", "Opaque".
+/// For messages, logs and test output; `std::format("{}", kind)` and
+/// `out << kind` write the same.
+std::string_view kindName(Kind kind);
+
+std::ostream &operator<<(std::ostream &out, Kind kind);
+
 /// Writes `expr.str()`. `std::format("{}", expr)` works too; see the
 /// std::formatter below for the notations it offers.
 std::ostream &operator<<(std::ostream &out, const Expr &expr);
@@ -370,4 +377,13 @@ struct std::formatter<mx::Expr, char> {
 private:
     mx::detail::Notation notation_ = mx::detail::Notation::Infix;
     std::formatter<std::string_view, char> text_;
+};
+
+/// `std::format("{}", kind)` is mx::kindName(kind), with the usual string
+/// options: `{:>8}`.
+template <>
+struct std::formatter<mx::Kind, char> : std::formatter<std::string_view, char> {
+    auto format(mx::Kind kind, std::format_context &context) const {
+        return std::formatter<std::string_view, char>::format(mx::kindName(kind), context);
+    }
 };

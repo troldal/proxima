@@ -74,8 +74,8 @@ Expr finish(Node node) {
 }
 
 [[noreturn]] void wrongKind(const char *wanted, Kind actual) {
-    throw Error(std::string("expression is not ") + wanted + " (kind "
-                + std::to_string(static_cast<int>(actual)) + ")");
+    throw Error(std::string("expression is not ") + wanted + " (its kind is "
+                + std::string(kindName(actual)) + ")");
 }
 
 } // namespace
@@ -440,6 +440,33 @@ Expr rhs(const Expr &relation) {
         throw Error("rhs: " + relation.str() + " is not a relation");
     }
     return relation.arg(1);
+}
+
+std::string_view kindName(Kind kind) {
+    switch (kind) {
+    case Kind::Integer:
+        return "Integer";
+    case Kind::Rational:
+        return "Rational";
+    case Kind::Real:
+        return "Real";
+    case Kind::Symbol:
+        return "Symbol";
+    case Kind::Add:
+        return "Add";
+    case Kind::Mul:
+        return "Mul";
+    case Kind::Pow:
+        return "Pow";
+    case Kind::Function:
+        return "Function";
+    case Kind::Relation:
+        return "Relation";
+    case Kind::Opaque:
+        return "Opaque";
+    }
+    // Not a Kind this library defines: a value cast in from outside.
+    return "?";
 }
 
 std::string_view symbolFor(RelOp op) {

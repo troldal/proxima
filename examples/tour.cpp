@@ -72,32 +72,6 @@ std::string joined(const std::vector<mx::Expr> &items) {
     return out.empty() ? "(none)" : out;
 }
 
-/// The library has no name for a Kind yet, so the tour carries its own.
-std::string_view kindName(mx::Kind kind) {
-    switch (kind) {
-    case mx::Kind::Integer:
-        return "Integer";
-    case mx::Kind::Rational:
-        return "Rational";
-    case mx::Kind::Real:
-        return "Real";
-    case mx::Kind::Symbol:
-        return "Symbol";
-    case mx::Kind::Add:
-        return "Add";
-    case mx::Kind::Mul:
-        return "Mul";
-    case mx::Kind::Pow:
-        return "Pow";
-    case mx::Kind::Function:
-        return "Function";
-    case mx::Kind::Relation:
-        return "Relation";
-    case mx::Kind::Opaque:
-        return "Opaque";
-    }
-    return "?";
-}
 
 // ===========================================================================
 // PART ONE — no Maxima needed

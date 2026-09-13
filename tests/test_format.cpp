@@ -3,6 +3,7 @@
 
 #include <doctest/doctest.h>
 
+#include <mx/errors.hpp>
 #include <mx/expr.hpp>
 #include <mx/integer.hpp>
 #include <mx/mathml.hpp>
@@ -45,6 +46,33 @@ TEST_CASE("an expression prints with << and with std::format") {
         const std::string spec = "{:latex}";
         CHECK_THROWS_AS(static_cast<void>(std::vformat(spec, std::make_format_args(e))),
                         std::format_error);
+    }
+}
+
+TEST_CASE("a kind prints by name") {
+    using mx::Kind;
+    CHECK(mx::kindName(Kind::Integer) == "Integer");
+    CHECK(mx::kindName(Kind::Rational) == "Rational");
+    CHECK(mx::kindName(Kind::Real) == "Real");
+    CHECK(mx::kindName(Kind::Symbol) == "Symbol");
+    CHECK(mx::kindName(Kind::Add) == "Add");
+    CHECK(mx::kindName(Kind::Mul) == "Mul");
+    CHECK(mx::kindName(Kind::Pow) == "Pow");
+    CHECK(mx::kindName(Kind::Function) == "Function");
+    CHECK(mx::kindName(Kind::Relation) == "Relation");
+    CHECK(mx::kindName(Kind::Opaque) == "Opaque");
+
+    CHECK(std::format("{}", Kind::Pow) == "Pow");
+    CHECK(std::format("{:>8}", Kind::Pow) == "     Pow");
+    std::ostringstream out;
+    out << Kind::Relation;
+    CHECK(out.str() == "Relation");
+
+    SUBCASE("which is what an accessor on the wrong kind reports") {
+        // It used to say "(kind 3)".
+        CHECK_THROWS_WITH_AS(static_cast<void>(Expr::symbol("x").integerValue()),
+                             "expression is not an integer (its kind is Symbol)",
+                             mx::Error);
     }
 }
 
