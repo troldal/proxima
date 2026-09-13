@@ -147,6 +147,31 @@ public:
     /// Evaluates a state-changing statement the journal accounts for.
     Reply evalTracked(const Payload &payload);
 
+    /// The requests a caller has to keep together, available only inside
+    /// converseAtomically: a change to Maxima's state and the journal's record
+    /// of it.
+    class Conversation {
+    public:
+        Reply evalTracked(const Payload &payload);
+        std::uint64_t remember(Payload payload);
+        void forget(std::uint64_t handle);
+
+    private:
+        friend class MaximaSession;
+        explicit Conversation(MaximaSession &session) : session_(session) {}
+        MaximaSession &session_;
+    };
+
+    /// Runs `steps` as one conversation: no other caller's request reaches
+    /// Maxima until it returns.
+    ///
+    /// What a statement and its record need. Made separately — evalTracked,
+    /// then remember — another thread's evalPure can run between the two,
+    /// compute under Maxima's new state, and file its answer under the
+    /// journal's old one, where a persistent cache keeps it beyond this
+    /// process. mx::Context makes every change this way.
+    void converseAtomically(const std::function<void(Conversation &)> &steps);
+
     /// Discards every cached reply.
     void invalidateCache();
 
@@ -225,6 +250,9 @@ private:
 
     /// Sends one request and reads its frame. The pipe lock must be held.
     Reply evalLocked(const Payload &payload, Deadline deadline);
+
+    /// evalTracked's body. The pipe lock must be held.
+    Reply evalTrackedLocked(const Payload &payload);
 
     /// evalLocked on the call deadline, restarting the session if the
     /// conversation breaks down. The pipe lock must be held.

@@ -373,6 +373,32 @@ Reply MaximaSession::eval(const Payload &payload) {
 
 Reply MaximaSession::evalTracked(const Payload &payload) {
     const std::lock_guard<std::mutex> pipe(pipeMutex_);
+    return evalTrackedLocked(payload);
+}
+
+void MaximaSession::converseAtomically(
+    const std::function<void(Conversation &)> &steps) {
+    const std::lock_guard<std::mutex> pipe(pipeMutex_);
+    Conversation conversation(*this);
+    steps(conversation);
+}
+
+Reply MaximaSession::Conversation::evalTracked(const Payload &payload) {
+    return session_.evalTrackedLocked(payload);
+}
+
+// remember and forget take only the state lock, so they need nothing special
+// here: what makes them part of the conversation is the pipe lock the caller
+// already holds, which keeps every other request out until it is over.
+std::uint64_t MaximaSession::Conversation::remember(Payload payload) {
+    return session_.remember(std::move(payload));
+}
+
+void MaximaSession::Conversation::forget(std::uint64_t handle) {
+    session_.forget(handle);
+}
+
+Reply MaximaSession::evalTrackedLocked(const Payload &payload) {
     {
         const std::lock_guard<std::mutex> state(stateMutex_);
         // A state change the journal accounts for. The in-memory cache still
@@ -391,10 +417,9 @@ Reply MaximaSession::evalLocked(const Payload &payload, Deadline deadline) {
 }
 
 Reply MaximaSession::evalPure(const Payload &payload) {
-    // The pipe lock for the whole call, as before, cache lookups included. A
-    // lookup that did not wait could slip between a Context's statement and
-    // its remember() — two separate calls — and see an answer filed under the
-    // wrong state.
+    // The pipe lock for the whole call, cache lookups included. That is what
+    // lets converseAtomically keep a statement and its record together: no
+    // question, cached or not, is answered between the two.
     const std::lock_guard<std::mutex> pipe(pipeMutex_);
 
     const std::string &key = payload.str();

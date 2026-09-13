@@ -382,6 +382,38 @@ TEST_CASE("an answer computed across a change of state is not cached") {
     CHECK(session.cacheStats().entries == 0);
 }
 
+TEST_CASE("a statement and its record are one conversation") {
+    // A Context's statement and the journal's record of it used to be two
+    // separate calls. A question from another thread could be answered in
+    // between — under Maxima's new state, but cached under the journal's old
+    // one. Inside converseAtomically it has to wait until the record is made.
+    using namespace std::chrono_literals;
+
+    ScriptedSession scripted({frame(2, true, "$DONE"), frame(3, true, "$ANSWER")});
+    MaximaSession &session = *scripted.session;
+
+    std::future<mx::Reply> asking;
+    session.converseAtomically([&](MaximaSession::Conversation &conversation) {
+        conversation.evalTracked(Payload::text("assume(x > 0)"));
+
+        asking = std::async(std::launch::async, [&session] {
+            return session.evalPure(Payload::text("question"));
+        });
+        // Between the statement and its record: the question must wait.
+        CHECK(asking.wait_for(200ms) == std::future_status::timeout);
+
+        conversation.remember(Payload::text("assume(x > 0)"));
+    });
+
+    CHECK(asking.get().value == "$ANSWER");
+    // Asked once the record existed, so its answer describes the recorded
+    // state, and is kept.
+    CHECK(session.cacheStats().entries == 1);
+    // And the statement went out before the question did.
+    const std::string sent = scripted.transport->sentText();
+    CHECK(sent.find("assume(x > 0)") < sent.find("question"));
+}
+
 TEST_CASE("a session with no way to build another transport does not restart") {
     ScriptedSession scripted({});
     REQUIRE(scripted.transport->scriptExhausted());
