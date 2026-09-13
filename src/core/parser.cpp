@@ -2,10 +2,15 @@
 #include <mx/expr.hpp>
 
 #include <charconv>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <vector>
+
+#if defined(_MSC_VER)
+#include <intrin.h> // _AddressOfReturnAddress, for the parser's stack budget.
+#endif
 
 // A Pratt parser for infix expressions, with no kernel behind it.
 //
@@ -269,9 +274,29 @@ std::string quoteString(std::string_view text) {
     return out;
 }
 
-/// How deeply an expression may nest. Far beyond anything written by hand, and
-/// the same as the reader of Maxima's replies allows.
+/// How deeply an expression may nest, whatever the stack allows. Far beyond
+/// anything written by hand, and the same as the reader of Maxima's replies.
 constexpr std::size_t kMaxParseDepth = 1000;
+
+/// How much stack the parser may use before refusing to nest further.
+///
+/// A count of levels alone was not enough: a Debug build on Windows spends
+/// several times the stack per level a Release build does, on a 1 MB stack,
+/// and overflowed well before 1000 levels. So the stack actually used is
+/// measured too. This much leaves room below the parser on any main thread;
+/// a caller parsing on a thread with a smaller stack than that should say so
+/// by not doing it.
+constexpr std::uintptr_t kParseStackBudget = 256 * 1024;
+
+/// An address inside the current stack frame: the real stack, even under
+/// AddressSanitizer, which can move locals off it.
+inline std::uintptr_t stackAddress() {
+#if defined(_MSC_VER)
+    return reinterpret_cast<std::uintptr_t>(_AddressOfReturnAddress());
+#else
+    return reinterpret_cast<std::uintptr_t>(__builtin_frame_address(0));
+#endif
+}
 
 class Parser {
 public:
@@ -287,6 +312,9 @@ public:
 
 private:
     std::size_t depth_ = 0;
+
+    /// Where the stack stood when parsing began, to measure its use from.
+    std::uintptr_t stackBase_ = stackAddress();
 
     void advance() {
         current_ = lexer_.next();
@@ -315,11 +343,13 @@ private:
     Expr expression(int minimumPower) {
         // Every way to nest — parentheses, a unary sign, the right of `^` or a
         // relation, a function's arguments — comes back through here, so this
-        // is the one place to count depth. Uncounted, 200,000 opening
-        // parentheses overflowed the stack and killed the process.
-        if (depth_ >= kMaxParseDepth) {
-            throw ParseError("expression nested deeper than "
-                             + std::to_string(kMaxParseDepth) + " levels at offset "
+        // is the one place to guard. Unguarded, 200,000 opening parentheses
+        // overflowed the stack and killed the process. The stack grows down on
+        // every platform this builds for, but the distance is taken either way.
+        const std::uintptr_t here = stackAddress();
+        const std::uintptr_t used = here < stackBase_ ? stackBase_ - here : here - stackBase_;
+        if (depth_ >= kMaxParseDepth || used > kParseStackBudget) {
+            throw ParseError("expression nested too deep at offset "
                              + std::to_string(current_.at));
         }
         ++depth_;

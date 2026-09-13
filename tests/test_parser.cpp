@@ -268,11 +268,14 @@ TEST_CASE("text nested too deep is refused, not a stack overflow") {
     for (const std::string *source :
          std::initializer_list<const std::string *>{&parens, &minuses, &powers}) {
         CHECK_THROWS_WITH_AS(static_cast<void>(Expr::parse(*source)),
-                             doctest::Contains("nested deeper than"), mx::ParseError);
+                             doctest::Contains("nested too deep"), mx::ParseError);
     }
 
     SUBCASE("while ordinary nesting, and a long flat sum, still parse") {
-        const std::size_t modest = 200;
+        // In every build: a Debug build on Windows spends several times the
+        // stack per level that a Release build does, and has a 1 MB stack. A
+        // fixed limit of 1000 levels overflowed there before it was reached.
+        const std::size_t modest = 100;
         CHECK_NOTHROW(static_cast<void>(
             Expr::parse(std::string(modest, '(') + "x" + std::string(modest, ')'))));
         CHECK_NOTHROW(static_cast<void>(Expr::parse(std::string(modest, '-') + "x")));
