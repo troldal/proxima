@@ -20,10 +20,12 @@ struct Config {
     /// giving up on it.
     ///
     /// Generous by default, since some integrals legitimately take a long time.
-    /// Exceeding it costs the call but not the session: the kernel is restarted
-    /// and its assumptions replayed. Treat it as a backstop against a wedged
-    /// child, not as a cancellation mechanism — Maxima keeps computing until it
-    /// is killed.
+    /// Exceeding it costs the call but not the session: the Maxima process is
+    /// ended — nothing is left running — a fresh one is started, and its
+    /// assumptions are replayed. Treat it as a backstop against a wedged child
+    /// rather than as cancellation: Maxima cannot be interrupted short of ending
+    /// the process, so every timeout also pays for a Maxima startup, bounded by
+    /// startupTimeout.
     std::chrono::milliseconds timeout{std::chrono::minutes{2}};
 
     /// How long to allow for starting Maxima and restoring session state.
