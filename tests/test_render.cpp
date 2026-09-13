@@ -9,10 +9,12 @@
 #include <mx/functions.hpp>
 #include <mx/render.hpp>
 #include <mx/symbol.hpp>
+#include <mx/mathml.hpp>
 #include <mx/tex.hpp>
 
 #include <algorithm>
 #include <functional>
+#include <limits>
 #include <span>
 #include <string>
 #include <string_view>
@@ -524,5 +526,167 @@ TEST_CASE("the erased renderer is a movable value") {
         renderers.emplace_back(std::move(moved));
         CHECK(renderers.size() == 2);
         CHECK(mx::render(Expr(9), renderers[0]) == "9");
+    }
+}
+
+// --- MathML -----------------------------------------------------------------
+
+namespace {
+
+constexpr std::string_view kMathOpen
+    = R"(<math xmlns="http://www.w3.org/1998/Math/MathML">)";
+constexpr std::string_view kMathClose = "</math>";
+
+/// toMathML without the <math> wrapper, which every case would otherwise
+/// repeat.
+std::string mathml(const Expr &expr) {
+    const std::string out = mx::toMathML(expr);
+    REQUIRE(out.starts_with(kMathOpen));
+    REQUIRE(out.ends_with(kMathClose));
+    return out.substr(kMathOpen.size(),
+                      out.size() - kMathOpen.size() - kMathClose.size());
+}
+
+/// "ok", or what is wrong with the markup: unbalanced or unknown tags, an
+/// <mfrac>, <msup> or <mroot> without exactly two children, a bare ampersand,
+/// or a byte outside ASCII.
+std::string wellFormed(const std::string &xml) {
+    static constexpr std::string_view kKnown[] = {
+        "math", "mrow", "mi", "mn", "mo", "mtext", "mfrac", "msup", "msqrt",
+        "mroot"};
+    struct Open {
+        std::string tag;
+        int children = 0;
+    };
+    std::vector<Open> stack;
+    for (std::size_t at = xml.find('<'); at != std::string::npos;
+         at = xml.find('<', at)) {
+        const std::size_t close = xml.find('>', at);
+        if (close == std::string::npos) {
+            return "unterminated tag";
+        }
+        std::string inside = xml.substr(at + 1, close - at - 1);
+        at = close + 1;
+        const bool closing = inside.starts_with('/');
+        if (closing) {
+            inside.erase(0, 1);
+        }
+        const std::string name = inside.substr(0, inside.find(' '));
+        if (std::find(std::begin(kKnown), std::end(kKnown), name)
+            == std::end(kKnown)) {
+            return "unknown element <" + name + ">";
+        }
+        if (!closing) {
+            if (!stack.empty()) {
+                ++stack.back().children;
+            }
+            stack.push_back({name, 0});
+            continue;
+        }
+        if (stack.empty() || stack.back().tag != name) {
+            return "mismatched </" + name + ">";
+        }
+        const Open done = stack.back();
+        stack.pop_back();
+        if ((name == "mfrac" || name == "msup" || name == "mroot")
+            && done.children != 2) {
+            return "<" + name + "> with " + std::to_string(done.children)
+                   + " children";
+        }
+    }
+    if (!stack.empty()) {
+        return "unclosed <" + stack.back().tag + ">";
+    }
+    for (std::size_t amp = xml.find('&'); amp != std::string::npos;
+         amp = xml.find('&', amp + 1)) {
+        const std::size_t semi = xml.find(';', amp);
+        if (semi == std::string::npos || semi - amp > 10) {
+            return "bare ampersand";
+        }
+    }
+    for (const char c : xml) {
+        if (static_cast<unsigned char>(c) > 127) {
+            return "non-ASCII byte";
+        }
+    }
+    return "ok";
+}
+
+} // namespace
+
+TEST_CASE("MathML") {
+    const Symbol x("x");
+    const Symbol y("y");
+
+    CHECK(mathml(Expr(x) - 1) == "<mrow><mi>x</mi><mo>&#x2212;</mo><mn>1</mn></mrow>");
+    CHECK(mathml(2 * Expr(x))
+          == "<mrow><mn>2</mn><mo>&#x2062;</mo><mi>x</mi></mrow>");
+    CHECK(mathml(mx::pi()) == "<mi>&#x3C0;</mi>");
+    CHECK(mathml(le(x, y)) == "<mrow><mi>x</mi><mo>&#x2264;</mo><mi>y</mi></mrow>");
+
+    SUBCASE("structure maps onto elements") {
+        CHECK(mathml(pow(Expr(x), Expr::rational(1, 3)))
+              == "<mroot><mi>x</mi><mn>3</mn></mroot>");
+        CHECK(mathml(mx::sqrt(Expr(1) - pow(Expr(x), 2)))
+              == "<msqrt><mrow><mn>1</mn><mo>&#x2212;</mo>"
+                 "<msup><mi>x</mi><mn>2</mn></msup></mrow></msqrt>");
+    }
+    SUBCASE("a fraction bar and a raised exponent need no brackets") {
+        CHECK(mathml((Expr(x) + 1) / (Expr(x) - 1))
+              == "<mfrac><mrow><mn>1</mn><mo>+</mo><mi>x</mi></mrow>"
+                 "<mrow><mi>x</mi><mo>&#x2212;</mo><mn>1</mn></mrow></mfrac>");
+        CHECK(mathml(pow(Expr(x), Expr(y) + 1))
+              == "<msup><mi>x</mi><mrow><mn>1</mn><mo>+</mo><mi>y</mi></mrow></msup>");
+    }
+    SUBCASE("but the base of a power does") {
+        // Without the brackets, a 2 raised beside x+1 would not say whether
+        // it applied to the whole sum.
+        CHECK(mathml(pow(Expr(x) + 1, 2))
+              == "<msup><mrow><mo>(</mo><mrow><mn>1</mn><mo>+</mo><mi>x</mi></mrow>"
+                 "<mo>)</mo></mrow><mn>2</mn></msup>");
+    }
+    SUBCASE("text is escaped") {
+        CHECK(mathml(Expr(Symbol("a<b"))) == "<mi>a&lt;b</mi>");
+        CHECK(mathml(Expr::opaque("\"R&D\"")) == "<mtext>&quot;R&amp;D&quot;</mtext>");
+    }
+    SUBCASE("a small real has an unpadded exponent") {
+        // to_chars writes 1e-07. TeX had the same padding.
+        CHECK(mathml(Expr(1e-7))
+              == "<mrow><mn>1</mn><mo>&#xD7;</mo><msup><mn>10</mn>"
+                 "<mrow><mo>&#x2212;</mo><mn>7</mn></mrow></msup></mrow>");
+        CHECK(mx::toTeX(Expr(1e-7)) == "1 \\times 10^{-7}");
+        CHECK(mx::toTeX(Expr(1e300)) == "1 \\times 10^{300}");
+    }
+}
+
+TEST_CASE("MathML output is well formed for every kind of node") {
+    const Symbol x("x");
+    const Symbol y("y");
+    const Symbol a("a");
+    const Symbol b("b");
+    const Symbol c("c");
+
+    const Expr corpus[] = {
+        Expr(x) + 1,
+        -(Expr(x) + 1),
+        Expr::rational(-1, 2),
+        Expr(-2.5) * Expr(x),
+        Expr(1e300),
+        Expr(std::numeric_limits<double>::infinity()),
+        mx::minusInf(),
+        mx::sin(Expr(x)) / mx::cos(Expr(x)),
+        pow(pow(Expr(x), 2), 3),
+        pow(Expr(x) * Expr(y), Expr::rational(1, 3)),
+        ne(Expr(x), Expr(0)),
+        Expr::function("list", {Expr(1), Expr(x), mx::sin(Expr(y))}),
+        Expr::function("bessel_j", {Expr(0), Expr(x)}),
+        Expr::opaque("<script>&"),
+        (mx::sqrt(pow(Expr(b), 2) - 4 * Expr(a) * Expr(c)) - Expr(b))
+            / (2 * Expr(a)),
+    };
+    for (const Expr &expr : corpus) {
+        const std::string out = mx::toMathML(expr);
+        CAPTURE(out);
+        CHECK(wellFormed(out) == "ok");
     }
 }

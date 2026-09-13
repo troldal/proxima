@@ -110,9 +110,15 @@ std::string renderReal(double value) {
     // to_chars writes 1e+300; a formula wants 1 \times 10^{300}.
     if (const auto marker = text.find('e'); marker != std::string::npos) {
         std::string mantissa = text.substr(0, marker);
+        // to_chars pads the exponent (1e-07); a formula shows 10^{-7}.
         std::string exponent = text.substr(marker + 1);
-        if (!exponent.empty() && exponent.front() == '+') {
-            exponent.erase(exponent.begin());
+        const bool negativeExponent = exponent.front() == '-';
+        exponent.erase(0, exponent.find_first_not_of("+-0"));
+        if (exponent.empty()) {
+            exponent = "0";
+        }
+        if (negativeExponent) {
+            exponent.insert(exponent.begin(), '-');
         }
         return mantissa + " \\times 10^{" + exponent + "}";
     }

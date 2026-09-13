@@ -97,13 +97,17 @@ right-associative (`x^2^3` is `x^(2^3)`) and unary minus binds looser than it
 
 ### Rendering, including your own
 
-`str()` gives Maxima-compatible infix and `toTeX()` gives LaTeX. Both are local
-— no kernel — and both are ordinary clients of `<mx/render.hpp>`, which is the
-supported way to add a third.
+`str()` gives Maxima-compatible infix, `toTeX()` gives LaTeX, and `toMathML()`
+gives Presentation MathML — a complete `<math>` element that browsers typeset
+natively, written in plain ASCII with character references for symbols like
+`&#x2212;` and `&#x3C0;`. All three are local — no kernel — and all three are
+ordinary clients of `<mx/render.hpp>`, which is the supported way to add
+another.
 
 ```cpp
 std::cout << e.str();                 // (1 + x)/(x - 1)
 std::cout << mx::toTeX(e);            // \frac{1 + x}{x - 1}
+std::cout << mx::toMathML(e);         // <math ...><mfrac>...</mfrac></math>
 std::cout << mx::render(e, MyOwn{});  // whatever you like
 ```
 
