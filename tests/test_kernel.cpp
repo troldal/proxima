@@ -14,6 +14,7 @@
 #include "wire/from_maxima.hpp"
 #include "wire/sexpr.hpp"
 
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -368,7 +369,14 @@ TEST_CASE("a Maxima reached through a non-ASCII path starts and answers") {
 
     const std::string name
         = std::string("mx_") + "m" "\xC3\xA6" "xima_" "\xE4\xB8\xAD" "\xE6\x96\x87";
-    const fs::path base = fs::temp_directory_path() / "maxima_cpp_unicode_test";
+    // A directory of this run's own. It used to be one fixed name, and the
+    // test removes the link it finds there before making its own — so two
+    // suites running at once, say a GCC and a clang-cl build, took the link
+    // away from under each other's Maxima as it started.
+    const fs::path base
+        = fs::temp_directory_path()
+          / ("maxima_cpp_unicode_test_"
+             + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     const fs::path link = base / mx::detail::pathFromUtf8(name);
     const fs::path userDir = base / mx::detail::pathFromUtf8(name + "_userdir");
 
