@@ -80,6 +80,29 @@ TEST_CASE("the functions Maxima leaves in a result") {
           == doctest::Approx(5.0));
 }
 
+TEST_CASE("a long call and a refused expression evaluate as before") {
+    // The walk evaluates a call's arguments on the stack, spilling to the heap
+    // only past eight, and builds a failure message only when one is wanted.
+    const Symbol x("x");
+
+    std::vector<Expr> many;
+    for (int i = 1; i <= 12; ++i) {
+        many.push_back(Expr(i) * Expr(x));
+    }
+    CHECK(mx::evalNumeric(Expr::function("max", many), {{"x", 2.0}}) == 24.0);
+    CHECK(mx::evalNumeric(Expr::function("min", many), {{"x", 2.0}}) == 2.0);
+    CHECK(mx::isEvaluable(Expr::function("max", many), {{"x", 2.0}}));
+
+    CHECK_FALSE(mx::isEvaluable(Expr(x) + 1));
+    CHECK_FALSE(mx::isEvaluable(eq(Expr(x), Expr(1)), {{"x", 1.0}}));
+    CHECK_FALSE(mx::isEvaluable(Expr::opaque("matrix([1])")));
+    CHECK_FALSE(mx::isEvaluable(Expr::function("no_such_function", {Expr(1)})));
+
+    // And evalNumeric still says why.
+    CHECK_THROWS_WITH_AS(mx::evalNumeric(Expr(x) + 1), "no value for the symbol x",
+                         mx::EvalError);
+}
+
 TEST_CASE("constants are recognised as Maxima spells them") {
     CHECK(mx::evalNumeric(mx::pi()) == doctest::Approx(std::numbers::pi));
     CHECK(mx::evalNumeric(mx::e()) == doctest::Approx(std::numbers::e));

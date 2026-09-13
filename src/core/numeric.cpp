@@ -3,6 +3,7 @@
 #include <mx/errors.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -199,15 +200,24 @@ double numericValueOf(const Expr &expr) {
 // costs a traversal and several allocations, which for a single evaluation
 // would be more work than the evaluation itself.
 
+/// Arguments a function call is evaluated into without touching the heap.
+/// Every builtin takes one or two, except max and min; a longer call spills.
+constexpr std::size_t kArgumentsOnStack = 8;
+
+/// Reports a failure, if anyone is listening, and returns false. The message is
+/// built by `message` only then: isEvaluable asks whether, not why, and building
+/// "no value for the symbol x" — or printing a whole relation to say it has no
+/// value — used to be most of what it cost.
+template <typename Message>
+bool fail(std::string *failure, Message &&message) {
+    if (failure != nullptr) {
+        *failure = message();
+    }
+    return false;
+}
+
 bool walk(const Expr &expr, const Bindings &bindings, double &result,
           std::string *failure) {
-    const auto fail = [&](std::string reason) {
-        if (failure != nullptr) {
-            *failure = std::move(reason);
-        }
-        return false;
-    };
-
     switch (expr.kind()) {
     case Kind::Integer:
     case Kind::Rational:
@@ -225,7 +235,7 @@ bool walk(const Expr &expr, const Bindings &bindings, double &result,
         if (namedConstant(expr.name(), result)) {
             return true;
         }
-        return fail("no value for the symbol " + expr.name());
+        return fail(failure, [&] { return "no value for the symbol " + expr.name(); });
     }
 
     case Kind::Add:
@@ -254,32 +264,44 @@ bool walk(const Expr &expr, const Bindings &bindings, double &result,
     }
 
     case Kind::Function: {
-        std::vector<double> args;
-        args.reserve(expr.arity());
-        for (const Expr &operand : expr.args()) {
-            double value = 0.0;
-            if (!walk(operand, bindings, value, failure)) {
+        // The arguments go on the stack. A std::vector here was an allocation
+        // for every function call in the expression, on every evaluation.
+        const std::vector<Expr> &operands = expr.args();
+        const std::size_t count = operands.size();
+        std::array<double, kArgumentsOnStack> onStack{};
+        std::vector<double> spilled;
+        double *args = onStack.data();
+        if (count > kArgumentsOnStack) {
+            spilled.resize(count);
+            args = spilled.data();
+        }
+        for (std::size_t i = 0; i < count; ++i) {
+            if (!walk(operands[i], bindings, args[i], failure)) {
                 return false;
             }
-            args.push_back(value);
         }
-        if (const auto builtin = builtinFor(expr.name(), args.size())) {
-            result = kBuiltins[*builtin].apply(args.data(), args.size());
+        if (const auto builtin = builtinFor(expr.name(), count)) {
+            result = kBuiltins[*builtin].apply(args, count);
             return true;
         }
-        return fail("cannot evaluate " + expr.name() + " numerically with "
-                    + std::to_string(args.size()) + " argument(s)");
+        return fail(failure, [&] {
+            return "cannot evaluate " + expr.name() + " numerically with "
+                   + std::to_string(count) + " argument(s)";
+        });
     }
 
     case Kind::Relation:
-        return fail("a relation has no numeric value: " + expr.str());
+        return fail(failure,
+                    [&] { return "a relation has no numeric value: " + expr.str(); });
 
     case Kind::Opaque:
         // Maxima source this library never interpreted, which is exactly why
         // there is nothing here that could evaluate it.
-        return fail("cannot evaluate the unmodelled expression " + expr.str());
+        return fail(failure, [&] {
+            return "cannot evaluate the unmodelled expression " + expr.str();
+        });
     }
-    return fail("cannot evaluate " + expr.str());
+    return fail(failure, [&] { return "cannot evaluate " + expr.str(); });
 }
 
 } // namespace
@@ -295,8 +317,8 @@ double evalNumeric(const Expr &expr, const Bindings &bindings) {
 
 bool isEvaluable(const Expr &expr, const Bindings &bindings) {
     double result = 0.0;
-    std::string failure;
-    return walk(expr, bindings, result, &failure);
+    // No sink: only whether, not why, so no failure message is ever built.
+    return walk(expr, bindings, result, nullptr);
 }
 
 // --- the compiled form ----------------------------------------------------
