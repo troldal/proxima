@@ -85,6 +85,28 @@ TEST_CASE("the two precedences that surprise people") {
     }
 }
 
+TEST_CASE("** is ^, as Maxima reads it") {
+    CHECK(Expr::parse("x**2") == Expr::parse("x^2"));
+    // The same operator in every respect: right-associative, binding tighter
+    // than unary minus.
+    CHECK(Expr::parse("2**3**2") == Expr::parse("2^(3^2)"));
+    CHECK(Expr::parse("-x**2") == Expr::parse("-(x^2)"));
+    CHECK(Expr::parse("x**2*y") == Expr::parse("x^2*y"));
+    // Only when the stars are adjacent, as in Maxima's own lexer.
+    CHECK_THROWS_AS(static_cast<void>(Expr::parse("x * * 2")), mx::ParseError);
+}
+
+TEST_CASE("a number beyond a double's range is refused, and says so") {
+    // It used to be reported as a malformed number, which it is not.
+    for (const char *source : {"1e400", "-1e400", "2*1e999"}) {
+        CAPTURE(source);
+        CHECK_THROWS_WITH_AS(static_cast<void>(Expr::parse(source)),
+                             doctest::Contains("out of the range of a double"),
+                             mx::ParseError);
+    }
+    CHECK(Expr::parse("1e300") == Expr(1e300));
+}
+
 TEST_CASE("unary operators") {
     const Symbol x("x");
     CHECK(Expr::parse("-5") == Expr(-5));
@@ -287,6 +309,7 @@ TEST_CASE("the offline parser agrees with Maxima's own") {
              "x^2^3",
              "-x^2",
              "-3^2",
+             "x**2",
              "8/4/2",
              "x - y - 1",
              "1/2*x",

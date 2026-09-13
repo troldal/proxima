@@ -118,7 +118,13 @@ public:
         switch (c) {
         case '+': return {Token::Kind::Plus, "+", false, start};
         case '-': return {Token::Kind::Minus, "-", false, start};
-        case '*': return {Token::Kind::Star, "*", false, start};
+        case '*':
+            // Maxima reads ** as ^, when the two stars are adjacent.
+            if (at_ < source_.size() && source_[at_] == '*') {
+                ++at_;
+                return {Token::Kind::Caret, "**", false, start};
+            }
+            return {Token::Kind::Star, "*", false, start};
         case '/': return {Token::Kind::Slash, "/", false, start};
         case '^': return {Token::Kind::Caret, "^", false, start};
         case '!':
@@ -434,6 +440,13 @@ private:
         const char *first = token.text.data();
         const char *last = first + token.text.size();
         const auto [stopped, error] = std::from_chars(first, last, value);
+        if (error == std::errc::result_out_of_range && stopped == last) {
+            // Well-formed, but beyond a double. Not quietly inf: 1e400 is a
+            // finite number, and an infinity would be a different value.
+            throw ParseError("number '" + token.text + "' at offset "
+                             + std::to_string(token.at)
+                             + " is out of the range of a double");
+        }
         if (error != std::errc{} || stopped != last) {
             throw ParseError("malformed number '" + token.text + "' at offset "
                              + std::to_string(token.at));

@@ -132,6 +132,9 @@ public:
     /// anything else exotic, mx::parse hands the text to Maxima's own parser
     /// and so cannot drift from it; the price is needing a running kernel.
     ///
+    /// `**` is accepted as `^`, as Maxima accepts it. A literal too large for a
+    /// double, such as `1e400`, is a ParseError that says so.
+    ///
     /// Precedences are Maxima's, including the two that surprise people: `^` is
     /// right-associative, so `x^2^3` is `x^(2^3)`; and unary minus binds looser
     /// than `^`, so `-x^2` is `-(x^2)`.
