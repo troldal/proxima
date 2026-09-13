@@ -135,7 +135,9 @@ public:
     /// first, so only this call is lost.
     ///
     /// Serialised: concurrent callers take turns rather than interleaving
-    /// requests on one pipe.
+    /// requests on one pipe. Calls that only touch bookkeeping — cacheStats,
+    /// setTimeout, remember, forget, invalidateCache, persistenceActive — do
+    /// not take that turn, and never wait behind a computation.
     Reply eval(const Payload &payload);
 
     /// Evaluates a pure expression, consulting and filling the reply cache.
@@ -168,7 +170,9 @@ public:
     /// Stops replaying the statement `handle` names.
     void forget(std::uint64_t handle);
 
-    /// Changes the per-call deadline. Does not affect Config::startupTimeout.
+    /// Changes the per-call deadline, for a call already waiting as well as
+    /// for later ones: it takes effect within one poll. Does not affect
+    /// Config::startupTimeout.
     void setTimeout(std::chrono::milliseconds timeout);
 
     /// True while answers are read from and written to Config::cacheDirectory:
@@ -215,8 +219,19 @@ private:
         Payload payload;
     };
 
-    /// The body of eval, with the lock already held.
-    Reply evalLocked(const Payload &payload, std::chrono::milliseconds timeout);
+    /// Which deadline a conversation runs on. A call's can be changed while it
+    /// waits; the startup one, for the handshake and a replay, is fixed.
+    enum class Deadline { Call, Startup };
+
+    /// Sends one request and reads its frame. The pipe lock must be held.
+    Reply evalLocked(const Payload &payload, Deadline deadline);
+
+    /// evalLocked on the call deadline, restarting the session if the
+    /// conversation breaks down. The pipe lock must be held.
+    Reply converse(const Payload &payload);
+
+    /// The timeout `deadline` currently stands for.
+    std::chrono::milliseconds timeoutFor(Deadline deadline) const;
 
     /// Discards the dead transport, builds another, and restores the session:
     /// handshake, then every remembered statement in the order it was made.
@@ -240,9 +255,24 @@ private:
     /// Reads until the frame belonging to `id` is complete, discarding
     /// everything before it: banners, prompts, and any stale frame left over
     /// from an earlier request.
-    Reply readFrame(std::uint64_t id, std::chrono::milliseconds timeout);
+    Reply readFrame(std::uint64_t id, Deadline deadline);
 
-    mutable std::mutex mutex_;
+    /// Two locks, always taken in this order when both are needed.
+    ///
+    /// The pipe lock is held for a whole conversation with Maxima, and guards
+    /// the transport, the request ids and recovery. The state lock is only
+    /// ever held briefly, and guards everything else that changes: the caches,
+    /// the journal, the persistence flags and the per-call timeout. There used
+    /// to be one lock for both, so reading a statistic or changing the timeout
+    /// waited behind a computation for as long as Config::timeout.
+    std::mutex pipeMutex_;
+    mutable std::mutex stateMutex_;
+
+    /// Bumped by every change to Maxima's state or to the journal. An answer
+    /// is only cached if it was unchanged throughout the computation: with the
+    /// journal no longer waiting for the pipe, it can change mid-computation.
+    std::uint64_t stateGeneration_ = 0;
+
     Config config_;
     TransportFactory factory_;
     std::unique_ptr<ITransport> transport_;

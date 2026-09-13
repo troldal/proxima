@@ -110,7 +110,8 @@ public:
     /// been changed some other way.
     void invalidateCache();
 
-    /// Hits, misses and current size, for tuning and for tests.
+    /// Hits, misses and current size, for tuning and for tests. Does not
+    /// wait for a call in progress.
     struct CacheStats {
         std::size_t hits = 0;
         std::size_t misses = 0;
@@ -135,8 +136,10 @@ public:
     /// Stops replaying the statement `handle` names.
     void forget(std::uint64_t handle);
 
-    /// Changes the per-call deadline for this kernel. Config::startupTimeout,
-    /// which governs launching and restarting, is unaffected.
+    /// Changes the per-call deadline for this kernel — including for a call
+    /// already waiting on Maxima, which is held to the new deadline within one
+    /// poll. Does not wait for that call. Config::startupTimeout, which governs
+    /// launching and restarting, is unaffected.
     void setTimeout(std::chrono::milliseconds timeout);
 
     /// True while answers are read from and written to Config::cacheDirectory.

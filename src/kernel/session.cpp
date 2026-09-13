@@ -260,12 +260,23 @@ MaximaSession::launchEnvironment(const MaximaInstall &install,
 MaximaSession::MaximaSession(Config config)
     : config_(std::move(config)), cache_(config_.cacheEntries) {
     // A factory rather than one transport, so a dead kernel can be replaced.
-    factory_ = [this] { return launchMaxima(config_, maximaVersion_); };
+    //
+    // The version is recorded under the state lock: a restart relaunches from
+    // inside a conversation, holding only the pipe lock, while another thread
+    // may be reading the version to form a persistent key.
+    factory_ = [this] {
+        std::string version;
+        auto transport = launchMaxima(config_, version);
+        const std::lock_guard<std::mutex> state(stateMutex_);
+        maximaVersion_ = std::move(version);
+        return transport;
+    };
     transport_ = factory_();
     handshake();
 
     // Only now is the Maxima version known, and a persistent key cannot be
     // formed without it.
+    const std::lock_guard<std::mutex> state(stateMutex_);
     if (!config_.cacheDirectory.empty() && !maximaVersion_.empty()) {
         persistent_ = std::make_unique<PersistentCache>(config_.cacheDirectory,
                                                         persistenceStamp());
@@ -317,26 +328,16 @@ void MaximaSession::handshake() {
     // frame delimiters already say exactly where a reply begins.
     // A form rather than text, so the handshake depends on nothing but the
     // helper itself — eval_string lives in a package Maxima autoloads.
-    const Reply ready = evalLocked(Payload::form("T"), config_.startupTimeout);
+    const Reply ready = evalLocked(Payload::form("T"), Deadline::Startup);
     if (!ready.ok) {
         throw KernelError("Maxima rejected the startup handshake: "
                           + ready.reason);
     }
 }
 
-Reply MaximaSession::eval(const Payload &payload) {
-    const std::lock_guard<std::mutex> lock(mutex_);
-    // This entry point can evaluate anything, including a statement that
-    // changes Maxima's state, and nothing in the text says which. Assuming the
-    // worst is the only safe default: a stale cached answer is a correctness
-    // bug, an emptied cache is merely slower.
-    cache_.clear();
-    // And a change nobody recorded means the journal no longer describes this
-    // session, so a persistent key — which is built from the journal — would
-    // claim conditions that do not hold. Persistence stops here.
-    stateAccounted_ = false;
+Reply MaximaSession::converse(const Payload &payload) {
     try {
-        return evalLocked(payload, config_.timeout);
+        return evalLocked(payload, Deadline::Call);
     } catch (const KernelError &) {
         // The conversation broke down. Put the session back on its feet before
         // reporting, so that only this call is lost rather than every call
@@ -352,90 +353,114 @@ Reply MaximaSession::eval(const Payload &payload) {
     }
 }
 
-Reply MaximaSession::evalTracked(const Payload &payload) {
-    const std::lock_guard<std::mutex> lock(mutex_);
-    // A state change the journal accounts for. The in-memory cache still has to
-    // go — its entries were computed under the old state — but persistence
-    // survives, because the new state will be part of the key.
-    cache_.clear();
-    try {
-        return evalLocked(payload, config_.timeout);
-    } catch (const KernelError &) {
-        if (factory_ && !recovering_) {
-            try {
-                recover();
-            } catch (...) {
-            }
-        }
-        throw;
+Reply MaximaSession::eval(const Payload &payload) {
+    const std::lock_guard<std::mutex> pipe(pipeMutex_);
+    {
+        const std::lock_guard<std::mutex> state(stateMutex_);
+        // This entry point can evaluate anything, including a statement that
+        // changes Maxima's state, and nothing in the text says which. Assuming
+        // the worst is the only safe default: a stale cached answer is a
+        // correctness bug, an emptied cache is merely slower.
+        cache_.clear();
+        // And a change nobody recorded means the journal no longer describes
+        // this session, so a persistent key — which is built from the journal —
+        // would claim conditions that do not hold. Persistence stops here.
+        stateAccounted_ = false;
+        ++stateGeneration_;
     }
+    return converse(payload);
 }
 
-Reply MaximaSession::evalLocked(const Payload &payload,
-                                std::chrono::milliseconds timeout) {
+Reply MaximaSession::evalTracked(const Payload &payload) {
+    const std::lock_guard<std::mutex> pipe(pipeMutex_);
+    {
+        const std::lock_guard<std::mutex> state(stateMutex_);
+        // A state change the journal accounts for. The in-memory cache still
+        // has to go — its entries were computed under the old state — but
+        // persistence survives, because the new state will be part of the key.
+        cache_.clear();
+        ++stateGeneration_;
+    }
+    return converse(payload);
+}
+
+Reply MaximaSession::evalLocked(const Payload &payload, Deadline deadline) {
     const std::uint64_t id = ++nextRequestId_;
     writeLine(requestFor(id, payload));
-    return readFrame(id, timeout);
+    return readFrame(id, deadline);
 }
 
 Reply MaximaSession::evalPure(const Payload &payload) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    // The pipe lock for the whole call, as before, cache lookups included. A
+    // lookup that did not wait could slip between a Context's statement and
+    // its remember() — two separate calls — and see an answer filed under the
+    // wrong state.
+    const std::lock_guard<std::mutex> pipe(pipeMutex_);
 
     const std::string &key = payload.str();
-    if (const Reply *cached = cache_.find(key)) {
-        return *cached;
-    }
-    if (usingPersistence()) {
-        if (auto stored = persistent_->find(key)) {
-            // Promoted into memory as well, so a second ask costs nothing.
-            ++persistentHits_;
-            cache_.insert(key, *stored);
-            return *stored;
+    std::uint64_t generation = 0;
+    {
+        const std::lock_guard<std::mutex> state(stateMutex_);
+        if (const Reply *cached = cache_.find(key)) {
+            return *cached;
         }
-    }
-
-    Reply reply;
-    try {
-        reply = evalLocked(payload, config_.timeout);
-    } catch (const KernelError &) {
-        if (factory_ && !recovering_) {
-            try {
-                recover();
-            } catch (...) {
+        if (usingPersistence()) {
+            if (auto stored = persistent_->find(key)) {
+                // Promoted into memory as well, so a second ask costs nothing.
+                ++persistentHits_;
+                cache_.insert(key, *stored);
+                return *stored;
             }
         }
-        throw;
+        generation = stateGeneration_;
     }
 
-    // Failures are cached too: "Maxima cannot integrate this" is as stable an
-    // answer as any other, and re-asking costs the same round trip.
-    cache_.insert(key, reply);
-    if (usingPersistence()) {
-        persistent_->insert(key, reply);
+    const Reply reply = converse(payload);
+
+    const std::lock_guard<std::mutex> state(stateMutex_);
+    // Only kept if nothing changed the state while Maxima was working. That can
+    // happen now: remember() and forget() no longer wait for the pipe, so a
+    // Context ending on another thread can change the journal — and so the key
+    // — mid-computation, and this answer belongs to the state before it.
+    if (stateGeneration_ == generation) {
+        // Failures are cached too: "Maxima cannot integrate this" is as stable
+        // an answer as any other, and re-asking costs the same round trip.
+        cache_.insert(key, reply);
+        if (usingPersistence()) {
+            persistent_->insert(key, reply);
+        }
     }
     return reply;
 }
 
 void MaximaSession::invalidateCache() {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::lock_guard<std::mutex> state(stateMutex_);
     cache_.clear();
+    ++stateGeneration_;
 }
 
 MaximaSession::CacheStats MaximaSession::cacheStats() const {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    // The state lock only, so asking does not wait behind a computation. It
+    // used to share one lock with every evaluation, and could block for the
+    // whole of Config::timeout behind a slow integral.
+    const std::lock_guard<std::mutex> state(stateMutex_);
     return {cache_.hits(), cache_.misses(), cache_.size(), persistentHits_};
 }
 
 void MaximaSession::setTimeout(std::chrono::milliseconds timeout) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    // Takes effect for a call already waiting, too: readFrame re-reads the
+    // timeout on every poll. With one shared lock this used to wait for that
+    // very call to finish, so it could never shorten it.
+    const std::lock_guard<std::mutex> state(stateMutex_);
     config_.timeout = timeout;
 }
 
 std::uint64_t MaximaSession::remember(Payload payload) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::lock_guard<std::mutex> state(stateMutex_);
     // Remembering a statement means Maxima's state is about to change, or just
     // has: every cached answer was computed under the old one.
     cache_.clear();
+    ++stateGeneration_;
     const std::uint64_t handle = ++nextJournalHandle_;
     journal_.push_back({handle, std::move(payload)});
     restampPersistence();
@@ -443,10 +468,11 @@ std::uint64_t MaximaSession::remember(Payload payload) {
 }
 
 void MaximaSession::forget(std::uint64_t handle) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::lock_guard<std::mutex> state(stateMutex_);
     // An assumption going out of scope invalidates just as much as one coming
     // into it.
     cache_.clear();
+    ++stateGeneration_;
     std::erase_if(journal_, [handle](const JournalEntry &entry) {
         return entry.handle == handle;
     });
@@ -480,11 +506,20 @@ void MaximaSession::recover() {
 
     handshake();
 
+    // A copy, taken under the state lock and replayed without it: replaying is
+    // a conversation, and holding the state lock through it would block every
+    // caller that only wanted to read a statistic.
+    std::vector<JournalEntry> replay;
+    {
+        const std::lock_guard<std::mutex> state(stateMutex_);
+        replay = journal_;
+    }
+
     // Replayed in the order it was made, which is what reconstructs nested
     // assumption scopes correctly: each supcontext activates the scope that the
     // assumptions after it belong to.
-    for (const JournalEntry &entry : journal_) {
-        const Reply reply = evalLocked(entry.payload, config_.startupTimeout);
+    for (const JournalEntry &entry : replay) {
+        const Reply reply = evalLocked(entry.payload, Deadline::Startup);
         if (!reply.ok) {
             throw KernelError("could not restore session state after a restart: "
                               + entry.payload.str() + " failed: " + reply.reason);
@@ -496,12 +531,14 @@ void MaximaSession::recover() {
     // with the old process, so it can resume — it used to stay off for good,
     // even across restarts that had discarded the change. The in-memory
     // answers belonged to the old process and go with it.
+    const std::lock_guard<std::mutex> state(stateMutex_);
     cache_.clear();
+    ++stateGeneration_;
     stateAccounted_ = true;
 }
 
 void MaximaSession::restart() {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::lock_guard<std::mutex> pipe(pipeMutex_);
     if (!factory_) {
         throw KernelError("this session cannot be restarted: it was built "
                           "without a way to start another Maxima");
@@ -510,7 +547,7 @@ void MaximaSession::restart() {
 }
 
 bool MaximaSession::persistenceActive() const {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::lock_guard<std::mutex> state(stateMutex_);
     return usingPersistence();
 }
 
@@ -518,20 +555,30 @@ void MaximaSession::writeLine(std::string_view line) {
     transport_->send(std::string(line) + "\n");
 }
 
-Reply MaximaSession::readFrame(std::uint64_t id,
-                               std::chrono::milliseconds timeout) {
+std::chrono::milliseconds MaximaSession::timeoutFor(Deadline deadline) const {
+    if (deadline == Deadline::Startup) {
+        // Fixed at construction, so there is nothing to lock.
+        return config_.startupTimeout;
+    }
+    const std::lock_guard<std::mutex> state(stateMutex_);
+    return config_.timeout;
+}
+
+Reply MaximaSession::readFrame(std::uint64_t id, Deadline deadlineKind) {
     const std::string begin = frameBegin(id);
     const std::string separator = frameSeparator(id);
     const std::string end = frameEnd(id);
 
-    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    const auto started = std::chrono::steady_clock::now();
 
     std::string buffer;
     size_t endAt = std::string::npos;
     while ((endAt = buffer.find(end)) == std::string::npos) {
-        // Checked every time round, not only when a read comes back empty: a
-        // reply that arrives as a slow but unbroken trickle would otherwise
-        // never test the deadline at all and could run indefinitely.
+        // Recomputed every time round, so setTimeout can shorten a call that is
+        // already waiting. And checked every time round, not only when a read
+        // comes back empty: a reply that arrives as a slow but unbroken trickle
+        // would otherwise never test the deadline at all.
+        const auto deadline = started + timeoutFor(deadlineKind);
         const auto now = std::chrono::steady_clock::now();
         if (now >= deadline) {
             throw TimeoutError("Maxima did not respond within the configured "

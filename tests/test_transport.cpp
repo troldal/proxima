@@ -9,9 +9,13 @@
 
 #include <mx/errors.hpp>
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
+#include <future>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 using mx::detail::FakeTransport;
@@ -278,6 +282,104 @@ TEST_CASE("a timeout ends the busy child at once instead of waiting for it") {
 
     // And only that call was lost.
     CHECK(session.eval(Payload::text("again")).value == "$AFTER");
+}
+
+TEST_CASE("bookkeeping does not wait behind a call in progress") {
+    // One lock used to guard everything, so cacheStats() and setTimeout()
+    // waited for a running computation — for as long as Config::timeout — and
+    // setTimeout could never shorten the call it was waiting behind.
+    using namespace std::chrono_literals;
+
+    auto owned = std::make_unique<FakeTransport>(handshakeScript());
+    owned->staySilentWhenExhausted();
+    mx::Config config;
+    config.timeout = 30s;
+    MaximaSession session(std::move(owned), config);
+
+    auto running = std::async(std::launch::async, [&session] {
+        return session.eval(Payload::text("something slow"));
+    });
+    std::this_thread::sleep_for(200ms); // Well into its wait for a reply.
+
+    auto stats = std::async(std::launch::async, [&session] {
+        return session.cacheStats();
+    });
+    CHECK(stats.wait_for(2s) == std::future_status::ready);
+
+    session.setTimeout(50ms);
+    const bool finished = running.wait_for(5s) == std::future_status::ready;
+    CHECK(finished);
+    if (!finished) {
+        // Let the call end so the test does not hang on the old behaviour.
+        session.setTimeout(1ms);
+    }
+    CHECK_THROWS_AS(running.get(), mx::TimeoutError);
+}
+
+/// A transport that answers the handshake at once, then holds back the next
+/// reply until the test releases it — a computation the test can pause.
+class GatedTransport final : public mx::detail::ITransport {
+public:
+    GatedTransport(std::vector<std::string> script, std::string gatedReply)
+        : script_(std::move(script)), gatedReply_(std::move(gatedReply)) {}
+
+    void send(std::string_view) override {}
+    std::string receive(std::chrono::milliseconds timeout) override {
+        if (next_ < script_.size()) {
+            return script_[next_++];
+        }
+        if (!gatedSent_) {
+            waiting = true;
+            if (release) {
+                gatedSent_ = true;
+                return gatedReply_;
+            }
+        }
+        std::this_thread::sleep_for(timeout);
+        return {};
+    }
+    bool alive() const override { return true; }
+    void kill() override {}
+    void terminate() override {}
+
+    std::atomic<bool> waiting{false};
+    std::atomic<bool> release{false};
+
+private:
+    std::vector<std::string> script_;
+    std::size_t next_ = 0;
+    std::string gatedReply_;
+    bool gatedSent_ = false;
+};
+
+TEST_CASE("an answer computed across a change of state is not cached") {
+    // remember() no longer waits for the pipe, so the journal — and with it
+    // the key an answer is filed under — can change while Maxima is working on
+    // a question. The answer belongs to the state before the change.
+    using namespace std::chrono_literals;
+
+    auto owned = std::make_unique<GatedTransport>(handshakeScript(),
+                                                  frame(2, true, "$BEFORE"));
+    GatedTransport *gate = owned.get();
+    MaximaSession session(std::move(owned), mx::Config{});
+
+    auto asking = std::async(std::launch::async, [&session] {
+        return session.evalPure(Payload::text("question"));
+    });
+    while (!gate->waiting) {
+        std::this_thread::sleep_for(1ms);
+    }
+
+    auto remembering = std::async(std::launch::async, [&session] {
+        return session.remember(Payload::text("assume(x > 0)"));
+    });
+    // Does not wait for the computation, which is still held back.
+    CHECK(remembering.wait_for(2s) == std::future_status::ready);
+
+    gate->release = true;
+    CHECK(asking.get().value == "$BEFORE");
+    static_cast<void>(remembering.get());
+    CHECK(session.cacheStats().entries == 0);
 }
 
 TEST_CASE("a session with no way to build another transport does not restart") {
