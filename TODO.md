@@ -20,6 +20,41 @@ are fine today but will not scale. None of it is structural.
 
 Items are ordered by how much they matter, not by file.
 
+## Status since the review
+
+Updated after `07e62bc`. Resolved findings are ticked where they stand, with
+an *Outcome* note; everything unticked is still open. The review's own text
+is left as written, so its measurements stay comparable.
+
+Work since, and what it turned up that the review had not found:
+
+- **Expressions reach Maxima as s-expressions** (`b71ccdf`). Resolves §2's
+  read-error stall and closes the injection path with it, plus the §8
+  read-error test and three §5 stale comments. Found on the way: `subst` is an
+  alias that Maxima's parser resolves and reading a form does not, so a form
+  headed `$SUBST` evaluated to itself; and two tests had been passing for the
+  wrong reason, provoking errors with `Symbol("5")` that only erred because
+  printing turned the symbol into a number.
+- **User-supplied renderers** (`666756c`). A type-erased `mx::Renderer<T>` over
+  a shared presentation layer, with `str()` reimplemented on top of it.
+  Resolves §3's "printer runs the normaliser" and §4's `-1*x` printing. Found:
+  `x - (1 + y)` printed as `x - 1 + y`, which re-parses as a different
+  expression.
+- **A regression from that, fixed** (`d058f70`). `666756c` printed
+  `sqrt(1 - x^2)` as `1 - x^2^(1/2)` — again a different expression — because
+  a missing `root()` was synthesised from already-rendered text. The demo
+  found it; roots are now rewritten as display nodes and walked normally.
+- **TeX and MathML renderers** (`666756c`, `693771a`): `toTeX()` and
+  `toMathML()`. Found: both padded small exponents, `10^{-07}`.
+- **Demo** (`2855343`, `07e62bc`): results through all four renderers,
+  including the user-written `examples/text2d.hpp`.
+
+Suite: 246 cases / 2574 assertions on Windows, 243 / 2563 on Linux (222 when
+the review was written).
+
+Still open and worth doing first: §1's wrong numeric answers (`mod`, `round`),
+the `Expr(true)` trap, and §3's 15 ms Win32 round-trip floor.
+
 ---
 
 ## 1. Correctness — wrong answers
@@ -64,6 +99,10 @@ These produce a result that disagrees with Maxima, silently.
   equal, and NaN prints as `nan`, which Maxima reads as a *symbol*. Decide:
   either reject NaN at `Expr::real` (throw) or give it a total order
   (`std::strong_order` on the bit pattern) and a spelling. (Measured.)
+
+  *Partly done:* since `b71ccdf`, sending a NaN to Maxima throws `mx::Error`
+  instead of arriving as the symbol `nan`. The ordering UB, the equality/hash
+  mismatch and `str()` printing `nan` all remain.
 
 - [ ] **Persistent-cache temp files can collide between processes.** The
   temporary is named with an in-process atomic counter, so two processes
@@ -288,8 +327,7 @@ Fine at today's sizes; these are the walls you will hit.
 - [ ] **The wire format leaks through `Kernel::eval`.** *(Partly done:
   `eval`/`evalPure`/`evalTracked` now have `const Expr &` overloads, so a
   caller can send structure. The reply is still raw text.)* It returns
-  `Reply::value` as raw s-expression text, and `reply.hpp` still says
-  "Text only for now: step 7 adds the reader". A public `Kernel::evalExpr`
+  `Reply::value` as raw s-expression text. A public `Kernel::evalExpr`
   returning `std::expected<Expr, Failure>` — which is what `ops.cpp`'s
   private `evaluate()` already is — would let users who need a Maxima
   function this library has not wrapped get an `Expr` back without
@@ -322,9 +360,11 @@ Fine at today's sizes; these are the walls you will hit.
   `trigsimp`, `radcan`) is more honest and matches Maxima's vocabulary,
   which the rest of `ops.hpp` already does.
 
-- [ ] **`isUnevaluated(result, "list")` is used to mean "is a list".**
+- [x] **`isUnevaluated(result, "list")` is used to mean "is a list".**
   A misnomer that reads as "Maxima failed" at every call site in `solve`.
   Add `isList()`.
+
+  *Outcome:* done in `b71ccdf`; `solve` now calls `isList()`.
 
 - [ ] **`wrongKind()` prints the kind as an integer.** "expression is not
   an integer (kind 4)". Add a `to_string(Kind)` / `kindName()` — it is
@@ -335,11 +375,15 @@ Fine at today's sizes; these are the walls you will hit.
   `Symbol` in `Bindings` (or a transparent comparator over both) would
   make the numeric API read consistently.
 
-- [ ] **Printing `-1*x` and `(-1*x)^2`.** `-(x+1)` prints `-1*(1 + x)`
+- [x] **Printing `-1*x` and `(-1*x)^2`.** `-(x+1)` prints `-1*(1 + x)`
   and `(-x)^2` prints `(-1*x)^2` (measured). Valid Maxima, but every
   user will read it as a bug. The printer already special-cases a leading
   `-1` inside sums; extend it to products at the top level and inside
   `Pow`.
+
+  *Outcome:* resolved by the renderer layer in `666756c`, which carries a sign
+  as a flag rather than a `-1` factor. `-(1 + x)` and `-x - y` are pinned in
+  `test_render.cpp`, and `(-x)^2` is in its round-trip corpus.
 
 - [ ] **`x**2` and `1e400` are parse errors.** Maxima accepts `**` as
   `^`; accept it. `1e400` overflows `double` — either throw a clearer
@@ -355,8 +399,9 @@ stand out. All refer to plan steps as future work that has since shipped:
   contradicted by the next one. Delete the stale paragraph.
 - [x] `include/mx/reply.hpp`: "Text only for now: PLAN.md step 7 adds the
   reader… Until then this is the rawest useful thing". *(Fixed.)*
-- [ ] `include/mx/kernel.hpp`: "This is the whole public surface for now…
+- [x] `include/mx/kernel.hpp`: "This is the whole public surface for now…
   structured expressions arrive with the term layer (PLAN.md steps 7-9)".
+  *(Fixed in `b71ccdf`.)*
 - [ ] `include/mx/ops.hpp`, `sharedKernel`: "Not thread-safe — see PLAN.md
   step 13". Wrong, see §2.
 - [ ] `include/mx/context.hpp`: "so that PLAN.md step 14's cache key can
