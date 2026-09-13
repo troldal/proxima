@@ -460,8 +460,12 @@ void MaximaSession::recover() {
         ~Restore() { flag = false; }
     } restore{recovering_};
 
+    // terminate, not kill: the process being replaced was never asked to quit.
+    // After a timeout it is still busy computing and will not leave on its own,
+    // so kill's grace period was two seconds added to every recovery for
+    // nothing; after a death there is nothing left to wait for anyway.
     if (transport_) {
-        transport_->kill();
+        transport_->terminate();
     }
     transport_ = factory_();
     if (!transport_) {

@@ -37,8 +37,15 @@ public:
     /// False once the child has exited or its output stream has closed.
     virtual bool alive() const = 0;
 
-    /// Terminates the child and releases its handles. Idempotent.
+    /// Ends a child that has been asked to leave, and releases its handles.
+    /// Closes its input and gives it a grace period to exit on its own —
+    /// to flush, to finish cleanly — before terminating it. Idempotent.
     virtual void kill() = 0;
+
+    /// Ends the child at once, without the grace period, and releases its
+    /// handles. For a child that was never asked to leave and will not: one
+    /// still busy with a computation that timed out. Idempotent.
+    virtual void terminate() = 0;
 };
 
 } // namespace mx::detail

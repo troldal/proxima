@@ -242,6 +242,17 @@ bool ChildProcessTransport::alive() const {
 }
 
 void ChildProcessTransport::kill() {
+    stop(kExitGrace);
+}
+
+void ChildProcessTransport::terminate() {
+    // No grace period. A child that timed out was never asked to leave and is
+    // still computing, so waiting for it only adds kExitGrace to every
+    // timeout's recovery, for nothing.
+    stop(std::chrono::milliseconds::zero());
+}
+
+void ChildProcessTransport::stop(std::chrono::milliseconds grace) {
     boost::system::error_code ignored;
 
     // Closing stdin gives a child that was asked to quit a chance to see end
@@ -249,7 +260,7 @@ void ChildProcessTransport::kill() {
     impl_->input.close(ignored);
 
     if (impl_->process) {
-        const auto deadline = std::chrono::steady_clock::now() + kExitGrace;
+        const auto deadline = std::chrono::steady_clock::now() + grace;
         for (;;) {
             boost::system::error_code ec;
             const bool running = impl_->process->running(ec);

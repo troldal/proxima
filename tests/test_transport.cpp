@@ -230,6 +230,56 @@ TEST_CASE("a session that cannot answer restarts and replays its state") {
     CHECK(session.eval(Payload::text("something")).value == "$RECOVERED");
 }
 
+/// Forwards to a FakeTransport the test owns, so the test can still inspect it
+/// after the session has discarded the transport.
+class Borrowed final : public mx::detail::ITransport {
+public:
+    explicit Borrowed(FakeTransport &inner) : inner_(inner) {}
+    void send(std::string_view bytes) override { inner_.send(bytes); }
+    std::string receive(std::chrono::milliseconds timeout) override {
+        return inner_.receive(timeout);
+    }
+    bool alive() const override { return inner_.alive(); }
+    void kill() override { inner_.kill(); }
+    void terminate() override { inner_.terminate(); }
+
+private:
+    FakeTransport &inner_;
+};
+
+TEST_CASE("a timeout ends the busy child at once instead of waiting for it") {
+    // Recovery used to call kill(), which gives a child that was asked to quit
+    // two seconds to leave. A child that timed out was not asked: it is still
+    // computing and never leaves, so every timeout cost two seconds more than
+    // it needed to.
+    FakeTransport busy(handshakeScript());
+    busy.staySilentWhenExhausted();
+
+    int built = 0;
+    auto factory = [&]() -> std::unique_ptr<mx::detail::ITransport> {
+        ++built;
+        if (built == 1) {
+            return std::make_unique<Borrowed>(busy);
+        }
+        std::vector<std::string> script = handshakeScript();
+        script.push_back(frame(2, true, "$AFTER"));
+        return std::make_unique<FakeTransport>(std::move(script));
+    };
+
+    mx::Config config;
+    config.timeout = std::chrono::milliseconds(100);
+    MaximaSession session(factory, config);
+
+    CHECK_THROWS_AS(session.eval(Payload::text("expand((x+y+z)^200)")),
+                    mx::TimeoutError);
+    CHECK(built == 2);
+    CHECK(busy.terminated());
+    CHECK_FALSE(busy.killedGracefully());
+
+    // And only that call was lost.
+    CHECK(session.eval(Payload::text("again")).value == "$AFTER");
+}
+
 TEST_CASE("a session with no way to build another transport does not restart") {
     ScriptedSession scripted({});
     REQUIRE(scripted.transport->scriptExhausted());

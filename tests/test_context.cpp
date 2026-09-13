@@ -255,7 +255,11 @@ TEST_CASE("a timeout loses the call, not the session") {
     // Deliberately something that takes hundreds of milliseconds. An ordinary
     // integral finishes inside a single poll, so it would race the deadline
     // rather than reliably exceed it.
+    const auto start = std::chrono::steady_clock::now();
     CHECK_THROWS_AS(kernel.eval("expand((x+y+z)^200)"), mx::TimeoutError);
+    // Including the restart. Recovery used to wait two seconds for the busy
+    // Maxima to quit, which it never does; this call took about 2.5 s then.
+    CHECK(std::chrono::steady_clock::now() - start < std::chrono::milliseconds(1500));
 
     kernel.setTimeout(std::chrono::seconds(30));
     // The restart means the next caller is not left holding a wedged kernel.

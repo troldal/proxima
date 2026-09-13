@@ -48,8 +48,13 @@ public:
     std::string receive(std::chrono::milliseconds timeout) override;
     bool alive() const override;
     void kill() override;
+    void terminate() override;
 
 private:
+    /// Closes the child's input, waits up to `grace` for it to exit, then
+    /// terminates it if it has not.
+    void stop(std::chrono::milliseconds grace);
+
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

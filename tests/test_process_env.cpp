@@ -191,7 +191,18 @@ TEST_CASE("a silent child makes receive wait out its timeout") {
         // leave: kill() has to terminate them after its grace period.
         const auto killStart = std::chrono::steady_clock::now();
         child.kill();
-        CHECK(std::chrono::steady_clock::now() - killStart < 10s);
+        const auto took = std::chrono::steady_clock::now() - killStart;
+        CHECK(took >= 1s); // The grace period was given.
+        CHECK(took < 10s);
+        CHECK_FALSE(child.alive());
+    }
+
+    SUBCASE("while terminate() ends it without the grace period") {
+        // What recovery after a timeout wants: the child was never asked to
+        // leave, so there is nothing to wait for.
+        const auto terminateStart = std::chrono::steady_clock::now();
+        child.terminate();
+        CHECK(std::chrono::steady_clock::now() - terminateStart < 1s);
         CHECK_FALSE(child.alive());
     }
 }

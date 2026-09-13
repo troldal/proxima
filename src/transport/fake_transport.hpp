@@ -23,6 +23,7 @@ public:
     std::string receive(std::chrono::milliseconds timeout) override;
     bool alive() const override;
     void kill() override;
+    void terminate() override;
 
     /// Everything written to the transport, one entry per send() call.
     const std::vector<std::string> &sent() const { return sent_; }
@@ -33,11 +34,23 @@ public:
     /// True once every scripted response has been consumed.
     bool scriptExhausted() const { return next_ >= responses_.size(); }
 
+    /// After the script runs out, behave like a child that is still busy
+    /// computing rather than one that has exited: stay alive, and let each
+    /// receive() wait out its timeout with nothing to show for it.
+    void staySilentWhenExhausted() { silentWhenExhausted_ = true; }
+
+    /// Which way the transport was ended, if it was.
+    bool killedGracefully() const { return killedGracefully_; }
+    bool terminated() const { return terminated_; }
+
 private:
     std::vector<std::string> responses_;
     std::vector<std::string> sent_;
     std::size_t next_ = 0;
     bool killed_ = false;
+    bool killedGracefully_ = false;
+    bool terminated_ = false;
+    bool silentWhenExhausted_ = false;
 };
 
 } // namespace mx::detail
