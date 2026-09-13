@@ -610,8 +610,13 @@ Reply MaximaSession::readFrame(std::uint64_t id, Deadline deadlineKind) {
     const auto started = std::chrono::steady_clock::now();
 
     std::string buffer;
+    // Where the next search for the closing delimiter starts. Only the bytes
+    // that just arrived can complete it, plus the few before them where a
+    // delimiter split across two reads would begin. Searching the whole buffer
+    // after every read made a large reply cost time quadratic in its size.
+    std::size_t searchFrom = 0;
     size_t endAt = std::string::npos;
-    while ((endAt = buffer.find(end)) == std::string::npos) {
+    while ((endAt = buffer.find(end, searchFrom)) == std::string::npos) {
         // Recomputed every time round, so setTimeout can shorten a call that is
         // already waiting. And checked every time round, not only when a read
         // comes back empty: a reply that arrives as a slow but unbroken trickle
@@ -630,6 +635,7 @@ Reply MaximaSession::readFrame(std::uint64_t id, Deadline deadlineKind) {
         const std::string chunk
             = transport_->receive(std::min(kPollInterval, remaining));
         if (!chunk.empty()) {
+            searchFrom = buffer.size() >= end.size() ? buffer.size() - (end.size() - 1) : 0;
             buffer += chunk;
             continue;
         }

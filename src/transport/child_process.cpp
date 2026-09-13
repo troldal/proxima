@@ -73,6 +73,11 @@ struct ChildProcessTransport::Impl {
     /// Set once the output has reached end of file or failed, which is what a
     /// child that has exited looks like from here.
     bool closed = false;
+
+    /// Where each read lands. 64 KB, where it used to be 4 KB on the stack: a
+    /// megabyte of reply was 256 reads, each a trip round the io_context, and
+    /// the session searching the text after every one.
+    std::array<char, 64 * 1024> readBuffer{};
 };
 
 ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &argv,
@@ -195,13 +200,12 @@ std::string ChildProcessTransport::receive(std::chrono::milliseconds timeout) {
         return {};
     }
 
-    std::array<char, 4096> chunk{};
     std::size_t received = 0;
     boost::system::error_code result;
     bool finished = false;
 
     impl_->output.async_read_some(
-        asio::buffer(chunk),
+        asio::buffer(impl_->readBuffer),
         [&](const boost::system::error_code &ec, std::size_t count) {
             result = ec;
             received = count;
@@ -227,7 +231,7 @@ std::string ChildProcessTransport::receive(std::chrono::milliseconds timeout) {
         // End of file, or a broken pipe: either way the child has exited.
         impl_->closed = true;
     }
-    return std::string(chunk.data(), received);
+    return std::string(impl_->readBuffer.data(), received);
 }
 
 bool ChildProcessTransport::alive() const {

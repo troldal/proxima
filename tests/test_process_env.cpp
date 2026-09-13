@@ -217,12 +217,19 @@ TEST_CASE("a slow child: many empty reads, then more than one read's worth") {
     // write without overlapped I/O, so the Windows completion-port corruption
     // described in child_process.cpp never shows here; it only ever showed with
     // SBCL, and the Maxima integration suite is what guards against it.
+    //
+    // The burst is generated rather than taken from a directory listing, so it
+    // is reliably larger than one read now that a read is 64 KB: about 240 KB.
 #ifdef _WIN32
     ChildProcessTransport child(
         {commandShell(), "/c",
-         "ping -n 2 127.0.0.1 >nul & dir /s %SystemRoot%\\System32\\drivers"});
+         "ping -n 2 127.0.0.1 >nul & for /l %i in (1,1,4000) do "
+         "@echo mx_filler_line_0123456789_abcdefghijklmnopqrstuvwxyz"});
 #else
-    ChildProcessTransport child({"/bin/sh", "-c", "sleep 1; ls -la /usr/bin"});
+    ChildProcessTransport child(
+        {"/bin/sh", "-c",
+         "sleep 1; yes mx_filler_line_0123456789_abcdefghijklmnopqrstuvwxyz"
+         " | head -c 240000"});
 #endif
 
     std::string output;
@@ -241,7 +248,8 @@ TEST_CASE("a slow child: many empty reads, then more than one read's worth") {
     }
 
     CHECK(emptyReads >= 5);
-    CHECK(output.size() > 4096);
+    // More than one read's worth, with the transport's 64 KB reads.
+    CHECK(output.size() > 64 * 1024);
 }
 
 TEST_CASE("an environment override reaches the child") {
