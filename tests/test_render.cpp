@@ -81,6 +81,13 @@ TEST_CASE("infix output still reads back as the same expression") {
         pow(-Expr(x), 2),
         pow(pow(Expr(x), 2), 3),
         mx::sqrt(Expr(x)),
+        // Compound radicands. Every root here used to have a bare symbol under
+        // it, which is how `1 - x^2^(1/2)` got past this test.
+        mx::sqrt(Expr(x) + 1),
+        mx::sqrt(Expr(1) - pow(Expr(x), 2)),
+        Expr(x) * mx::sqrt(Expr(1) - pow(Expr(x), 2)) / Expr(2),
+        pow(Expr(x) * Expr(y), Expr::rational(1, 3)),
+        pow(pow(Expr(x), 2), Expr::rational(1, 2)),
         mx::exp(Expr(x)),
         mx::sin(Expr(x)) / mx::cos(Expr(x)),
         Expr::function("list", {Expr(1), Expr(x)}),
@@ -99,6 +106,20 @@ TEST_CASE("a root is spelled as a power where that is what reads back") {
     // emits `x^1/2`, which is `(x^1)/2`.
     CHECK(mx::sqrt(Expr(Symbol("x"))).str() == "x^(1/2)");
     CHECK(pow(Expr(Symbol("x")), Expr::rational(1, 3)).str() == "x^(1/3)");
+
+    SUBCASE("and the radicand is grouped as a power base") {
+        // Regression: this printed `1 - x^2^(1/2)`, a different expression,
+        // because the default root was assembled from already-rendered text
+        // that could not say it needed brackets. It is now a Power node,
+        // walked like any other.
+        const Symbol x("x");
+        CHECK(mx::sqrt(Expr(1) - pow(Expr(x), 2)).str() == "(1 - x^2)^(1/2)");
+        CHECK(mx::sqrt(Expr(x) + 1).str() == "(1 + x)^(1/2)");
+        CHECK(mx::sqrt(pow(Expr(x), 2)).str() == "(x^2)^(1/2)");
+        // TeX has a radical, so it never needed the brackets.
+        CHECK(mx::toTeX(mx::sqrt(Expr(1) - pow(Expr(x), 2)))
+              == "\\sqrt{1 - x^{2}}");
+    }
     // TeX does define root(), so it gets a radical.
     CHECK(mx::toTeX(mx::sqrt(Expr(Symbol("x")))) == "\\sqrt{x}");
     CHECK(mx::toTeX(pow(Expr(Symbol("x")), Expr::rational(1, 3)))

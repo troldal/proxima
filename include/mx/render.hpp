@@ -318,6 +318,8 @@ struct RendererVTable {
     T (*product)(void *, std::span<const T>);
     T (*fraction)(void *, const T &, const T &);
     T (*power)(void *, const T &, const T &);
+    /// Null when the renderer defines no root(); the walk then renders the
+    /// equivalent power instead.
     T (*root)(void *, const T &, unsigned);
     T (*call)(void *, std::string_view, std::span<const T>);
     T (*list)(void *, std::span<const T>);
@@ -433,9 +435,15 @@ public:
     T power(const T &base, const T &exponent) {
         return vtable_->power(object_, base, exponent);
     }
+    /// Only for a renderer that defines root() — see rendersRoots(). One that
+    /// does not has its roots rendered as powers by the walk itself, which is
+    /// the only place the grouping of both base and exponent can be decided.
     T root(const T &radicand, unsigned index) {
         return vtable_->root(object_, radicand, index);
     }
+
+    /// Whether the held renderer defines root().
+    bool rendersRoots() const { return vtable_->root != nullptr; }
     T call(std::string_view head, std::span<const T> args) {
         return vtable_->call(object_, head, args);
     }
@@ -512,6 +520,25 @@ private:
         }
     }
 
+    using RootFn = T (*)(void *, const T &, unsigned);
+
+    /// The root slot: the renderer's own function if it has one, else null.
+    /// Two constrained overloads rather than a conditional, because the
+    /// branch calling root() must not even be instantiated for a renderer
+    /// that lacks it.
+    template <typename R>
+    static constexpr RootFn rootSlot() {
+        return nullptr;
+    }
+
+    template <typename R>
+        requires RendersRoot<typename detail::Unwrap<R>::type, T>
+    static constexpr RootFn rootSlot() {
+        return [](void *p, const T &radicand, unsigned index) -> T {
+            return detail::Model<R>::get(p).root(radicand, index);
+        };
+    }
+
     /// Builds the operation table for one concrete renderer.
     ///
     /// This is where the optional operations are resolved: the concrete type
@@ -538,26 +565,8 @@ private:
             [](void *p, const T &b, const T &e) {
                 return M::get(p).power(b, e);
             },
-            [](void *p, const T &radicand, unsigned index) -> T {
-                if constexpr (RendersRoot<Actual, T>) {
-                    return M::get(p).root(radicand, index);
-                } else {
-                    // x^(1/n), built from operations every renderer has. The
-                    // grouping has to be applied here by hand: this exponent
-                    // is synthesised rather than walked, and without it an
-                    // infix renderer emits `x^1/2`, which reads back as
-                    // `(x^1)/2` — a different number.
-                    Actual &renderer = M::get(p);
-                    const T one = renderer.integer(Integer(1));
-                    const T n = renderer.integer(Integer(index));
-                    T exponent = renderer.fraction(one, n);
-                    if (strengthOfIn(renderer, Construct::Fraction)
-                        < contextForIn(renderer, Slot::Exponent)) {
-                        exponent = renderer.group(exponent);
-                    }
-                    return renderer.power(radicand, exponent);
-                }
-            },
+            // Not synthesised here: see rootAsPower.
+            rootSlot<R>(),
             [](void *p, std::string_view head, std::span<const T> args) {
                 return M::get(p).call(head, args);
             },
@@ -612,6 +621,34 @@ private:
 
 namespace detail {
 
+/// `radicand^(1/index)`, as a display tree, for a renderer with no notation
+/// for roots of its own.
+///
+/// Built as nodes and walked rather than assembled from already-rendered
+/// text, which is the whole point. Text cannot say whether the radicand needs
+/// brackets as a power base; an earlier version that tried printed
+/// `sqrt(1 - x^2)` as `1 - x^2^(1/2)`, which is a different expression.
+inline DisplayNode rootAsPower(const DisplayNode &root) {
+    DisplayNode one;
+    one.kind = DisplayKind::Integer;
+    one.integer = Integer(1);
+
+    DisplayNode index;
+    index.kind = DisplayKind::Integer;
+    index.integer = Integer(root.index);
+
+    DisplayNode exponent;
+    exponent.kind = DisplayKind::Fraction;
+    exponent.children.push_back(std::move(one));
+    exponent.children.push_back(std::move(index));
+
+    DisplayNode power;
+    power.kind = DisplayKind::Power;
+    power.children.push_back(root.children.front());
+    power.children.push_back(std::move(exponent));
+    return power;
+}
+
 /// Layer two: the walk, with grouping applied. Generic over the renderer's
 /// output type, which is the whole reason this is a template — a 2-D text
 /// renderer returns boxes with a width, height and baseline, not strings, and
@@ -619,6 +656,10 @@ namespace detail {
 /// that needs it most.
 template <typename T>
 T renderNode(const DisplayNode &node, Strength context, Renderer<T> &renderer) {
+    if (node.kind == DisplayKind::Root && !renderer.rendersRoots()) {
+        return renderNode(rootAsPower(node), context, renderer);
+    }
+
     const auto child = [&](const DisplayNode &operand, Slot slot) {
         return renderNode(operand, renderer.contextFor(slot), renderer);
     };

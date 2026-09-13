@@ -1251,10 +1251,18 @@ their contents, to keep that honest.
 
 **Optional operations resolve where the concrete type is still visible**, so a
 renderer that never heard of roots still renders them through its own `power()`.
-That turned out to need care: the synthesised default builds its exponent
-outside the walk, so it has to apply the grouping rule itself — without that the
-infix renderer emitted `x^1/2`, which reads back as `(x^1)/2`. The existing
-tests caught it.
+That turned out to need care, twice, and the second time it shipped. A root
+synthesised from already-rendered text cannot know whether its radicand needs
+brackets. The first version emitted `x^1/2`, which reads back as `(x^1)/2`, and
+the tests caught it. The patch grouped the exponent but not the base, so
+`sqrt(1 - x^2)` still printed `1 - x^2^(1/2)` — a different expression — and
+that got past the tests because every root in them had a bare symbol under it.
+It surfaced when the demo rendered a real Maxima result (the quadratic formula).
+Now a renderer without `root()` has the Root node rewritten as the equivalent
+Power *display node* and walked like any other, so base and exponent are
+grouped by the same rules as everywhere else, and the round-trip corpus carries
+compound radicands. Synthesising from rendered text was the mistake; the
+display tree is where that information lives.
 
 `Expr::str()` is now an ordinary client, `InfixRenderer` in `printer.cpp`, with
 no privileged access — which is what proves the abstraction sufficient, since
