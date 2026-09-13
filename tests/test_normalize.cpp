@@ -227,7 +227,11 @@ TEST_CASE("a reciprocal is kept in the one form division produces") {
                               Expr(x) * pow(Expr(2), -1),
                               Expr::rational(4, 269) * pow(Expr(0), -1),
                               Expr::rational(4, 269) * pow(Expr(2.5), -1),
-                              Expr::rational(3, 5) * pow(Expr(2), -2) * Expr(x)}) {
+                              Expr::rational(3, 5) * pow(Expr(2), -2) * Expr(x),
+                              // -0.0 prints with a minus but is not below zero,
+                              // so as a base it went unbracketed: -0.0^(-1).
+                              pow(Expr(-0.0), -1), pow(Expr(-0.0), 2),
+                              Expr(-0.0) * Expr(x), Expr(-0.0)}) {
             CAPTURE(e.str());
             CHECK(Expr::parse(e.str()) == e);
         }

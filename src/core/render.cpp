@@ -1,6 +1,7 @@
 #include <mx/render.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 #include <vector>
 
@@ -220,9 +221,13 @@ Signed signedDisplay(const Expr &expr) {
         return result;
 
     case Kind::Real:
-        result.negated = expr.realValue() < 0.0;
+        // The sign bit, not `< 0`: -0.0 is not below zero but prints with a
+        // minus. Found by fuzzing: kept inside the number, that minus escaped
+        // the bracketing a negative base gets, and (-0.0)^-1 printed as
+        // -0.0^(-1), which reads back as -(0.0^-1).
+        result.negated = std::signbit(expr.realValue());
         result.node = leaf(DisplayKind::Real);
-        result.node.real = result.negated ? -expr.realValue() : expr.realValue();
+        result.node.real = std::fabs(expr.realValue());
         return result;
 
     case Kind::Rational: {
