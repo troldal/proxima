@@ -145,12 +145,23 @@ target_include_directories(maxima_cpp
 
 target_compile_features(maxima_cpp PUBLIC cxx_std_23)
 
+# Every source file here is UTF-8 without a byte-order mark. MSVC reads such a
+# file in the ANSI code page unless told otherwise, so a non-ASCII character in
+# a string literal compiles to the UTF-8 of different characters; GCC and Clang,
+# clang-cl included, assume UTF-8 already. PRIVATE, and on each target that
+# compiles these sources, because it describes this project's files and not a
+# consumer's.
+set(MX_MSVC_UTF8 $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
+target_compile_options(maxima_cpp PRIVATE ${MX_MSVC_UTF8})
+
 add_executable(demo examples/demo.cpp)
 target_link_libraries(demo PRIVATE mx::maxima_cpp)
+target_compile_options(demo PRIVATE ${MX_MSVC_UTF8})
 
 # A longer, heavily commented walk through every public feature.
 add_executable(tour examples/tour.cpp)
 target_link_libraries(tour PRIVATE mx::maxima_cpp)
+target_compile_options(tour PRIVATE ${MX_MSVC_UTF8})
 
 # --- Installation ---------------------------------------------------------
 

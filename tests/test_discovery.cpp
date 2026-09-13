@@ -317,22 +317,45 @@ TEST_CASE("opting into the user's configuration leaves MAXIMA_USERDIR alone") {
 
 // --- paths outside ASCII -------------------------------------------------------
 //
-// One name with a Latin letter and two CJK characters: no single ANSI code
-// page holds all three, so on Windows anything still going through one fails
-// here. Spelled with universal character names, so the test does not depend on
-// the encoding the compiler assumes for this file.
+// One name with a Latin letter and two CJK characters, U+00E6, U+4E2D and
+// U+6587: no single ANSI code page holds all three, so on Windows anything
+// still going through one fails here.
+//
+// None of those characters appears raw in this file, and none is written as a
+// universal character name either. MSVC reads a source file that has no
+// byte-order mark in the ANSI code page unless it is given /utf-8, so a raw
+// character in a literal compiles to the UTF-8 of different characters. The
+// first version of these tests spelled the name raw and failed under MSVC for
+// exactly that reason, while GCC and clang-cl, which assume UTF-8, passed. The
+// build now passes /utf-8, but the tests should not depend on it.
 
 namespace {
 
-constexpr const char8_t *kUnicodeName = u8"mæxima_中文";
-
-/// kUnicodeName's UTF-8 bytes, written out so the expectation is not computed
-/// by the code under test.
+/// The name's UTF-8 bytes, written out so the expectation is not computed by
+/// the code under test.
 constexpr const char *kUnicodeNameBytes
     = "m" "\xC3\xA6" "xima_" "\xE4\xB8\xAD" "\xE6\x96\x87";
 
+#ifdef _WIN32
+/// The same name as UTF-16 code units, which is what a Windows path holds.
+const std::wstring kUnicodeNameWide = {L'm', wchar_t{0x00E6}, L'x', L'i', L'm',
+                                       L'a', L'_', wchar_t{0x4E2D},
+                                       wchar_t{0x6587}};
+#endif
+
+/// The name as a path, built without the conversions under test: from code
+/// units on Windows, where a path is wide, and from the bytes elsewhere, where
+/// a path is bytes.
+std::filesystem::path unicodeName() {
+#ifdef _WIN32
+    return std::filesystem::path(kUnicodeNameWide);
+#else
+    return std::filesystem::path(std::string(kUnicodeNameBytes));
+#endif
+}
+
 std::filesystem::path unicodePath(std::string_view relative = {}) {
-    std::filesystem::path path = abs("apps") / std::filesystem::path(kUnicodeName);
+    std::filesystem::path path = abs("apps") / unicodeName();
     if (!relative.empty()) {
         path /= relative;
     }
@@ -346,13 +369,13 @@ std::string utf8(const std::filesystem::path &path) {
 } // namespace
 
 TEST_CASE("paths convert to and from UTF-8 exactly") {
-    const std::filesystem::path name(kUnicodeName);
+    const std::filesystem::path name = unicodeName();
     CHECK(mx::detail::toUtf8(name) == kUnicodeNameBytes);
     CHECK(mx::detail::pathFromUtf8(kUnicodeNameBytes) == name);
 #ifdef _WIN32
-    // And the native, wide, spelling is the right one — not bytes widened one
-    // at a time, which would round-trip just as well.
-    CHECK(name.native() == L"mæxima_中文");
+    // And the native, wide, spelling it produces is the right one — not bytes
+    // widened one at a time, which would round-trip just as well.
+    CHECK(mx::detail::pathFromUtf8(kUnicodeNameBytes).native() == kUnicodeNameWide);
 #endif
 
     // Text that is not UTF-8 is refused, not guessed at. Only Windows has to
@@ -367,7 +390,7 @@ TEST_CASE("the real environment is read without loss") {
     // What std::getenv could not do on Windows: its ANSI copy of the
     // environment replaces the CJK characters with '?'.
 #ifdef _WIN32
-    REQUIRE(_wputenv_s(L"MX_UTF8_TEST", L"mæxima_中文") == 0);
+    REQUIRE(_wputenv_s(L"MX_UTF8_TEST", kUnicodeNameWide.c_str()) == 0);
 #else
     REQUIRE(setenv("MX_UTF8_TEST", kUnicodeNameBytes, 1) == 0);
 #endif
@@ -441,8 +464,9 @@ TEST_CASE("an ASCII path is handed to SBCL unchanged") {
 
 TEST_CASE("a non-ASCII path is handed to SBCL in a form it can open") {
     namespace fs = std::filesystem;
-    const fs::path dir = fs::temp_directory_path()
-                         / fs::path(std::u8string(u8"mx_sbcl_") + kUnicodeName);
+    fs::path leaf("mx_sbcl_");
+    leaf += unicodeName();
+    const fs::path dir = fs::temp_directory_path() / leaf;
     std::error_code ec;
     fs::create_directories(dir, ec);
     REQUIRE_FALSE(ec);
