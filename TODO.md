@@ -22,7 +22,7 @@ Items are ordered by how much they matter, not by file.
 
 ## Status since the review
 
-Updated after `39dad91`. Resolved findings are ticked where they stand, with
+Updated after `e81c66c`. Resolved findings are ticked where they stand, with
 an *Outcome* note; everything unticked is still open. The review's own text
 is left as written, so its measurements stay comparable.
 
@@ -75,12 +75,21 @@ Work since, and what it turned up that the review had not found:
   core under a non-ASCII path whatever the caller passes. The library hands it
   8.3 short names instead, which only works on volumes that have them. PLAN.md
   "Paths outside ASCII" has the measurements.
+- **The rest of §1, one commit each** (`c70adc7` … `e81c66c`). Every
+  wrong-answer finding is now closed. Each fix was checked against what real
+  Maxima does before changing anything. Found on the way: `0.0 == -0.0`, but
+  MSVC's `std::hash<double>` hashes the bit pattern, so the two could hash
+  differently under clang-cl; `(a < b) < c` is legal Maxima, so only the
+  unparenthesised chain is refused; a test meant to prove NaN is refused
+  passed vacuously, because `Expr(nan);` declares a variable; and Maxima's
+  `global` context holds 75 built-in type facts that `facts()` must not report
+  as assumptions.
 
-Suite: 261 cases / 2805 assertions on Windows (GCC and clang-cl), 262 / 2802 on
+Suite: 268 cases / 2931 assertions on Windows (GCC and clang-cl), 269 / 2929 on
 Linux (222 when the review was written).
 
-Still open and worth doing first: §1's NaN ordering, which is undefined
-behaviour in the normaliser's sort.
+§1 is closed. What remains is robustness (§2), performance (§3), ergonomics
+(§4) and the smaller sections after them.
 
 ---
 
@@ -127,17 +136,31 @@ These produce a result that disagrees with Maxima, silently.
   `unsigned char`) as numbers. The deleted constructors make the error name
   the type: `use of deleted function 'mx::Expr::Expr(T) [with T = bool]'`.
 
-- [ ] **`Expr::parse("x!!")` gives `factorial(factorial(x))`.** In Maxima
+- [x] **`Expr::parse("x!!")` gives `factorial(factorial(x))`.** In Maxima
   `!!` is the double factorial — a different function. The parser claims to
   be a subset of Maxima's grammar; on this input it is a superset with a
   different meaning. Either lex `!!` as its own token (→ `genfact`/
   `double_factorial`) or reject it. (Measured.)
 
-- [ ] **`Expr::parse("a<b<c")` is accepted as `(a<b)<c`.** Maxima rejects
+  *Outcome:* fixed in `c70adc7` by lexing `!!` as its own token, greedily, as
+  Maxima's lexer does: `x!!!` is `(x!!)!`, and only `x! !` with a space is a
+  factorial taken twice. It maps to `double_factorial`, which Maxima reads to
+  the same `%DOUBLE_FACTORIAL` noun, so no wire mapping had to change. Checked
+  against Maxima for `x!!`, `x!!!`, `x! !`, `2*x!!` and `5!!` = 15.
+
+- [x] **`Expr::parse("a<b<c")` is accepted as `(a<b)<c`.** Maxima rejects
   chained relations. Same subset-vs-superset problem: make relations
   non-associative in the Pratt loop and throw. (Measured.)
 
-- [ ] **NaN breaks `compareExpr`'s strict weak ordering.** `compareExpr`
+  *Outcome:* fixed in `52ad2d0`. Maxima refuses any unparenthesised chain,
+  mixed operators included (`a < b = c`), but accepts `(a < b) < c`,
+  `a = (b = c)` and a relation as an argument; the parser now matches all of
+  that, reporting the offset of the second relation where Maxima puts its
+  caret. The printer already kept the parentheses a nested relation needs, and
+  a test now pins that, since printing without them would produce exactly what
+  is refused.
+
+- [x] **NaN breaks `compareExpr`'s strict weak ordering.** `compareExpr`
   orders numbers through `double`; for NaN neither `<` nor `>` holds, so
   distinct NaNs compare *equal* to everything numeric, which violates the
   precondition of the `std::sort` calls in `normalize()` — that is
@@ -151,7 +174,16 @@ These produce a result that disagrees with Maxima, silently.
   instead of arriving as the symbol `nan`. The ordering UB, the equality/hash
   mismatch and `str()` printing `nan` all remain.
 
-- [ ] **Persistent-cache temp files can collide between processes.** The
+  *Outcome:* fixed in `d5a227d` by rejecting NaN at `Expr::real`, which ends
+  all three symptoms at once and also covers arithmetic that folds to NaN
+  (`inf - inf`, `0.0 * inf`). The total order was not chosen: ordering by bit
+  pattern would also have made `0.0` and `-0.0` unequal. That turned up a
+  sibling bug — the two are equal, but MSVC's `std::hash<double>` hashes their
+  bits differently — so the hash now treats them alike. Infinities are
+  unaffected, and the NaN branches in the MathML renderer and the wire
+  encoder, now unreachable, are gone.
+
+- [x] **Persistent-cache temp files can collide between processes.** The
   temporary is named with an in-process atomic counter, so two processes
   both produce `<hash>.reply.tmp0`, one truncates the other's partial write,
   and a corrupt file gets renamed into place. The length-prefixed format
@@ -160,16 +192,33 @@ These produce a result that disagrees with Maxima, silently.
   content", which is true of the target and false of the temp file. Add the
   PID or a random suffix. (`src/kernel/persistent_cache.cpp`)
 
-- [ ] **`contains()` ignores `Opaque` text.** `solve` uses it to reject
+  *Outcome:* fixed in `f2de237` with both: the temporary is
+  `<entry>.tmp-<token>-<n>`, the token random per process and mixed with the
+  process id and the clock, so it holds without an entropy source and across
+  machines sharing a directory. The comments now say what is and is not raced.
+  A test plants another writer's half-written temporaries beside an entry and
+  checks `insert` leaves them alone; the cross-process guarantee itself rests
+  on the token, which a second test checks.
+
+- [x] **`contains()` ignores `Opaque` text.** `solve` uses it to reject
   `[x = sin(x)]`-shaped non-solutions; a value that mentions the unknown
   only inside an Opaque node passes the check. Low likelihood, but the
   guard is the thing that makes "success really is a solution" true.
 
-- [ ] **Discovery's error message hardcodes `sbcl.exe` on every
+  *Outcome:* fixed in `44669d5`. Opaque text is not parsed: a plain name
+  counts where it stands as a whole identifier outside string literals, and a
+  name that is not a plain identifier, such as `x y`, counts wherever it
+  appears once Maxima's backslash escapes are removed. It errs towards true,
+  which is the direction the guard needs.
+
+- [x] **Discovery's error message hardcodes `sbcl.exe` on every
   platform.** Uses `kSbclName` everywhere else; two messages in
   `discoverMaxima` do not. (`src/kernel/discovery.cpp`)
 
-- [ ] **`Context::facts()` does not do what its documentation says.**
+  *Outcome:* fixed in `722d9c9`; the test checks the message names the
+  platform's own executable.
+
+- [x] **`Context::facts()` does not do what its documentation says.**
   `context.hpp` promises "every assumption in force, this context's and its
   parents'", but it returns only the facts established in the scope itself.
   *Measured* by the feature tour (`64c9f17`): inside a nested scope, `facts()`
@@ -182,13 +231,28 @@ These produce a result that disagrees with Maxima, silently.
   Either implement the documented behaviour (`facts(name)` for this scope and
   each parent) or narrow the documentation to what it does.
 
-- [ ] **`limit` reports `und` as a Failure but returns `ind` as a success.**
+  *Outcome:* implemented as documented, in `760f9a7`. Maxima's `facts(name)`
+  lists one context's own facts and nothing of its ancestry, so each Context
+  records its parent in a small locked registry, and `facts()` asks about this
+  scope, every enclosing one, and then the first context the library did not
+  open — normally `initial`, where facts assumed outside any Context live —
+  innermost first. It stops short of `global`, whose 75 facts are Maxima's own
+  type system (`kind(%e, irrational)`), not assumptions. Called on an outer
+  scope while an inner one is open, it now describes the outer scope.
+
+- [x] **`limit` reports `und` as a Failure but returns `ind` as a success.**
   `limit(abs(x)/x, x, 0)` comes back as the symbol `ind` — bounded, with no
   single value — where Maxima's `und` would have been a Failure. To most
   callers both mean "there is no limit", and nothing in `ops.hpp` says they
   differ, so a caller who only checks the `std::expected` takes `ind` as an
   answer. Decide whether `ind` is a Failure, or document it. (*Measured* by
   the feature tour, `64c9f17`, which now shows how to check for it.)
+
+  *Outcome:* `ind` is a Failure, in `e81c66c`, with a message saying the
+  expression stays bounded without settling. Infinite limits — `inf`, `minf`,
+  and `infinity`, Maxima's complex infinity for 1/x at 0 from both sides —
+  remain values, and `ops.hpp` now says which answers are which. The tour no
+  longer shows a hand-written check for `ind`.
 
 ## 2. Robustness — a typo costs two minutes
 
