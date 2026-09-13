@@ -22,7 +22,7 @@ Items are ordered by how much they matter, not by file.
 
 ## Status since the review
 
-Updated after `8bb6ca4`. Resolved findings are ticked where they stand, with
+Updated after `e310a01`. Resolved findings are ticked where they stand, with
 an *Outcome* note; everything unticked is still open. The review's own text
 is left as written, so its measurements stay comparable.
 
@@ -105,12 +105,19 @@ Work since, and what it turned up that the review had not found:
   printed under Maxima's Lisp print limits, so any result with more than 100
   terms or nested deeper than 15 came back silently truncated, and the reader
   took a bar-quoted symbol such as `|123|` for a number (`d670d17`, now in §1).
+- **§4, one commit each** (`2121eb4` … `e310a01`). Every new operation's reply
+  was probed in Maxima before it was wrapped. Found on the way: the canonical
+  order compared numbers as doubles, so 2^100 and 2^100 + 1 were equivalent
+  though unequal; `transform` could not use `==` to see an operand come back
+  unchanged, since 0.0 == -0.0; the `<cmath>` naming hazard reached `abs`, `gcd`
+  and `pow`, not only the builders; and `ode2` writes onto the pipe when it
+  fails. Verified with GCC and clang-cl on Windows, with MSVC, and with GCC on
+  Linux.
 
-Suite: 284 cases / 3048 assertions on Windows (GCC and clang-cl), 285 / 3046 on
+Suite: 311 cases / 4639 assertions on Windows (GCC and clang-cl), 312 / 4637 on
 Linux (222 when the review was written).
 
-§1, §2 and §3 are closed. What remains is ergonomics (§4) and the smaller
-sections after it.
+§1 to §4 are closed. What remains is the smaller sections from §5 on.
 
 ---
 
@@ -612,27 +619,62 @@ Fine at today's sizes; these are the walls you will hit.
 
 ## 4. API ergonomics
 
-- [ ] **No `operator<<` and no `std::formatter`** for `Expr`, `Integer`,
+- [x] **No `operator<<` and no `std::formatter`** for `Expr`, `Integer`,
   `Symbol`. Every print in the demo is `.str()`. Ten lines, large quality
   of life gain. *(Now also the natural place to hang a format spec that
   selects a renderer: `std::format("{:tex}", e)`.)*
 
-- [ ] **`Expr` has no ordering.** It cannot be a `std::map` key, cannot be
+  *Outcome:* done in `2121eb4`. `operator<<` for all three, and a
+  `std::formatter` for each: `{}` is `str()`, `{:tex}` and `{:mathml}` choose a
+  renderer, and the usual string options follow, after a colon when a notation
+  is given (`{:tex:>40}`). An unknown notation is a `std::format_error`, which
+  for a constant format string is a compile error. The stream operators are
+  defined out of line, so `<mx/expr.hpp>` does not pull in `<ostream>`.
+
+- [x] **`Expr` has no ordering.** It cannot be a `std::map` key, cannot be
   sorted, cannot be put in a `std::set` — yet a total order already exists
   in `detail::compareExpr`. Expose it as `operator<=>` (fixing the NaN
   case first, §1).
 
-- [ ] **No local structural substitution.** `subst(f, x, 5)` is a Maxima
+  *Outcome:* done in `dda4dee`, deliberately not as `operator<=>` or `<`:
+  `Expr` converts implicitly from numbers and symbols, so `x < 0` would compile
+  and mean "sorts before" rather than build `lt(x, 0)`. Instead there is
+  `mx::canonicalOrder`, a `std::weak_ordering` since 0.0 and -0.0 are equal but
+  print differently; `mx::CanonicalLess`; and `std::less` specialised for `Expr`
+  and `Symbol`, so `std::set<Expr>` and `std::map<Expr, T>` need no comparator.
+  Two expressions are equivalent exactly when they are `==`, tested over a
+  corpus. Making that hold found that numbers compared as doubles, so 2^100 and
+  2^100 + 1 were equivalent; exact numbers are now compared exactly when their
+  doubles tie. Comparing exactly throughout cost 23% on a 50-term polynomial;
+  doubles first measured 31.3 -> 31.2 ms (Release, interleaved).
+
+- [x] **No local structural substitution.** `subst(f, x, 5)` is a Maxima
   round trip for what is a tree rewrite. A `replace(expr, symbol, value)`
   in `src/core` — no kernel — would be the single most-used helper in any
   numeric-driver code, and it composes with `Compiled`.
 
-- [ ] **No traversal helpers.** `args()` is enough to write a recursion,
+  *Outcome:* done in `5bc2844`, as `mx::replace` in `<mx/traverse.hpp>`,
+  beside `contains`, which moved there because it needs no kernel either;
+  `<mx/ops.hpp>` includes the new header, so no caller changed. The result is
+  rebuilt through the builders, so it is normalised — `3*x + 2` at x = 2 is 8 —
+  but not evaluated: `sin(x)` at 0 is `sin(0)`, which is the difference from
+  `subst`. Untouched subtrees are shared. Opaque text that mentions the symbol
+  throws, rather than leaving the symbol silently behind.
+
+- [x] **No traversal helpers.** `args()` is enough to write a recursion,
   but a `visit`/`transform`/`anyOf` would stop every caller writing the
   same one (`contains` and `mentionsSymbol` in this codebase are already
   the same function twice).
 
-- [ ] **The wire format leaks through `Kernel::eval`.** *(Partly done:
+  *Outcome:* done in `8e77475`: `visit` (every node, pre-order), `anyOf` (stops
+  at the first yes) and `transform` (bottom-up, rebuilding through the builders,
+  sharing what it leaves alone). `contains`, `replace` and `mentionsSymbol` are
+  each one of them now. Found: `transform` cannot use `==` to tell that an
+  operand came back unchanged, because 0.0 == -0.0 and a rewrite from one to the
+  other would be dropped; it compares representations instead, and a test pins
+  that.
+
+- [x] **The wire format leaks through `Kernel::eval`.** *(Partly done:
   `eval`/`evalPure`/`evalTracked` now have `const Expr &` overloads, so a
   caller can send structure. The reply is still raw text.)* It returns
   `Reply::value` as raw s-expression text. A public `Kernel::evalExpr`
@@ -641,7 +683,14 @@ Fine at today's sizes; these are the walls you will hit.
   function this library has not wrapped get an `Expr` back without
   parsing s-expressions themselves. Keep `eval` for the raw case.
 
-- [ ] **The operation set is thin for "basic workable".** Missing and
+  *Outcome:* done in `a88c5e0`: `Kernel::evalExpr`, for text or an `Expr`,
+  with `eval`'s cache semantics, and a free `mx::toExpr(const Reply &)`, so an
+  `evalPure` or `evalTracked` reply reads the same way without a method for
+  every combination. `Failure` moved to `<mx/reply.hpp>`. The operations and
+  `Context` read their replies through `toExpr`, replacing two private copies of
+  the parse.
+
+- [x] **The operation set is thin for "basic workable".** Missing and
   cheap to add given the existing `evaluate()` helper: `is(...)`
   (ask Maxima a predicate under the current assumptions — the natural
   partner to `Context`), `taylor`, `trigsimp`/`trigexpand`/`radcan`,
@@ -650,7 +699,18 @@ Fine at today's sizes; these are the walls you will hit.
   `nroots`/`realroots`/`find_root`, `ode2`. Matrices can wait; they need a
   typed node to be pleasant.
 
-- [ ] **`functions.hpp` puts `sin`, `cos`, `log`, `abs`, `exp`, `sqrt` in
+  *Outcome:* done in `51a3779`, all but matrices: `is` (answering
+  `Truth::True`, `False` or `Unknown`), `taylor`, `trigsimp`, `trigexpand`,
+  `radcan`, `partfrac`, `coeff`, `toFloat` (`float` being a C++ keyword; it
+  covers `numer` too), `sum` and `product` (a `Failure` when no closed form is
+  found), `nroots`, `realroots`, `findRoot` and `ode2`; `lhs` and `rhs` are
+  local, and a `derivative` builder makes the `'diff` noun an ODE is written
+  with. Found: a symbolic `sum` closes only under `simpsum`, which `ev` turns on
+  for the one evaluation; `product` stays a noun even so; and `ode2` prints why
+  it failed onto the pipe before answering `false`, which a test shows the
+  session survives.
+
+- [x] **`functions.hpp` puts `sin`, `cos`, `log`, `abs`, `exp`, `sqrt` in
   `namespace mx`.** Under `using namespace mx;` with `<cmath>` in scope,
   `abs(x)` for an `int x` now has a viable `mx::abs(Expr)` candidate via
   the implicit constructor; overload resolution still picks the
@@ -663,10 +723,28 @@ Fine at today's sizes; these are the walls you will hit.
   not know (`std::numbers::egamma` exists); `%phi` is known but
   undocumented.
 
-- [ ] **`simplify` is `ratsimp`.** Documented, but the name promises more
+  *Outcome:* done in `33e5f90`, by removing the hazard rather than documenting
+  it: the builders are templates constrained to an `Expr` or a `Symbol`, so a
+  call on a plain number has no mx candidate at all. Found: the builders were not
+  the only case. `mx::abs` and `mx::gcd` on `Integer`, and `mx::pow`, offered
+  the same implicit-constructor candidate; `abs` now takes exactly an `Integer`,
+  and `gcd` and `pow` need at least one argument of their own type, so
+  `pow(x, 2)` and `gcd(n, 1001)` still work. The one call relying on the old
+  behaviour was `tour.cpp`'s `mx::sin(0)`. Compile-time checks pin all of it.
+  Also done: builders for `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `floor`,
+  `ceiling` and `signum`, each round-tripped through Maxima in a test; `minf()`,
+  with `minusInf()` deprecated; `%gamma` in the numeric layer; `%phi` and
+  `%gamma` documented.
+
+- [x] **`simplify` is `ratsimp`.** Documented, but the name promises more
   than it does; `ratsimp` as the public name (with a doc pointing at
   `trigsimp`, `radcan`) is more honest and matches Maxima's vocabulary,
   which the rest of `ops.hpp` already does.
+
+  *Outcome:* done in `ecaa286`: `ratsimp` is the public name, documented as
+  knowing no identities and pointing to `trigsimp`, `trigexpand` and `radcan`.
+  `simplify` stays as its alias, not deprecated, so existing code is unaffected;
+  the README and examples say `ratsimp`.
 
 - [x] **`isUnevaluated(result, "list")` is used to mean "is a list".**
   A misnomer that reads as "Maxima failed" at every call site in `solve`.
@@ -674,14 +752,23 @@ Fine at today's sizes; these are the walls you will hit.
 
   *Outcome:* done in `b71ccdf`; `solve` now calls `isList()`.
 
-- [ ] **`wrongKind()` prints the kind as an integer.** "expression is not
+- [x] **`wrongKind()` prints the kind as an integer.** "expression is not
   an integer (kind 4)". Add a `to_string(Kind)` / `kindName()` — it is
   also wanted for tests and logging.
 
-- [ ] **`Bindings` is keyed by `std::string`; `Compiled` takes
+  *Outcome:* done in `498e495`: `mx::kindName`, with `operator<<` and a
+  `std::formatter` for `Kind`; the message now reads "(its kind is Symbol)".
+  `tour.cpp` carried its own copy of the same switch, which is gone.
+
+- [x] **`Bindings` is keyed by `std::string`; `Compiled` takes
   `span<const Symbol>`.** Two spellings of "which symbol". Accepting
   `Symbol` in `Bindings` (or a transparent comparator over both) would
   make the numeric API read consistently.
+
+  *Outcome:* done in `719436a`. `Bindings` is a small class over the same map,
+  and an entry takes a `Symbol` or a name, so `{{x, 2.0}, {"y", 3.0}}` works and
+  every existing `{{"x", 2.0}}` still compiles. Lookups are still by
+  `string_view`, building nothing.
 
 - [x] **Printing `-1*x` and `(-1*x)^2`.** `-(x+1)` prints `-1*(1 + x)`
   and `(-x)^2` prints `(-1*x)^2` (measured). Valid Maxima, but every
@@ -693,9 +780,14 @@ Fine at today's sizes; these are the walls you will hit.
   as a flag rather than a `-1` factor. `-(1 + x)` and `-x - y` are pinned in
   `test_render.cpp`, and `(-x)^2` is in its round-trip corpus.
 
-- [ ] **`x**2` and `1e400` are parse errors.** Maxima accepts `**` as
+- [x] **`x**2` and `1e400` are parse errors.** Maxima accepts `**` as
   `^`; accept it. `1e400` overflows `double` — either throw a clearer
   message ("out of range") or produce `inf`.
+
+  *Outcome:* done in `e310a01`: `**` is `^` when the stars are adjacent, as in
+  Maxima's lexer, and joins the corpus checked against Maxima's own parser.
+  `1e400` is a `ParseError` saying it is out of the range of a double — refused
+  rather than read as `inf`, which would be a different value.
 
 ## 5. Documentation drift
 
