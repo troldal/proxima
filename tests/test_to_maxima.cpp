@@ -259,6 +259,12 @@ TEST_CASE("Maxima simplifies what it is handed") {
     mx::Kernel kernel;
     const Symbol x("x");
     CHECK(roundTrip(kernel, Expr::function("factorial", {Expr(5)})) == Expr(120));
+    // Sent under its verb name, evaluated, and back as the noun it simplifies
+    // to — which maps to the same name, so a symbolic one is unchanged.
+    CHECK(roundTrip(kernel, Expr::function("double_factorial", {Expr(5)}))
+          == Expr(15));
+    CHECK(roundTrip(kernel, Expr::function("double_factorial", {Expr(x)}))
+          == Expr::function("double_factorial", {Expr(x)}));
     CHECK(roundTrip(kernel, mx::sin(Expr(0))) == Expr(0));
     CHECK(roundTrip(kernel, Expr::rational(4, 6)) == Expr::rational(2, 3));
     CHECK(mx::diff(pow(x, 3), x, 1, kernel) == 3 * pow(x, 2));

@@ -136,6 +136,30 @@ TEST_CASE("postfix factorial") {
           == 2 * Expr::function("factorial", {Expr(3)}));
 }
 
+TEST_CASE("!! is the double factorial, not a factorial taken twice") {
+    // Each expectation is what Maxima's own reader produces for the same text.
+    const Expr x = Expr::symbol("x");
+    const auto fact = [](Expr e) { return Expr::function("factorial", {std::move(e)}); };
+    const auto dfact
+        = [](Expr e) { return Expr::function("double_factorial", {std::move(e)}); };
+
+    CHECK(Expr::parse("x!!") == dfact(x));
+    CHECK(Expr::parse("2*x!!") == 2 * dfact(x));
+
+    SUBCASE("read greedily, so a space is what separates two factorials") {
+        CHECK(Expr::parse("x!!!") == fact(dfact(x)));
+        CHECK(Expr::parse("x! !") == fact(fact(x)));
+        CHECK(Expr::parse("(x!)!") == fact(fact(x)));
+        CHECK(Expr::parse("(x!)!!") == dfact(fact(x)));
+    }
+    SUBCASE("and binding as tightly as !") {
+        CHECK(Expr::parse("x^2!!") == pow(x, dfact(Expr(2))));
+    }
+    SUBCASE("printed as the function name Maxima reads back") {
+        CHECK(Expr::parse("x!!").str() == "double_factorial(x)");
+    }
+}
+
 TEST_CASE("strings become source text, as they do from Maxima") {
     const Expr text = Expr::parse(R"("a string")");
     CHECK(text.kind() == Kind::Opaque);
@@ -193,6 +217,8 @@ TEST_CASE("what is parsed prints back to the same thing") {
              "[1, x, sin(x)]",
              "x = 1",
              "x + 1 >= 2*y",
+             "x!!",
+             "x!!!",
          }) {
         const std::string text = source;
         CAPTURE(text);
@@ -231,6 +257,11 @@ TEST_CASE("the offline parser agrees with Maxima's own") {
              "x = 1",
              "x >= 2*y",
              "5!",
+             "5!!",
+             "x!!",
+             "x!!!",
+             "x! !",
+             "2*x!!",
              "1.5*x",
          }) {
         const std::string text = source;

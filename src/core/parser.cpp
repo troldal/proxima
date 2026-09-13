@@ -19,6 +19,11 @@
 // Precedences are Maxima's, which matters for the two that surprise people:
 // `^` is right-associative, so `x^2^3` is `x^(2^3)`; and unary minus binds
 // *looser* than `^`, so `-x^2` is `-(x^2)` and not `(-x)^2`.
+//
+// So is the lexing of `!`. Maxima reads `!!` as one token, the double
+// factorial, and reads it greedily: `x!!` is `double_factorial(x)`, `x!!!` is
+// `factorial(double_factorial(x))`, and only `x! !`, with a space, is a
+// factorial taken twice.
 
 namespace mx {
 namespace {
@@ -45,6 +50,7 @@ struct Token {
         Slash,
         Caret,
         Bang,
+        BangBang,
         Equal,
         NotEqual,
         Less,
@@ -115,7 +121,13 @@ public:
         case '*': return {Token::Kind::Star, "*", false, start};
         case '/': return {Token::Kind::Slash, "/", false, start};
         case '^': return {Token::Kind::Caret, "^", false, start};
-        case '!': return {Token::Kind::Bang, "!", false, start};
+        case '!':
+            // Greedy, as Maxima's lexer is: "!!!" is "!!" then "!".
+            if (at_ < source_.size() && source_[at_] == '!') {
+                ++at_;
+                return {Token::Kind::BangBang, "!!", false, start};
+            }
+            return {Token::Kind::Bang, "!", false, start};
         case '=': return {Token::Kind::Equal, "=", false, start};
         case '#': return {Token::Kind::NotEqual, "#", false, start};
         case '(': return {Token::Kind::LeftParen, "(", false, start};
@@ -215,6 +227,7 @@ int leftBindingPower(Token::Kind kind) {
     case Token::Kind::Caret:
         return kPower;
     case Token::Kind::Bang:
+    case Token::Kind::BangBang:
         return kPostfix;
     default:
         return kNone;
@@ -367,6 +380,11 @@ private:
         case Token::Kind::Bang:
             // Postfix, so nothing follows it to parse.
             return Expr::function("factorial", {std::move(left)});
+        case Token::Kind::BangBang:
+            // Not factorial(factorial(x)), which is a different number: 5!! is
+            // 15, (5!)! has 199 digits. `double_factorial` is also the name
+            // Maxima reads to the same noun, so it prints back faithfully.
+            return Expr::function("double_factorial", {std::move(left)});
         default:
             break;
         }
