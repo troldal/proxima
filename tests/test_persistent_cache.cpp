@@ -120,6 +120,39 @@ TEST_CASE("a corrupt or truncated entry is ignored, not misread") {
     CHECK_FALSE(cache.find("q").has_value());
 }
 
+TEST_CASE("a length larger than the file is a miss, not an exception") {
+    // Fields are length-prefixed, and the length used to be trusted: a corrupt
+    // or hostile entry claiming 18446744073709551615 bytes made the reader try
+    // to allocate that much, and std::length_error escaped evalPure — not an
+    // mx::Error, and not a cache miss.
+    const auto directory = scratch("huge_length");
+    const PersistentCache cache(directory, "stamp");
+    cache.insert("q", valued("42"));
+    REQUIRE(fileCount(directory) == 1);
+    const std::filesystem::path entry
+        = std::filesystem::directory_iterator(directory)->path();
+
+    SUBCASE("in the first field") {
+        std::ofstream out(entry, std::ios::binary | std::ios::trunc);
+        out << "maxima_cpp-cache-1\n18446744073709551615\n";
+    }
+    SUBCASE("after a key that matches") {
+        // The key is the stamp, a blank line, then the question.
+        const std::string key = "stamp\n\nq";
+        std::ofstream out(entry, std::ios::binary | std::ios::trunc);
+        out << "maxima_cpp-cache-1\n"
+            << key.size() << '\n' << key << "1\n1" << "18446744073709551615\n";
+    }
+    SUBCASE("or just longer than what is there") {
+        std::ofstream out(entry, std::ios::binary | std::ios::trunc);
+        out << "maxima_cpp-cache-1\n1000\nshort";
+    }
+
+    std::optional<mx::Reply> found;
+    CHECK_NOTHROW(found = cache.find("q"));
+    CHECK_FALSE(found.has_value());
+}
+
 TEST_CASE("a file from an unknown writer is ignored") {
     const auto directory = scratch("foreign");
     const PersistentCache cache(directory, "stamp");

@@ -54,6 +54,21 @@ bool readField(std::istream &in, std::string &text) {
     if (in.get() != '\n') {
         return false;
     }
+
+    // A field cannot be longer than what is left of the file. The length used
+    // to be trusted, so a corrupt or hostile entry claiming
+    // 18446744073709551615 bytes made the resize below throw
+    // std::length_error, which escaped evalPure instead of reading as a miss.
+    const std::streampos here = in.tellg();
+    in.seekg(0, std::ios::end);
+    const std::streampos end = in.tellg();
+    in.seekg(here);
+    if (here < 0 || end < here
+        || static_cast<std::uint64_t>(length)
+               > static_cast<std::uint64_t>(end - here)) {
+        return false;
+    }
+
     text.resize(length);
     return length == 0 || static_cast<bool>(in.read(text.data(),
                                                     static_cast<std::streamsize>(
