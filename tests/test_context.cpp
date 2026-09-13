@@ -131,6 +131,57 @@ TEST_CASE("facts lists this scope's facts and every enclosing scope's") {
     CHECK(position(outer.facts(), builtIn) < 0);
 }
 
+TEST_CASE("contexts ended out of order leave the survivors intact") {
+    // Nothing forces scopes to end innermost first: a Context on the heap, or
+    // in another object, can outlive the one it was opened inside. The inner
+    // scope was opened inheriting the outer one's facts, so it must keep them
+    // for as long as it lives, and both must be gone once both have ended.
+    //
+    // A kernel of its own, so that what is left over afterwards can be checked
+    // without other tests' scopes getting in the way.
+    mx::Kernel kernel;
+    const Symbol a("order_a");
+    const Symbol b("order_b");
+
+    auto outer = std::make_unique<Context>(kernel);
+    outer->assume(gt(Expr(a), Expr(0)));
+    auto inner = std::make_unique<Context>(kernel);
+    inner->assume(gt(Expr(b), Expr(0)));
+
+    outer.reset(); // The outer scope ends first.
+    CHECK(kernel.eval("is(order_b > 0)").value == "T");
+    CHECK(kernel.eval("is(order_a > 0)").value == "T");
+
+    inner.reset();
+    CHECK(kernel.eval("is(order_a > 0)").value != "T");
+    CHECK(kernel.eval("is(order_b > 0)").value != "T");
+    CHECK(kernel.eval("context").value == "$INITIAL");
+    CHECK(kernel.eval("contexts").value.find("MX_CTX") == std::string::npos);
+}
+
+TEST_CASE("a restart after an out-of-order end rebuilds the surviving scope") {
+    // Replay has to rebuild the inner scope, and the inner scope is a
+    // subcontext of the outer one — so the outer one's record must outlive the
+    // outer Context object for as long as the inner scope needs it.
+    mx::Kernel kernel;
+    const Symbol a("order_restart_a");
+    const Symbol b("order_restart_b");
+
+    auto outer = std::make_unique<Context>(kernel);
+    outer->assume(gt(Expr(a), Expr(0)));
+    auto inner = std::make_unique<Context>(kernel);
+    inner->assume(gt(Expr(b), Expr(0)));
+    outer.reset();
+
+    CHECK_THROWS_AS(kernel.eval("quit()"), mx::KernelError);
+    CHECK(kernel.eval("is(order_restart_b > 0)").value == "T");
+    CHECK(kernel.eval("is(order_restart_a > 0)").value == "T");
+
+    inner.reset();
+    CHECK(kernel.eval("is(order_restart_a > 0)").value != "T");
+    CHECK(kernel.eval("context").value == "$INITIAL");
+}
+
 TEST_CASE("a contradictory assumption is refused") {
     // Maxima detects the contradiction; carrying on with an inconsistent set of
     // facts would make every later result in the scope meaningless.

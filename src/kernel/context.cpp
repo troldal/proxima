@@ -22,19 +22,40 @@ std::string nextContextName() {
     return "mx_ctx_" + std::to_string(++counter);
 }
 
-/// The parent of every context this library has opened and not yet closed.
-///
-/// Maxima can list one context's facts, but not a context's ancestry, and a
-/// Context only learns its immediate parent when it opens. This is what lets
-/// facts() walk further out than that. Process-wide, like the names it is keyed
-/// by, and locked, because separate kernels may be used from separate threads.
-struct Lineage {
-    std::mutex mutex;
-    std::unordered_map<std::string, std::string> parentOf;
+/// What this library knows about one Maxima context it opened.
+struct Scope {
+    std::string parent;
+    Kernel *kernel = nullptr;
+
+    /// Scopes opened inside this one that have not been torn down. While any
+    /// remain, this one stays in Maxima even after its Context has ended:
+    /// they were opened inheriting its facts.
+    std::size_t openChildren = 0;
+
+    /// True once the Context object has been destroyed.
+    bool ended = false;
+
+    /// The ended Context's journal handles, kept until the teardown actually
+    /// happens, so a restart in the meantime still rebuilds this scope — the
+    /// scopes opened inside it are subcontexts of it and cannot be rebuilt
+    /// without it.
+    std::vector<std::uint64_t> replayHandles;
 };
 
-Lineage &lineage() {
-    static Lineage instance;
+/// Every context this library has opened and not yet torn down, by name.
+///
+/// Maxima can list one context's facts, but not a context's ancestry or its
+/// subcontexts, so this is what lets facts() walk outward and lets a scope that
+/// ends before its inner scopes wait for them. Process-wide, like the names it
+/// is keyed by, and locked, because separate kernels may be used from separate
+/// threads.
+struct Registry {
+    std::mutex mutex;
+    std::unordered_map<std::string, Scope> scopes;
+};
+
+Registry &registry() {
+    static Registry instance;
     return instance;
 }
 
@@ -73,6 +94,28 @@ bool mentionsSymbol(const Expr &expr, std::string_view name) {
         }
     }
     return false;
+}
+
+/// One scope to remove from Maxima, gathered under the registry lock and
+/// carried out after it is released, so no lock is held across a round trip.
+struct Teardown {
+    Kernel *kernel;
+    std::string name;
+    std::string parent;
+    std::vector<std::uint64_t> replayHandles;
+};
+
+void carryOut(const Teardown &step) {
+    // Drop the replay entries first: a restart triggered by the teardown
+    // itself must not rebuild a scope that is ending.
+    for (auto handle = step.replayHandles.rbegin();
+         handle != step.replayHandles.rend(); ++handle) {
+        step.kernel->forget(*handle);
+    }
+    // An assignment has no Expr, so this one line stays as text. Both names are
+    // this library's own or Maxima's, never the user's.
+    step.kernel->evalTracked("context: " + step.parent);
+    step.kernel->evalTracked(call("killcontext", {Expr::symbol(step.name)}));
 }
 
 } // namespace
@@ -122,8 +165,14 @@ Context::Context(Kernel &kernel) : kernel_(&kernel), name_(nextContextName()) {
     evaluateOrThrow(*kernel_, create);
     replayHandles_.push_back(kernel_->remember(create));
 
-    const std::lock_guard lock(lineage().mutex);
-    lineage().parentOf[name_] = parent_;
+    const std::lock_guard lock(registry().mutex);
+    Scope &scope = registry().scopes[name_];
+    scope.parent = parent_;
+    scope.kernel = kernel_;
+    if (const auto enclosing = registry().scopes.find(parent_);
+        enclosing != registry().scopes.end()) {
+        ++enclosing->second.openChildren;
+    }
 }
 
 Context::~Context() {
@@ -131,20 +180,50 @@ Context::~Context() {
     // process, and failing to tidy up a context is not worth that. The next
     // kernel restart clears it regardless.
     try {
+        // Scopes need not end innermost first: a Context on the heap, or held
+        // by another object, can outlive the one it was opened inside. Maxima
+        // has no answer for that — killing a context leaves its subcontexts
+        // orphaned, without the facts they inherited — and switching Maxima to
+        // this scope's parent would deactivate a scope that is still open, own
+        // facts and all. So a scope with open inner scopes only marks itself
+        // ended, and is torn down when the last of them is.
+        std::vector<Teardown> steps;
         {
-            const std::lock_guard lock(lineage().mutex);
-            lineage().parentOf.erase(name_);
+            const std::lock_guard lock(registry().mutex);
+            auto &scopes = registry().scopes;
+            const auto self = scopes.find(name_);
+            if (self == scopes.end()) {
+                steps.push_back({kernel_, name_, parent_, replayHandles_});
+            } else {
+                self->second.ended = true;
+                self->second.replayHandles = replayHandles_;
+
+                // Innermost first: this scope, then each enclosing scope that
+                // had already ended and was only waiting for this one.
+                std::string next = name_;
+                for (;;) {
+                    const auto found = scopes.find(next);
+                    if (found == scopes.end() || !found->second.ended
+                        || found->second.openChildren > 0) {
+                        break;
+                    }
+                    Scope scope = std::move(found->second);
+                    scopes.erase(found);
+                    steps.push_back({scope.kernel, next, scope.parent,
+                                     std::move(scope.replayHandles)});
+
+                    const auto enclosing = scopes.find(scope.parent);
+                    if (enclosing == scopes.end()) {
+                        break;
+                    }
+                    --enclosing->second.openChildren;
+                    next = scope.parent;
+                }
+            }
         }
-        // Drop the replay entries first: a restart triggered by the teardown
-        // itself must not rebuild a scope that is ending.
-        for (auto handle = replayHandles_.rbegin();
-             handle != replayHandles_.rend(); ++handle) {
-            kernel_->forget(*handle);
+        for (const Teardown &step : steps) {
+            carryOut(step);
         }
-        // An assignment has no Expr, so this one line stays as text. Both
-        // names are this library's own or Maxima's, never the user's.
-        kernel_->evalTracked("context: " + parent_);
-        kernel_->evalTracked(call("killcontext", {Expr::symbol(name_)}));
     } catch (...) {
     }
 }
@@ -180,17 +259,19 @@ std::vector<Expr> Context::facts() const {
     // outer scope asked while an inner one was open reported the inner one's.
     std::vector<std::string> chain{name_};
     {
-        const std::lock_guard lock(lineage().mutex);
+        const std::lock_guard lock(registry().mutex);
         std::string next = parent_;
         while (next != kBuiltInContext) {
             chain.push_back(next);
-            const auto found = lineage().parentOf.find(next);
-            if (found == lineage().parentOf.end()) {
+            // An enclosing scope whose Context has ended but which is still
+            // waiting for this one counts: its facts are still in force here.
+            const auto found = registry().scopes.find(next);
+            if (found == registry().scopes.end()) {
                 // Not one of ours — normally `initial`, where facts assumed
                 // outside any Context live. Its parent is `global`.
                 break;
             }
-            next = found->second;
+            next = found->second.parent;
         }
     }
 

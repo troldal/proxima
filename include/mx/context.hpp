@@ -46,6 +46,11 @@ std::string_view nameOf(Feature feature);
 /// Contexts nest. A context created while another is active inherits its facts,
 /// so an inner scope can add to an outer one without repeating it.
 ///
+/// Scopes need not end innermost first. If an outer Context is destroyed while
+/// a scope opened inside it is still open, its facts stay in force for that
+/// inner scope — which was opened inheriting them — and are discarded when the
+/// last such inner scope ends.
+///
 /// ## Why assumptions matter more than they look
 ///
 /// Without them Maxima asks. `integrate(x^n, x)` cannot proceed without knowing
@@ -73,7 +78,9 @@ public:
     /// Opens a new Maxima context, nested inside whichever is currently active.
     explicit Context(Kernel &kernel = sharedKernel());
 
-    /// Discards everything assumed or declared in this scope.
+    /// Discards everything assumed or declared in this scope: at once, or, if
+    /// a scope opened inside this one is still open, when the last of those
+    /// ends.
     ~Context();
 
     Context(const Context &) = delete;
@@ -117,8 +124,10 @@ private:
     std::string parent_;
     std::vector<Expr> assumptions_;
 
-    /// Journal handles for this scope's statements, removed on destruction so
-    /// that a later restart does not resurrect a scope that has ended.
+    /// Journal handles for this scope's statements, removed when the scope is
+    /// torn down so that a later restart does not resurrect it. For a scope
+    /// that ends while an inner one is open, that is later than destruction:
+    /// the inner scope cannot be rebuilt without it.
     std::vector<std::uint64_t> replayHandles_;
 };
 
