@@ -44,6 +44,9 @@ public:
     explicit Kernel(Config config = {});
     ~Kernel();
 
+    /// Moves the Maxima session. The kernel moved from has none left: it can
+    /// be destroyed or assigned to, and any other call on it throws
+    /// mx::KernelError. So does an mx::Context still pointing at it.
     Kernel(Kernel &&) noexcept;
     Kernel &operator=(Kernel &&) noexcept;
 
@@ -155,6 +158,9 @@ public:
     void restart();
 
 private:
+    /// The session, or KernelError for a kernel that has been moved from.
+    detail::MaximaSession &session() const;
+
     std::unique_ptr<detail::MaximaSession> session_;
 };
 

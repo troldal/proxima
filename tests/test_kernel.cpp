@@ -406,4 +406,27 @@ TEST_CASE("a Maxima reached through a non-ASCII path starts and answers") {
     fs::remove(base, ec);
 }
 
+TEST_CASE("a moved-from kernel reports it rather than dereferencing nothing") {
+    // Moving a Kernel moves its session, and every method used to dereference
+    // the empty pointer left behind: undefined behaviour, in practice a crash,
+    // which is why there was no test to fail first.
+    mx::Kernel original;
+    mx::Kernel moved(std::move(original));
+
+    CHECK(moved.eval("1 + 1").value == "2");
+    // NOLINTBEGIN(bugprone-use-after-move): the point of the test.
+    CHECK_THROWS_AS(original.eval("1 + 1"), mx::KernelError);
+    CHECK_THROWS_AS(original.evalPure("1 + 1"), mx::KernelError);
+    CHECK_THROWS_AS(static_cast<void>(original.cacheStats()), mx::KernelError);
+    CHECK_THROWS_AS(original.restart(), mx::KernelError);
+
+    SUBCASE("and so does one moved from by assignment") {
+        mx::Kernel target;
+        target = std::move(moved);
+        CHECK(target.eval("2 + 2").value == "4");
+        CHECK_THROWS_AS(moved.eval("2 + 2"), mx::KernelError);
+    }
+    // NOLINTEND(bugprone-use-after-move)
+}
+
 } // TEST_SUITE("maxima")
