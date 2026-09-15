@@ -62,6 +62,12 @@ include(cmake/CPM.cmake)
 # boost_container -- a library nothing here uses, dragged in because
 # Boost::multiprecision declares Boost::random, which depends on it. Upstream
 # added the cast in 1.89. Do not pin this below that.
+# BUILD_SHARED_LIBS OFF for Boost alone: static, as the install rules above
+# expect. It used to be one of CPM's OPTIONS, which CPM sets as a cache
+# variable, so it silently became this project's default too. A normal
+# variable reaches Boost's subdirectory and goes away again below, leaving any
+# value the user set.
+set(BUILD_SHARED_LIBS OFF)
 CPMAddPackage(
         NAME Boost
         VERSION 1.92.0
@@ -71,10 +77,10 @@ CPMAddPackage(
         OPTIONS
         "BOOST_ENABLE_CMAKE ON"
         "BOOST_SKIP_INSTALL_RULES OFF"
-        "BUILD_SHARED_LIBS OFF"
         "BOOST_INCLUDE_LIBRARIES multiprecision\\\;process"
         "BOOST_PROCESS_USE_STD_FS ON"
 )
+unset(BUILD_SHARED_LIBS)
 
 add_library(maxima_cpp
         src/core/expr.cpp
