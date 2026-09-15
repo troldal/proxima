@@ -22,7 +22,7 @@ Items are ordered by how much they matter, not by file.
 
 ## Status since the review
 
-Updated after `9baaffe`. Resolved findings are ticked where they stand, with
+Updated after `98a69db`. Resolved findings are ticked where they stand, with
 an *Outcome* note; everything unticked is still open. The review's own text
 is left as written, so its measurements stay comparable.
 
@@ -136,11 +136,10 @@ Work since, and what it turned up that the review had not found:
   stack it uses; and running three compilers' suites at once showed that the
   non-ASCII path test shared one directory between runs.
 
-Suite: 320 cases / 4707 assertions on Windows (GCC and clang-cl), 321 / 4705 on
+Suite: 320 cases / 4712 assertions on Windows (GCC and clang-cl), 321 / 4710 on
 Linux (222 when the review was written).
 
-§2 to §6 are closed; §1 has one new open item, found by fuzzing and left
-for a decision. What remains besides is §7 (build and process) and §8 (tests).
+§1 to §6 are closed. What remains is §7 (build and process) and §8 (tests).
 
 ---
 
@@ -322,7 +321,7 @@ These produce a result that disagrees with Maxima, silently.
   atoms, so `|123|` read as the integer 123. Quoted symbols now have their own
   token kind. Tests written first failed on the old code.
 
-- [ ] **A Real infinity prints as the symbol `inf`.** *Found by fuzzing, after
+- [x] **A Real infinity prints as the symbol `inf`.** *Found by fuzzing, after
   the review.* `Expr::real` allows infinities, and they reach Maxima as `inf`
   and `minf`, so that is how one prints — and `Expr::parse` reads `inf` back as
   the symbol, a different expression. A Real infinity is also reached from
@@ -334,6 +333,17 @@ These produce a result that disagrees with Maxima, silently.
   at construction, which changes how infinities fold; or keep both, and
   document that an infinity does not survive printing. `fuzz_parser` skips its
   round-trip check for expressions holding one until this is decided.
+
+  *Outcome:* both remedies, in `98a69db`, since Maxima does both. It has no
+  floating-point infinity — `inf + 1.0` stays a sum there — and it refuses
+  `10^400*5.0` and `1.0e308*10.0` with `FLOATING-POINT-OVERFLOW` (checked).
+  `Expr::real(±inf)` is now the symbol `inf` or `minf`, so it prints and reads
+  back as itself, and does not fold: `Expr(inf) + Expr(-inf)` stays a sum rather
+  than throwing for NaN. A numeric fold whose result is not finite throws
+  `mx::Error`; with no infinite Real left to be an operand, that is always an
+  overflow. Dividing by a real whose reciprocal would overflow stays a negative
+  power, as other unfolded divisions do. The encoders' infinite-Real branches
+  are gone, and `fuzz_parser` checks the round trip for everything again.
 
 ## 2. Robustness — a typo costs two minutes
 
@@ -970,9 +980,9 @@ candidates, most valuable first.
     prints with a minus: as a base, `(-0.0)^-1` printed as `-0.0^(-1)`, which
     reads back as `-(0.0^-1)`. The sign now comes from the sign bit (`8cd67fd`).
 
-  A seventh finding is left open, being a question of design rather than a
-  slip: a Real infinity prints as `inf`, which reads back as the symbol. See
-  the new item at the end of §1.
+  A seventh, that a Real infinity prints as `inf`, which reads back as the
+  symbol, was a question of design rather than a slip. It was left for a
+  decision, then fixed as the last item of §1 describes (`98a69db`).
 
 ## 7. Build, repo, process
 
