@@ -1,0 +1,21 @@
+# The closest clang-format comes to the style this code is written in: LLVM,
+# with 4-space indentation, breaks before binary operators (= included), and
+# lines kept to about 85 columns.
+#
+# It is close, not exact. Of 24 variants tried against the whole tree this one
+# changed the fewest lines, yet it would still rewrite about one line in eight,
+# mostly line breaks placed by hand. So it is not applied to the tree wholesale,
+# which would bury every line's history under a reformat. Format what you
+# change instead: `git clang-format` touches only the lines of a diff.
+BasedOnStyle: LLVM
+IndentWidth: 4
+ContinuationIndentWidth: 4
+AccessModifierOffset: -4
+ColumnLimit: 85
+BreakBeforeBinaryOperators: All
+AlignOperands: Align
+IndentCaseLabels: false
+AllowShortFunctionsOnASingleLine: Inline
+AlwaysBreakTemplateDeclarations: Yes
+IndentRequiresClause: true
+RequiresClausePosition: OwnLine
