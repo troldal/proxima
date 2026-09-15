@@ -148,6 +148,9 @@ Linux (222 when the review was written).
 
 Every section is closed except §7's CI item, which is left for later.
 
+A second full review, made after the rename to Proxima, is §9 at the end of
+this file. It is where the open work now is.
+
 ---
 
 ## 1. Correctness — wrong answers
@@ -1121,3 +1124,585 @@ Things I checked that are fine and that a reviewer might flag anyway.
   principle; Maxima symbol names reaching here are ASCII in practice.
 - The 4 KB transport chunk and `find`-from-zero are the same issue as
   §3's `readFrame`; listed once.
+
+---
+
+## 9. Second review — the project as it stands after §1–§8 and the rename
+
+A second full read, made after every earlier section was closed and the
+project became Proxima: all 19,755 lines — the sixteen public headers, every
+source file, the tests, the fuzz targets, the build — with four things *run*
+rather than reasoned about, each marked *measured* where it appears: the
+compile cost of the public headers, the cost of building a long sum term by
+term, whether Maxima accepts every `Feature`, and whether Maxima reads
+`maxima-init.mac` from the directory the library points it at.
+
+**Overall.** The first review's verdict holds and has strengthened. Layers
+only point downward; the wire is structure in both directions; there is one
+canonicaliser; the suite is 322 cases on Windows and 323 on Linux across four
+compilers with no warnings; the two hand-written parsers are fuzzed. What is
+left is different in kind from §1–§8. Those were defects in the small. What
+remains is the *shape* of the API: half of it reports failure as a value and
+half throws; the meaning of an operation depends on ambient state (the shared
+kernel, whichever `Context` objects happen to be alive on any thread); the
+public header carries Boost into every consumer; and two hot paths are
+superlinear. And there is one security hole and one wrong enumerator, both
+found by running Maxima rather than reading it.
+
+The request this time was also for a functional-programming direction, in the
+style of FXT. §9.6 is the answer: not a list of nits but a proposed re-shaping
+of the public surface, ordered so that each step is useful on its own. The
+short version: Proxima's *core* is already functional — `Expr` is an immutable
+value with structural equality, everything under `src/core` is pure, and the
+kernel is the one effect boundary. What is not functional is the *interface*
+to the kernel. That is where the work is.
+
+### 9.1 Correctness and safety
+
+- [ ] **`Feature::Prime` is not a Maxima feature.** *Measured:* against
+  Maxima 5.50.0, `declare(zz, prime)` fails with `declare: unknown property
+  prime`; every other enumerator is accepted (each on a fresh symbol, so the
+  result is not a conflict between opposites). Maxima's own `features` list
+  is `integer, noninteger, even, odd, rational, irrational, real, imaginary,
+  complex, analytic, increasing, decreasing, oddfun, evenfun, posfun,
+  constant, commutative, lassociative, rassociative, symmetric,
+  antisymmetric, integervalued`. So `Context::declare(p, Feature::Prime)`
+  throws `MaximaError`, and the README advertises it. Remove `Prime`; add the
+  missing ten if they are wanted; and add the test that would have caught
+  this — declare every enumerator against a live kernel — since no test does.
+
+- [ ] **The default user directory is a code-injection path on a shared
+  Unix machine.** *Measured:* Maxima loads `maxima-init.mac` from
+  `$MAXIMA_USERDIR` (a probe with `proxima_probe: 42$` in that file printed 42;
+  with the variable unset it printed the unbound symbol). With
+  `Config::loadUserInit` false — the default — the library sets
+  `MAXIMA_USERDIR` to `temp_directory_path()/proxima/userdir`, which on Linux
+  and macOS is `/tmp/proxima/userdir`: one directory for every user of the
+  machine. Whoever creates it first owns it; a `maxima-init.mac` placed there
+  is executed by every Proxima process of every other user, with that user's
+  privileges. The setting whose purpose is "load *nothing* of the user's" loads
+  whatever another user chose. Windows is unaffected in the common case, since
+  `%TEMP%` is per user. Fix: a directory private to the process — `mkdtemp`
+  under the temp directory, mode 0700, removed when the kernel ends — so no
+  init file can exist there at all; or, if a stable directory is wanted for
+  what Maxima writes into it, a per-user one under `$XDG_CACHE_HOME` /
+  `%LOCALAPPDATA%` with its ownership and mode checked before use. Then a test
+  that the default is private. (`Config::cacheDirectory` has the same trust
+  shape: anyone who can write to a shared cache directory can make
+  `integrate` answer anything, since entries carry no integrity check. That
+  one is opt-in and documented as shared, so it is a documentation item:
+  say that the directory must be private to the trust domain.)
+
+- [ ] **A reply that contains the frame delimiter truncates its own frame.**
+  Not measured. `readFrame` searches for `@@E<id>@@` anywhere in the stream,
+  and the value is printed with `~s`, so a Maxima *string* whose text contains
+  the delimiter — reachable from `Expr::opaque("\"@@E7@@\"")`, or from any
+  string a user builds — ends the frame early. The truncated value then fails
+  `parseSExpr`, which surfaces as a `ParseError` escaping `toExpr`; the tail of
+  the real frame is skipped by the next request. Ids are sequential, so the
+  id is guessable. Low severity, one-line fix: put a per-session random nonce
+  in the delimiters (`@@E<nonce>-<id>@@`), or have the helper length-prefix the
+  value. The nonce is the smaller change.
+
+- [ ] **`readFrame`'s buffer is unbounded.** A child that streams without
+  ever completing a frame is bounded only by `Config::timeout`, and at pipe
+  speed two minutes is gigabytes. Cap the buffer (256 MB, say) and treat
+  reaching it as a `KernelError` with a terminate, like a timeout.
+
+- [ ] **`Kernel::evalExpr` has `eval`'s destructive semantics.** It calls
+  `eval`, so it clears the reply cache and switches persistence off for the
+  kernel — while being the convenient entry point a user reaches for to ask a
+  question (`evalExpr("gcd(12, 18)")`, the README's own example). The safe
+  verb is the long one (`evalPure`), the short one is the dangerous one, and
+  nothing in the type says which is which. §9.6 item 6 makes the distinction
+  a type. Until then: add `query(text) -> std::expected<Expr, Failure>` on the
+  pure path, and document `evalExpr` as a statement.
+
+- [ ] **The in-memory reply cache is bounded by count, not bytes.**
+  `Config::cacheEntries` is 4096; a single reply can be 889 KB
+  (`expand((x+y+z)^120)`, §3). Worst case 3.6 GB resident. The persistent cache
+  already has a byte budget; give `ReplyCache` one too, or evict by size.
+
+- [ ] **Arithmetic operators can throw.** Since `98a69db`, `Expr(1e308) *
+  Expr(10.0)` throws `proxima::Error` from `operator*`, and so does any
+  builder, `transform`, `replace` or `Expr::parse` that folds such numbers.
+  Decided deliberately (§1, the infinity item), and it does match Maxima —
+  but a value type whose `+` throws for a value reason is a trap in generic
+  code and in every pipeline §9.6 proposes. Two consistent alternatives, both
+  in the spirit of the `x/0` precedent ("let Maxima be the one to object"):
+  leave the overflowing fold *unfolded*, so `1e308 * 10.0` stays a product of
+  two reals — which costs uniqueness of canonical form for that one corner; or
+  keep the throw but make it a distinct `OverflowError` so callers can tell it
+  from misuse, and say so on `operator+`/`operator*`. Recommendation: the
+  second now, the first if the pipeline work makes throwing operators hurt.
+
+- [ ] **Persistent-cache hits write to disk.** With a limit set — the
+  default — `find()` refreshes the entry's mtime on every hit, a metadata
+  write. It is once per entry per process (the in-memory cache takes over),
+  so it is acceptable; document it, and consider refreshing only when the
+  mtime is older than, say, an hour.
+
+- [ ] **`derivative(f, variable, order)` takes the variable as `const Expr
+  &`** where every other calculus function takes `Symbol` for exactly the
+  reason `symbol.hpp` gives. `derivative(y, x * 2)` compiles. Make it `Symbol`.
+
+- [ ] **`std::hash<Symbol>` is missing** although `std::hash<Expr>` exists
+  and `Symbol` has `==`; `std::unordered_set<Symbol>` does not compile.
+
+- [ ] **`findRoot`'s failure message formats the interval with
+  `std::to_string(double)`**, which prints six decimals: a failure between
+  1e-9 and 1e-8 reads "between 0.000000 and 0.000000". Use `std::format`.
+
+- [ ] **`toTeX` renders `minf` as `-\infty` inside a sum term**, so `x + minf`
+  is `x + -\infty`; `minf` should carry its sign through `negate()`, as the
+  MathML renderer does with `mrow`. Also a decision rather than a bug: the TeX
+  and MathML renderers turn a user's own symbol named `gamma`, `pi`, `phi` or
+  `mu` into the Greek letter, which is right for a physics formula and wrong
+  for a variable that happens to be called `mu`. Say so in the docs, or limit
+  the table to Maxima's `%`-constants.
+
+### 9.2 Performance
+
+- [ ] **Building a sum term by term is far worse than linear.** *Measured*
+  (Debug library, `-O2` probe, GCC 13, Windows):
+
+  | terms | chained `operator+` | `Expr::parse` of the text | one `Expr::add` |
+  |---:|---:|---:|---:|
+  | 500 | 79 ms | 80 ms | 0.3 ms |
+  | 1000 | 300 ms | 312 ms | 1.1 ms |
+  | 2000 | 2349 ms | 2556 ms | 1.6 ms |
+  | 4000 | 8961 ms | 8470 ms | 3.9 ms |
+
+  Every `operator+` re-normalises the whole growing sum: flatten (a copy of
+  all n operands), partition, sort, rebuild, one node allocated per step —
+  O(n² log n) over the chain, and the parser folds its `+` run the same way,
+  one operator at a time. Three fixes, in order of value: the Pratt loop
+  already holds a run of same-precedence operands, so the parser should
+  collect the run and build it with one `Expr::add`/`Expr::mul` (that alone is
+  the 2000× at n=4000, and it is where the §6 stack-depth test noticed the
+  cost); `operator+` on an `Add` and a leaf can insert at the sorted position
+  instead of re-sorting; and the documentation should name `Expr::add(span)`
+  as the way to build a long sum, with a `proxima::sum(range)` helper. A
+  `std::accumulate` over 4000 terms is the natural thing to write and takes
+  nine seconds today.
+
+- [ ] **Including `<proxima/expr.hpp>` costs 1.46 s and 191,590 preprocessed
+  lines per translation unit.** *Measured* (GCC 13, the project's Debug flags,
+  `-fsyntax-only`, best of three): the standard headers it needs cost 0.59 s
+  and 72,776 lines; `<proxima/integer.hpp>` alone is 1.45 s and 191,308 lines.
+  The difference — 0.85 s and 118,000 lines — is Boost.Multiprecision, which
+  `proxima::Integer` holds by value and so puts in every consumer's every
+  translation unit, and which therefore has to be *installed* beside the
+  library (`BOOST_SKIP_INSTALL_RULES OFF`, the versioned `include/boost-1_92`,
+  and the package config's `find_dependency`). §3's note called this "the
+  whole price"; it is the largest cost a consumer of this library sees, and it
+  is avoidable. Hide the backend behind an opaque inline buffer:
+  `alignas(std::max_align_t) std::byte storage_[N]` in the header, with
+  `static_assert(sizeof(cpp_int) <= N)` and the placement in `integer.cpp` —
+  or the small-object layout the fast paths already assume, an `int64_t`
+  inline and a pointer to a heap `cpp_int` only when it does not fit. Then no
+  Boost header is public, the install rules go back to the usual `ON`, the
+  package config needs only the private Boost.Process, and a consumer's
+  compile time roughly halves. `cpp_rational` (§9.4) can hide behind the same
+  wall.
+
+- [ ] **`transform` allocates a vector for every compound node even when
+  nothing under it changes.** For a rewrite that touches one leaf of a large
+  tree, that is one allocation per ancestor *and* per untouched sibling
+  subtree. Delay the allocation until the first changed child, copying the
+  prefix then. Also: `replace` and `contains` revisit shared subtrees, which a
+  memo keyed by node identity would avoid for DAG-shaped expressions. Low.
+
+- [ ] **`Expr` copies are atomic reference-count operations.** The
+  normaliser and the traversals copy operands freely, and `std::shared_ptr`'s
+  count is atomic. `boost::intrusive_ptr` (Boost is already here) with a
+  non-atomic count, or a policy, would shave the constant; measure before
+  changing — §3 showed single runs are noise. Low.
+
+- [ ] **`Expr::str()` builds a display tree on every call.** A `DisplayNode`
+  is an `Integer`, a `std::string`, two vectors and a `double` — some 150
+  bytes and up to four allocations per node — built and discarded per call.
+  Fine for diagnostics, which is what it is for; say so, and keep it out of
+  hot loops. Caching the string in the node (`mutable`, once) is possible but
+  not obviously worth the size. Low.
+
+- [ ] **Small things in the persistent cache:** `readField` does three seeks
+  per field (twelve per entry read) to bound the length — read the file into a
+  string once; `sweep()` sorts every entry when only the eviction boundary
+  matters (`nth_element`). Low.
+
+### 9.3 Ergonomics and the shape of the API
+
+- [ ] **Three verbs for evaluation, and the safe one has the longest name.**
+  `eval` (clears the cache, stops persistence), `evalPure`, `evalTracked`,
+  `evalExpr` (as `eval`), plus `remember`/`forget` to maintain the journal by
+  hand. The distinction between them is a promise the caller makes and
+  nothing checks: `evalPure("a: 7")` is accepted and quietly poisons every
+  later cached answer. §9.6 item 6 makes the promise a type. Failing that,
+  rename so the default is the safe one — `query` for the pure path, `execute`
+  for a statement — and make `evalTracked`, `remember` and `forget` internal
+  once `Context` is their only client.
+
+- [ ] **`Reply` is a hand-rolled `expected` in a public header** — `ok`,
+  `value`, `reason`. It should be `std::expected<std::string, Failure>` if the
+  raw wire form stays public at all, and the wire form is better made
+  `detail`: the public API deals in `Expr`, and `toExpr` already exists.
+
+- [ ] **Half the operations throw and half return `std::expected`.**
+  `diff`, `expand`, `factor`, `ratsimp`, `subst`, `taylor`, `trigsimp`,
+  `trigexpand`, `radcan`, `partfrac`, `toFloat`, `coeff`, `nroots`,
+  `realroots` and `is` throw `MaximaError`; `integrate`, `limit`, `solve`,
+  `ode2`, `sum`, `product`, `findRoot` and `parse` return a `Failure`. The rule
+  — "no ordinary way to fail" — is a judgement made per function, not a
+  property of the type: `diff(Expr::opaque("$"), x)` throws where
+  `integrate` of the same input returns a value. Every caller who wants one
+  handling style has to know the list. §9.6 item 1 proposes one shape.
+
+- [ ] **`Expr(x)` everywhere.** The README, the tour and the tests write
+  `pow(proxima::Expr(x), 2)` and `gt(proxima::Expr(n), proxima::Expr(0))` where
+  `pow(x, 2)`, `x * x + 3 * x + 2` and `gt(n, 0)` all compile: `Symbol`
+  converts implicitly and `pow` accepts it. The documentation is teaching the
+  verbose spelling. Show the terse one, and put `namespace px = proxima;` in
+  the README's first example.
+
+- [ ] **Accessors that throw on the wrong kind.** `integerValue()`, `name()`,
+  `realValue()`, `relationOp()`, `opaqueText()` and `arg(i)` each throw
+  `proxima::Error` unless the caller has checked `is(Kind::…)` first, so every
+  reader of a tree is a `switch` on `kind()` followed by calls that could
+  throw if the switch is wrong. `Node` is a `std::variant` already; §9.6
+  item 4 exposes that as a `match` with typed views and `std::optional`
+  accessors, which is what C++23 makes pleasant.
+
+- [ ] **`Bindings::set` mutates, in an otherwise value-oriented numeric
+  API.** Add `with(symbol, value)` returning a new `Bindings`, and consider
+  `std::flat_map` (C++23; libstdc++ 15, MSVC 19.4x, libc++ 20) as the store —
+  a handful of entries in contiguous memory beats a node-per-entry
+  `std::map`.
+
+- [ ] **`asFunction` returns a `std::function`** — an allocation and an
+  indirect call per point — when `Compiled` is already a callable value that
+  can be returned by value. Return `Compiled`, or `auto`; if a type-erased
+  form is wanted, `std::move_only_function`.
+
+- [ ] **`sharedKernel()` is ambient global state that every operation
+  defaults to.** Convenient for a script; for a library built on Proxima it
+  means one Maxima for everyone, static-destruction order to reason about
+  (§2 fixed the crash, not the design), and no way to tell from a call site
+  which kernel it uses. Keep the default — it is what makes the README's
+  first example three lines — but make the explicit form the one the
+  documentation leads with, and see §9.6 item 3 for a `with_kernel` adaptor.
+
+- [ ] **`Context` is ambient too, and process-global.** Which Maxima context
+  is *current* is state in the Maxima process, so the meaning of
+  `integrate(f, x)` depends on which `Context` objects are alive on any
+  thread at that moment; two threads each holding a `Context` on one kernel
+  interleave. The registry, the out-of-order teardown, the
+  exception-swallowing destructor and the journal all exist to manage that
+  ambient state. §9.6 item 5 replaces it with a value.
+
+- [ ] **Naming: camelCase against snake_case.** Proxima's free functions and
+  members are camelCase — `evalNumeric`, `isEvaluable`, `toTeX`,
+  `canonicalOrder` — while FXT and the standard library are snake_case —
+  `and_then`, `value_or`, `transform`. The moment the two are used in one
+  pipeline the seam shows: `integrate(f, x) | fxt::and_then(diffBy(x)) |
+  fxt::value_or(zero)`. This has to be decided *before* the FP work in §9.6,
+  because renaming afterwards is churn across every file. Recommendation:
+  snake_case for functions and members, PascalCase for types — the standard
+  library's convention and FXT's.
+
+- [ ] **`Kernel::remember` and `forget` are public.** Manipulating the replay
+  journal by hand is an invitation to make the journal lie, which is the one
+  thing the persistent cache cannot survive. Make them `detail` (see also
+  §9.6 item 6, where they disappear).
+
+- [ ] **README, PLAN and TODO are 400, 1,400 and 1,100 lines of narrative.**
+  The *why* is unusually well recorded, which is the reason this review could
+  be done from the outside at all — but a newcomer wanting *how* has to read
+  past it. Move the history into `docs/decisions/`, one file per decision in
+  ADR style, and cut the README to the first two hundred lines. Process item.
+
+### 9.4 What existing libraries could provide
+
+- [ ] **`boost::multiprecision::cpp_rational` for `Fraction` and the `Exact`
+  accumulator.** `Expr::rational` reduces by the gcd and moves the sign by
+  hand; `Exact::add`, `multiply` and `reduce` in the normaliser re-implement
+  rational arithmetic. `cpp_rational` is exactly that — canonical, reduced,
+  sign on the numerator — and is already in the Boost that is fetched. It
+  removes some sixty lines and two places where gcd or sign handling could
+  drift apart. Do it together with the opaque buffer in §9.2, so it stays out
+  of the public header.
+
+- [ ] **`std::generator` (C++23) for traversal.** `for (const Expr &node :
+  proxima::nodes(e))` reads better than a callback and composes with ranges:
+  `anyOf(e, p)` becomes `std::ranges::any_of(nodes(e), p)`. GCC 14 and MSVC
+  19.39 have it; check libc++ 22 before relying on it, since clang is a
+  supported compiler here.
+
+- [ ] **`std::ranges::to` and views (C++23)** where the code loops by hand to
+  build a vector: `mapArguments` is `form.items() | views::drop(1) |
+  views::transform(fromMaxima) | ranges::to<std::vector>()`; `solve`'s
+  by-name collection, `sortedChildren`, `Compiled`'s variable names likewise.
+  Readability, not speed.
+
+- [ ] **`std::print` / `std::println` (C++23)** in the examples and the tour
+  in place of iostream; the library already formats with `std::format`.
+
+- [ ] **`std::flat_map` (C++23)** for `Bindings`, as above.
+
+- [ ] **FXT itself.** Header-only, MIT, the same author, `std::expected`
+  underneath by default. Its `operator|` is constrained on `expected_like`,
+  which `std::expected<Expr, Failure>` satisfies (checked against
+  `IsExpected.hpp`), so `proxima::integrate(f, x) | fxt::transform(toTeX)`
+  works *today* with no change to either library. What does not interoperate
+  is `fxt::attempt` and `fxt::result<T>`, which fix the error type to
+  `fxt::failure`. Whether Proxima should *depend* on FXT or merely compose
+  with it is §9.6 item 11.
+
+- [ ] **A property-testing library** — RapidCheck, or Catch2's generators if
+  the suite ever moved — for §9.5's invariants. A sixty-line generator over
+  `Kind` inside the existing doctest suite would do as well.
+
+- [ ] **Keep hand-written, as before:** the Pratt parser, the s-expression
+  reader, the LRU. And one candidate for *removal* rather than replacement:
+  §9.5, the render vtable.
+
+### 9.5 Build, tests, process
+
+- [ ] **CI** is the one §7 item still open, and the by-hand cycle used
+  throughout this work — GCC and clang-cl on Windows, MSVC, GCC on Linux,
+  `clang-tidy`, the fuzz corpora — is exactly the matrix to automate.
+
+- [ ] **Property tests for the invariants the design rests on.** Every
+  guarantee below is asserted on hand-picked cases and none on generated
+  ones: normalisation is idempotent (`Expr::add(e.args()) == e` for every
+  `Add`); `a == b` ⇔ `canonicalOrder(a, b) == 0` ⇔ `a.hash() == b.hash()`;
+  `Expr::parse(e.str()) == e` (the fuzzer checks this, but only when it
+  runs); `transform(e, identity)` shares every node; and
+  `fromMaxima(parseSExpr(toMaxima(e))) == e` needs no kernel and is never
+  checked over random trees. A generator over `Kind` with a size bound, and
+  a few hundred trees per run.
+
+- [ ] **Every `Feature` against a live kernel** — the test that would have
+  caught `Prime`. And once the user directory is fixed, a test that the
+  default is private.
+
+- [ ] **The render vtable serves no use the code has.** `Renderer<T>` is 300
+  lines of hand-written vtable and small-buffer storage so that one type can
+  hold any renderer — but `render(expr, R &&)` erases the renderer, walks,
+  and discards it, and nothing stores a `Renderer<T>` or keeps several in a
+  container. The walk pays an indirect call per node for a capability with no
+  caller. A template walk over the concrete `R` is simpler, faster, and loses
+  nothing until a real use for heterogeneous storage appears — at which point
+  `Renderer<T>` can wrap the template. A decision rather than a bug; the
+  concepts and the display layer stay exactly as they are.
+
+- [ ] **Apply `.clang-format` wholesale when §9.6 lands.** It was committed
+  as "closest, not applied" (§7) to protect line history; a rewrite that
+  touches most files anyway is the moment to reformat once and stop the
+  drift.
+
+- [ ] **PLAN.md says "Genuinely undecided: nothing."** It should now list the
+  decisions this section asks for — naming, values versus exceptions,
+  assumptions as values, the opaque `Integer` — so that the plan and the TODO
+  agree about what is open.
+
+### 9.6 A functional shape for the API, with FXT as the model
+
+What is already functional, and should be said so in the documentation as the
+library's purity boundary: `Expr` is an immutable value with structural
+equality and a hash fixed at construction; every header in the core —
+`expr`, `integer`, `symbol`, `functions`, `traverse`, `numeric`, `render`,
+`tex`, `mathml` — is pure, with no I/O and no state beyond constants;
+canonical form makes equality meaningful, which is what makes `Expr` a value
+rather than a handle; and the kernel is the one place effects happen. That is
+the right foundation and none of it needs to change.
+
+What is not functional is the interface *to* the kernel, and a few habits
+around the edges: failure is a value in half the operations and an exception
+in the other half; three kinds of ambient state decide what an operation
+means (the shared kernel, the live `Context` objects, and Maxima's own
+"current context"); mutation is offered where a value would do
+(`Bindings::set`, the `eval` verbs as unchecked promises, `remember`/`forget`);
+traversal is callback-shaped; errors are untyped strings; and nothing composes
+— there is no pipe, no partial application, no way to write a pipeline without
+naming an intermediate at every step. Each item below fixes one of those, and
+they are ordered so that each is useful without the next.
+
+- [ ] **1. One result type, everywhere.**
+
+  ```cpp
+  template <class T> using result = std::expected<T, Failure>;
+  result<Expr> diff(const Expr &, const Symbol &, unsigned = 1, Kernel & = shared());
+  ```
+
+  Every kernel-backed operation returns `result<Expr>`; the throwing half of
+  §9.3 goes. Callers who want the throwing style write `.value()` — which
+  throws `std::bad_expected_access` — or `proxima::unwrap(r)`, which throws
+  `MaximaError` carrying the message, and that becomes the only place
+  `MaximaError` is thrown. The "no ordinary way to fail" distinction survives
+  as documentation ("diff fails only for malformed input"), which is where a
+  judgement belongs. Local, kernel-free operations (`replace` on an Opaque
+  that mentions the symbol, the accessors) get the same treatment where they
+  fail for a value reason, and keep throwing only for programming errors
+  (`arg(i)` out of range).
+
+- [ ] **2. A `Failure` worth matching on, compatible with `fxt::failure`.**
+  Today `Failure` is a string. A caller cannot tell "no closed form" from
+  "Maxima needs an assumption" from "the kernel died" without parsing the
+  message — and the third is the one they must handle differently. Give it a
+  cause and, for the assumption case, the fact Maxima asked about as a
+  value:
+
+  ```cpp
+  enum class Cause { NoClosedForm, NotSolved, MaximaError, NeedsAssumption,
+                     Kernel, Timeout, Parse, Eval, Overflow };
+  struct Failure {
+      Cause cause;
+      std::string message;
+      std::optional<Expr> missingFact;   // NeedsAssumption: the relation asked about
+      std::exception_ptr exception;      // when wrapping one
+  };
+  ```
+
+  With `Cause`, `fxt::ensure`-style gates and `fxt::match` branches read as
+  intent rather than string searches, and `stuck.error().missingFact` is what
+  the README's "when Maxima needs a fact" section wants to show. The shape is
+  deliberately `fxt::failure`'s — message, exception, typed context — so a
+  bridge (item 11) is a conversion, not a redesign.
+
+- [ ] **3. Pipe adaptors for every operation.** Each operation gains an
+  overload without its subject that returns a closure, and `Expr` and
+  `result<Expr>` both pipe into it — the plain value applies, the result
+  short-circuits (Kleisli composition, which is what `fxt::and_then` does):
+
+  ```cpp
+  using namespace proxima::pipes;
+  const auto F = f | diff(x) | expand() | integrate(x);        // result<Expr>
+  const auto s = F | fxt::transform(proxima::to_tex) | fxt::value_or("?");
+  const auto g = f | with_kernel(k) | diff(x) | factor();       // an explicit kernel
+  ```
+
+  `fxt::curry` does not fit these functions directly — default arguments and
+  overloads defeat arity detection — which is why FXT's own operations are
+  adaptors too, and why Proxima should follow that pattern rather than
+  currying. The adaptor types live in `proxima` so that ADL finds the pipe;
+  a `result<Expr> | adaptor` overload in `proxima` avoids requiring FXT for
+  the common chain, and FXT's `and_then` works on it regardless.
+
+- [ ] **4. `match` over expressions, and optional accessors.** `Node` is a
+  `std::variant` already; expose that as a visit over cheap, non-owning
+  views, with `fxt::overload` or deducing-this doing the dispatch:
+
+  ```cpp
+  const auto s = e.match(
+      [](const Integer &n)            { return n.toString(); },
+      [](const proxima::Rational &q)   { return q.numerator.toString() + "/" + ...; },
+      [](double r)                    { return std::format("{}", r); },
+      [](const proxima::SymbolView &v) { return std::string(v.name); },
+      [](const proxima::Sum &s)        { return join(s.terms()); },   // and Product, Power, Call, Relation, Opaque
+  );
+  const std::optional<Integer> n = e.as_integer();     // replaces the throwing integerValue()
+  n.transform([](const Integer &i) { ... });           // C++23 monadic optional
+  ```
+
+  The `switch (kind())` + throwing-accessor pairs throughout `numeric.cpp`,
+  `render.cpp`, `to_maxima.cpp` and the tests become total matches the
+  compiler checks. The shared immutable representation is untouched; the
+  views are references into it.
+
+- [ ] **5. Assumptions as values, not scopes.** The largest change and the
+  largest win. An `Assumptions` value is an immutable, ordered set of
+  relations and declarations — structural equality, hashable, built with
+  `assuming(gt(n, 0)).and(declared(n, Feature::Integer))`. Operations take
+  one, defaulting to empty:
+
+  ```cpp
+  const auto A = proxima::assuming(gt(n, 0));
+  const auto r = integrate(pow(x, n), x, A);                   // or:  f | with(A) | integrate(x)
+  ```
+
+  The kernel materialises a Maxima context per distinct `Assumptions` value
+  on first use and keeps a small LRU of them, switches with `context:` under
+  the pipe lock before each call (a microsecond), and keys the reply cache
+  and the persistent stamp on the `Assumptions` hash — which makes the
+  cache key *explicit* rather than "whatever the journal holds". After a
+  restart, contexts are simply recreated on demand; the journal, `remember`,
+  `forget`, the process-wide registry, out-of-order teardown, and the
+  destructor that swallows exceptions all go, because there is no longer any
+  ambient state to keep in step. The meaning of `integrate(f, x, A)` is a
+  function of its arguments, on every thread, whatever else is alive. This is
+  the reader-monad shape: the environment is passed in, not looked up.
+  `Context` can survive as sugar over it for callers who like RAII, but it
+  would no longer be the mechanism.
+
+- [ ] **6. Queries and statements as types.** The four `eval` verbs and the
+  unchecked purity promise collapse into two types and two methods:
+
+  ```cpp
+  result<Expr> Kernel::ask(const Query &);        // pure: cached, persisted
+  result<unit> Kernel::tell(const Statement &);   // an effect: clears what it must
+  ```
+
+  `Query::form(expr)` and `Query::text("gcd(12, 18)")` are the pure escape
+  hatches by construction; `Statement::text("a: 7")` is the only thing that
+  invalidates a cache, and it says so in its name. `evalExpr`'s trap (§9.1)
+  cannot be written. `fxt::unit` is the natural success type for `tell`.
+
+- [ ] **7. Traversal as folds and ranges.** `visit`, `anyOf` and `transform`
+  are three special cases of one catamorphism:
+
+  ```cpp
+  template <class Algebra> auto fold(const Expr &e, Algebra &&alg);   // alg(node, folded children)
+  Expr rewrite(const Expr &e, F &&f);   // f: const Expr& -> std::optional<Expr>; nullopt keeps the node
+  std::generator<const Expr &> nodes(const Expr &e);
+  ```
+
+  `transform` becomes `fold` with `withOperands`; returning `std::optional`
+  from the rewrite callback says "unchanged" directly, retiring the
+  representation-identity trick that `transform` needs today; and `nodes(e)`
+  makes `anyOf` a `std::ranges::any_of`. All pure, all in the core.
+
+- [ ] **8. Immutability where it is missing.** `Bindings::with(...)` beside
+  `set`, or instead of it; `Config` is already a value copied into the
+  kernel; `Compiled` is already immutable. `fxt::immutable<T>` is the right
+  wrapper to show in the examples for a `Bindings` built up and then frozen.
+
+- [ ] **9. Effects at the edge, stated.** A short table in the README: these
+  headers are pure, these have effects, and `Kernel` is the only type with
+  state. The code already honours it; the documentation should promise it,
+  because it is the property that makes the rest of this section possible.
+
+- [ ] **10. Errors from the parser and the numeric layer as values too.**
+  `Expr::parse` returns `result<Expr>` (with `Cause::Parse` and the offset);
+  `Compiled`'s constructor cannot return a value, so add `compile(expr,
+  vars) -> result<Compiled>` and keep the constructor for those who want the
+  throw. `evalNumeric` → `result<double>` with `Cause::Eval`; `isEvaluable`
+  stays as the cheap predicate.
+
+- [ ] **11. Depend on FXT, or mirror it?** Two honest options. (a) Depend:
+  `proxima::result` *is* `fxt::result`, `Failure` *is* `fxt::failure` with
+  the `Cause` as context, and the adaptors are `fxt::and_then` and friends
+  rather than a second implementation — at the price of a header-only
+  dependency (plus its optional `tl::` fallbacks) in every consumer.
+  (b) Compose: keep `std::expected<Expr, Failure>`, which FXT's pipe already
+  accepts, and add one small header, `<proxima/fxt.hpp>`, that converts a
+  Proxima `Failure` to an `fxt::failure` carrying the `Cause` as context, so
+  `fxt::attempt` chains and `fxt::result` interoperate. Recommendation: (b)
+  first — it keeps Proxima dependency-light and costs one header — and move
+  to (a) only if the adaptor layer in item 3 would otherwise duplicate FXT's
+  pipe machinery.
+
+- [ ] **12. What not to do.** Do not make `Expr` a public `std::variant`:
+  the shared, hash-once representation is the reason it is a value. Do not
+  curry the operations: default arguments are the ergonomic win, and adaptors
+  give the same pipelines without fighting arity. Do not try to make `Kernel`
+  a pure value: it *is* the effect, and the design is honest about that.
+
+**Suggested order.** (1) The small, sharp things: `Feature::Prime`, the user
+directory, the parser's superlinear sum, `evalExpr`'s semantics, the frame
+nonce, the buffer cap. (2) The opaque `Integer`, which halves what consumers
+pay. (3) The naming decision, then `result` everywhere with the new
+`Failure` — items 1, 2 and 10, which change every signature once. (4)
+Adaptors, `match` and `fold` — items 3, 4 and 7, additive. (5) Assumptions as
+values and `Query`/`Statement` — items 5 and 6, the redesign. (6) CI and the
+property tests alongside all of it.
