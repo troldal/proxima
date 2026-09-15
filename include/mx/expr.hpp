@@ -159,14 +159,20 @@ public:
     /// `denominator` is zero.
     static Expr rational(Integer numerator, Integer denominator);
 
-    /// An inexact number. Infinities are allowed, and reach Maxima as `inf`
-    /// and `minf`.
+    /// An inexact number.
     ///
-    /// NaN is not: throws mx::Error. It has no meaning in Maxima and no
+    /// An infinity is not a Real: it becomes the symbol `inf` or `minf`, as in
+    /// Maxima, which has no floating-point infinity. So it prints, and reads
+    /// back, as that symbol, and does not fold: `Expr(inf) + 1.0` stays a sum.
+    ///
+    /// NaN is refused: throws mx::Error. It has no meaning in Maxima and no
     /// spelling that reads back, and because it is not equal to itself it has
     /// no place in the canonical order the normaliser sorts operands by.
-    /// Arithmetic that would fold to NaN — `Expr(inf) + Expr(-inf)`,
-    /// `Expr(0.0) * Expr(inf)` — throws the same way.
+    ///
+    /// Arithmetic on finite numbers that would overflow to infinity throws
+    /// mx::Error too, as Maxima reports a floating-point overflow:
+    /// `Expr(1e308) * Expr(10.0)`, or an integer of a few hundred digits times
+    /// 1.0.
     static Expr real(double value);
     static Expr symbol(std::string name);
 

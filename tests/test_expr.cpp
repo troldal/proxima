@@ -259,7 +259,7 @@ TEST_CASE("equal expressions hash equally") {
     CHECK(Expr(2).hash() == Expr::rational(4, 2).hash());
 }
 
-TEST_CASE("a Real cannot be NaN, but can be infinite") {
+TEST_CASE("a Real is never NaN or infinite") {
     // A NaN is not equal to itself. Held in an Expr it broke the ordering the
     // normaliser sorts by (undefined behaviour in std::sort), made equality
     // disagree with the hash, and printed as `nan`, a symbol to Maxima.
@@ -270,18 +270,34 @@ TEST_CASE("a Real cannot be NaN, but can be infinite") {
     // Braces: `Expr(nan);` as a statement declares a variable named nan.
     CHECK_THROWS_AS(Expr{nan}, mx::Error);
 
-    SUBCASE("including one that arithmetic would fold to") {
-        CHECK_THROWS_AS(Expr(inf) + Expr(-inf), mx::Error);
-        CHECK_THROWS_AS(Expr(0.0) * Expr(inf), mx::Error);
+    SUBCASE("an infinity is Maxima's symbol, which reads back as itself") {
+        // Found by fuzzing: a Real infinity printed as inf, which reads back
+        // as the symbol, a different expression. Maxima has only the symbol.
+        CHECK(Expr(inf) == Expr::symbol("inf"));
+        CHECK(Expr(-inf) == Expr::symbol("minf"));
+        CHECK(Expr::real(inf).kind() == Kind::Symbol);
+        CHECK(Expr::parse(Expr(-inf).str()) == Expr(-inf));
+
+        // A symbol does not fold, so neither sum is refused as NaN any more.
+        const Symbol x("x");
+        CHECK((Expr(inf) + Expr(1.0)).kind() == Kind::Add);
+        CHECK_NOTHROW(static_cast<void>(Expr(inf) + Expr(-inf)));
+        CHECK(Expr(x) + Expr(inf) == Expr(inf) + Expr(x));
     }
 
-    SUBCASE("while infinities fold, sort and compare like any number") {
-        const Symbol x("x");
-        CHECK(Expr(inf) + Expr(1.0) == Expr(inf));
-        CHECK(Expr(x) + Expr(inf) == Expr(inf) + Expr(x));
-        CHECK(Expr(inf) == Expr(inf));
-        CHECK(Expr(inf).hash() == Expr(inf).hash());
-        CHECK_FALSE(Expr(-inf) == Expr(inf));
+    SUBCASE("and arithmetic that would overflow to one is refused") {
+        // As Maxima refuses it, with FLOATING-POINT-OVERFLOW. It used to fold
+        // silently to infinity, from finite numbers.
+        CHECK_THROWS_AS(static_cast<void>(Expr(1e308) * Expr(10.0)), mx::Error);
+        CHECK_THROWS_AS(static_cast<void>(Expr(1e308) + Expr(1e308)), mx::Error);
+        const Expr huge(mx::Integer("1" + std::string(400, '0')));
+        CHECK_THROWS_AS(static_cast<void>(huge * Expr(1.0)), mx::Error);
+        CHECK_THROWS_AS(static_cast<void>(Expr::parse("1" + std::string(400, '0') + "/5.0")),
+                        mx::Error);
+
+        // Dividing by a tiny real would overflow its reciprocal: it stays a
+        // negative power instead.
+        CHECK_NOTHROW(static_cast<void>(Expr(2.0) / Expr(1e-320)));
     }
 }
 

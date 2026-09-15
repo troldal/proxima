@@ -1,5 +1,7 @@
 #include "core/normalize.hpp"
 
+#include <mx/errors.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -176,8 +178,17 @@ Expr fold(std::span<const Expr> numbers, bool isProduct) {
     // Inexactness is contagious, as it is in Maxima: one float makes the whole
     // constant a float.
     if (sawReal) {
-        return Expr::real(isProduct ? inexact * exact.approx()
-                                    : inexact + exact.approx());
+        const double folded = isProduct ? inexact * exact.approx()
+                                        : inexact + exact.approx();
+        // No Real operand is infinite, so a result that is not finite is an
+        // overflow: 1e308 * 10.0, or an integer of a few hundred digits made a
+        // double. It used to become infinity silently; Maxima refuses it too.
+        if (!std::isfinite(folded)) {
+            throw Error("floating-point overflow: the numbers in this "
+                        + std::string(isProduct ? "product" : "sum")
+                        + " do not fit in a double");
+        }
+        return Expr::real(folded);
     }
     return Expr::rational(exact.numerator, exact.denominator);
 }

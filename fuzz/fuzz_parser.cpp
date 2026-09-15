@@ -7,9 +7,7 @@
 
 #include <mx/errors.hpp>
 #include <mx/expr.hpp>
-#include <mx/traverse.hpp>
 
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -36,17 +34,6 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size
         parsed = mx::Expr::parse(text);
     } catch (const mx::Error &) {
         return 0; // Refused, which is a fine answer to most text.
-    }
-
-    // A Real infinity prints as the symbol inf, which reads back as that
-    // symbol: an open design question (TODO.md §1, "A Real infinity prints as
-    // the symbol inf"), not a slip to be found again on every run. Parsing
-    // such text is still fuzzed; only the round trip is skipped.
-    const bool holdsInfinity = mx::anyOf(parsed, [](const mx::Expr &node) {
-        return node.is(mx::Kind::Real) && std::isinf(node.realValue());
-    });
-    if (holdsInfinity) {
-        return 0;
     }
 
     const std::string printed = parsed.str();

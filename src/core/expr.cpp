@@ -129,11 +129,16 @@ Expr Expr::real(double value) {
         // contract and the strict weak ordering the normaliser sorts by —
         // undefined behaviour in std::sort, not merely a wrong order. It also
         // has no meaning in Maxima and printed as `nan`, which reads back as a
-        // symbol. Infinities are fine: they compare, and Maxima has names for
-        // them.
-        throw Error("a Real cannot be NaN (from inf - inf, 0.0 * inf, or a NaN "
-                    "passed in): it has no value in Maxima and no place in an "
-                    "ordering");
+        // symbol.
+        throw Error("a Real cannot be NaN: it has no value in Maxima and no place "
+                    "in an ordering");
+    }
+    if (std::isinf(value)) {
+        // Maxima has no floating-point infinity, only the symbols inf and minf,
+        // which is what a Real infinity was sent as and printed as. Found by
+        // fuzzing: printed, it read back as the symbol, a different expression.
+        // So it is the symbol from the start.
+        return symbol(value > 0 ? "inf" : "minf");
     }
     Node node;
     node.kind = Kind::Real;
@@ -379,7 +384,10 @@ Expr operator/(const Expr &lhs, const Expr &rhs) {
         if (!rhs.numerator().isZero()) {
             return lhs * Expr::rational(rhs.denominator(), rhs.numerator());
         }
-    } else if (rhs.is(Kind::Real) && rhs.realValue() != 0.0) {
+    } else if (rhs.is(Kind::Real) && rhs.realValue() != 0.0
+               && std::isfinite(1.0 / rhs.realValue())) {
+        // Not when the reciprocal overflows, as dividing by 1e-320 does: that
+        // stays a negative power below, rather than becoming infinity.
         return lhs * Expr::real(1.0 / rhs.realValue());
     }
     // Anything else, including division by zero, becomes a negative power —

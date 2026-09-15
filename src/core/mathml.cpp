@@ -94,12 +94,8 @@ std::string_view glyphFor(std::string_view name) {
 }
 
 std::string renderReal(double value) {
-    // No NaN case: Expr::real refuses one, so no Real holds it.
-    if (std::isinf(value)) {
-        const std::string infinity = element("mi", kInfinity);
-        return value > 0 ? infinity : mrow(mo(kMinus) + infinity);
-    }
-
+    // Always finite: Expr::real refuses NaN and turns an infinity into the
+    // symbol inf or minf, which renders as the infinity sign.
     const bool negative = std::signbit(value);
     char buffer[40];
     const auto [stopped, error]

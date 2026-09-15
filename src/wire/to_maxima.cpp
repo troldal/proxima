@@ -79,11 +79,8 @@ std::string encodeWithSigil(char sigil, std::string_view name) {
 }
 
 std::string encodeReal(double value) {
-    // No NaN case: Expr::real refuses one, so no Real can carry it this far.
-    if (std::isinf(value)) {
-        // Maxima's own names for the two infinities.
-        return value > 0 ? "$INF" : "$MINF";
-    }
+    // Always finite: Expr::real refuses NaN and turns an infinity into the
+    // symbol inf or minf, which is encoded as any symbol is.
     char buffer[40];
     const auto [stopped, error]
         = std::to_chars(buffer, buffer + sizeof(buffer), value);
