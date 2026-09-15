@@ -380,6 +380,8 @@ separate process, which is a licensing requirement and not merely a convenience.
 
 ## Licence
 
+maxima_cpp is released under the MIT licence; see [LICENSE](LICENSE).
+
 Maxima is GPL. It is run as a **separate process** communicating over pipes,
 which keeps the licences separate — this library is not a derivative work of it.
 Embedding Maxima in-process, which is possible via ECL, would pull GPL into the
