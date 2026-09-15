@@ -61,11 +61,11 @@ std::string escaped(std::string_view text) {
 std::string element(std::string_view tag, std::string_view content) {
     std::string out = "<";
     out += tag;
-    out += ">";
+    out += '>';
     out += content;
     out += "</";
     out += tag;
-    out += ">";
+    out += '>';
     return out;
 }
 

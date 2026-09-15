@@ -74,7 +74,7 @@ struct InfixRenderer {
         for (std::size_t i = 0; i < terms.size(); ++i) {
             if (i == 0) {
                 if (terms[i].negated) {
-                    out += "-";
+                    out += '-';
                 }
             } else {
                 out += terms[i].negated ? " - " : " + ";

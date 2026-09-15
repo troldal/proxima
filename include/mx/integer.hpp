@@ -159,8 +159,10 @@ Integer abs(const T &value) {
 }
 
 namespace detail {
+// Returns its own parameter by reference: only ever called on gcd's arguments,
+// which outlive the call the reference is used in.
 inline const Integer &asInteger(const Integer &value) {
-    return value;
+    return value; // NOLINT(bugprone-return-const-ref-from-parameter)
 }
 template <IntegralNumber T>
 Integer asInteger(T value) {

@@ -25,7 +25,7 @@ public:
     const std::string &name() const { return expr_.name(); }
 
     const Expr &expr() const { return expr_; }
-    operator const Expr &() const { return expr_; }
+    operator const Expr &() const { return expr_; } // NOLINT(google-explicit-constructor): implicit by design, above.
 
     bool operator==(const Symbol &other) const { return expr_ == other.expr_; }
 

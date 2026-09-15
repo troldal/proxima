@@ -77,7 +77,7 @@ struct ChildProcessTransport::Impl {
     /// Where each read lands. 64 KB, where it used to be 4 KB on the stack: a
     /// megabyte of reply was 256 reads, each a trip round the io_context, and
     /// the session searching the text after every one.
-    std::array<char, 64 * 1024> readBuffer{};
+    std::array<char, std::size_t{64} * 1024> readBuffer{};
 };
 
 ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &argv,
@@ -128,7 +128,9 @@ ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &arg
     }
 #endif
 
-    impl_->output.assign(ends[0], ec);
+    // These asio calls return the error they also write to their error_code
+    // argument, so the return value is discarded here and below.
+    static_cast<void>(impl_->output.assign(ends[0], ec));
     if (ec) {
         asio::detail::close_pipe(ends[0]);
         throw KernelError("Failed to bind the output pipe for a child process: "
@@ -222,7 +224,7 @@ std::string ChildProcessTransport::receive(std::chrono::milliseconds timeout) {
         // handler refers to this call's locals. A read that completed in the
         // meantime still delivers its bytes.
         boost::system::error_code ignored;
-        impl_->output.cancel(ignored);
+        static_cast<void>(impl_->output.cancel(ignored));
         impl_->context.restart();
         impl_->context.run();
     }
@@ -261,7 +263,7 @@ void ChildProcessTransport::stop(std::chrono::milliseconds grace) {
 
     // Closing stdin gives a child that was asked to quit a chance to see end
     // of input and leave on its own.
-    impl_->input.close(ignored);
+    static_cast<void>(impl_->input.close(ignored));
 
     if (impl_->process) {
         const auto deadline = std::chrono::steady_clock::now() + grace;
@@ -282,7 +284,7 @@ void ChildProcessTransport::stop(std::chrono::milliseconds grace) {
         impl_->process.reset();
     }
 
-    impl_->output.close(ignored);
+    static_cast<void>(impl_->output.close(ignored));
     impl_->closed = true;
 }
 

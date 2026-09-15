@@ -141,7 +141,7 @@ public:
     /// making later results quietly wrong rather than obviously broken. Scoped
     /// state such as mx::Context registers itself here; there is rarely a
     /// reason to call this directly.
-    std::uint64_t remember(std::string statement);
+    std::uint64_t remember(std::string_view statement);
     std::uint64_t remember(const Expr &form);
 
     /// Stops replaying the statement `handle` names.

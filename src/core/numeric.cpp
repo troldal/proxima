@@ -567,7 +567,7 @@ double Compiled::operator()(double value) const {
 }
 
 std::function<double(double)> asFunction(const Expr &expr, const Symbol &variable,
-                                         Bindings fixed) {
+                                         const Bindings &fixed) {
     return [compiled = Compiled(expr, variable, fixed)](double value) {
         return compiled(value);
     };

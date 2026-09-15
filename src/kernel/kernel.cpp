@@ -83,7 +83,7 @@ Kernel::CacheStats Kernel::cacheStats() const {
     return {stats.hits, stats.misses, stats.entries, stats.persistentHits};
 }
 
-std::uint64_t Kernel::remember(std::string statement) {
+std::uint64_t Kernel::remember(std::string_view statement) {
     return session().remember(detail::Payload::text(statement));
 }
 

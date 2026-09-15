@@ -286,7 +286,7 @@ constexpr std::size_t kMaxParseDepth = 1000;
 /// measured too. This much leaves room below the parser on any main thread;
 /// a caller parsing on a thread with a smaller stack than that should say so
 /// by not doing it.
-constexpr std::uintptr_t kParseStackBudget = 256 * 1024;
+constexpr std::uintptr_t kParseStackBudget = std::uintptr_t{256} * 1024;
 
 /// An address inside the current stack frame: the real stack, even under
 /// AddressSanitizer, which can move locals off it.
@@ -423,13 +423,13 @@ private:
 
         switch (token.kind) {
         case Token::Kind::Plus:
-            return std::move(left) + expression(kAddSub);
+            return left + expression(kAddSub);
         case Token::Kind::Minus:
-            return std::move(left) - expression(kAddSub);
+            return left - expression(kAddSub);
         case Token::Kind::Star:
-            return std::move(left) * expression(kMulDiv);
+            return left * expression(kMulDiv);
         case Token::Kind::Slash:
-            return std::move(left) / expression(kMulDiv);
+            return left / expression(kMulDiv);
         case Token::Kind::Caret:
             // Right-associative, so the right operand is parsed at one below
             // this operator's own power: x^2^3 is x^(2^3).

@@ -1,0 +1,32 @@
+# The checks this code is held to, and passes. Run with the compile database
+# any configure writes (the presets turn CMAKE_EXPORT_COMPILE_COMMANDS on):
+#
+#     clang-tidy -p build/<preset> src/*/*.cpp
+#
+# Left out on purpose, because what they flag is intended:
+#   bugprone-easily-swappable-parameters   (lhs, rhs) is often the right signature
+#   bugprone-signed-bitwise                hash mixing and bit loops, whose shift
+#                                          counts and masks are int literals
+#   bugprone-empty-catch                   best-effort catches, each saying why
+#   performance-enum-size                  no layout here depends on an enum's size
+#   modernize-use-nullptr                  it flags `ordering < 0`, which is how
+#                                          C++ compares an ordering
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-signed-bitwise,
+  -bugprone-empty-catch,
+  performance-*,
+  -performance-enum-size,
+  modernize-use-override,
+  modernize-use-equals-default,
+  modernize-use-equals-delete,
+  google-explicit-constructor,
+  misc-unused-using-decls,
+  readability-braces-around-statements
+HeaderFilterRegex: '.*/(include/mx|src)/.*'
+CheckOptions:
+  # A cast to void is how a discarded result is marked deliberate here: the
+  # asio calls in child_process.cpp report their error through an argument too.
+  bugprone-unused-return-value.AllowCastToVoid: true

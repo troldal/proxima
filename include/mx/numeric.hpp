@@ -177,6 +177,6 @@ private:
 ///
 /// Backed by a Compiled, so the returned function is cheap to call.
 std::function<double(double)> asFunction(const Expr &expr, const Symbol &variable,
-                                         Bindings fixed = {});
+                                         const Bindings &fixed = {});
 
 } // namespace mx

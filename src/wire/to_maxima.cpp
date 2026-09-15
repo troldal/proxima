@@ -116,7 +116,7 @@ bool isStringLiteral(std::string_view text) {
     }
     // The closing quote must not itself be escaped.
     std::size_t backslashes = 0;
-    for (std::size_t i = text.size() - 1; i-- > 1 && text[i] == '\\';) {
+    for (std::size_t i = text.size() - 1; i > 1 && text[i - 1] == '\\'; --i) {
         ++backslashes;
     }
     return backslashes % 2 == 0;
@@ -128,7 +128,7 @@ void renderApplication(std::string_view head, const std::vector<Expr> &args,
                        std::string &out) {
     out += "((";
     out += head;
-    out += ")";
+    out += ')';
     for (const Expr &arg : args) {
         out.push_back(' ');
         render(arg, out);
@@ -176,7 +176,7 @@ void render(const Expr &expr, std::string &out) {
         const std::string &name = expr.name();
         // Maxima's booleans are the Lisp ones, as fromMaxima already knows.
         if (name == "true") {
-            out += "T";
+            out += 'T';
         } else if (name == "false") {
             out += "NIL";
         } else {
