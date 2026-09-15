@@ -5,11 +5,9 @@ cmake-build-*/
 # CPM package cache
 cpm_modules/
 
-# CLion / IntelliJ per-user state
-.idea/workspace.xml
-.idea/usage.statistics.xml
-.idea/shelf/
-.idea/httpRequests/
+# CLion / IntelliJ. The whole directory: its project files record one machine's
+# toolchains and paths, and every IDE regenerates them from CMakeLists.txt.
+.idea/
 
 # OS cruft
 Thumbs.db
