@@ -22,7 +22,7 @@ Items are ordered by how much they matter, not by file.
 
 ## Status since the review
 
-Updated after `98a69db`. Resolved findings are ticked where they stand, with
+Updated after `7fbed5a`. Resolved findings are ticked where they stand, with
 an *Outcome* note; everything unticked is still open. The review's own text
 is left as written, so its measurements stay comparable.
 
@@ -135,11 +135,14 @@ Work since, and what it turned up that the review had not found:
   stack in clang-cl's and MSVC's Debug builds, so the parser now measures the
   stack it uses; and running three compilers' suites at once showed that the
   non-ASCII path test shared one directory between runs.
+- **§8** (`dc0f03b`, `7fbed5a`). Two of the four open items already had tests,
+  written with their §2 fixes. The other two are new tests, and both passed on
+  their first run: the behaviour was right, only unpinned.
 
-Suite: 320 cases / 4712 assertions on Windows (GCC and clang-cl), 321 / 4710 on
+Suite: 322 cases / 4734 assertions on Windows (GCC and clang-cl), 323 / 4732 on
 Linux (222 when the review was written).
 
-§1 to §6 are closed. What remains is §7 (build and process) and §8 (tests).
+§1 to §6 and §8 are closed. What remains is §7 (build and process).
 
 ---
 
@@ -1033,18 +1036,30 @@ Maxima itself). Gaps, all cheap:
 - [x] `Expr(true)`, `Expr('a')` — pin the intended behaviour. *(`aac36c1`:
   compile-time checks in `test_expr.cpp` and `test_integer.cpp` for both
   directions, which fail against the previous code.)*
-- [ ] Out-of-order `Context` destruction.
-- [ ] Two threads sharing one `Kernel` (the README promises it is safe;
-  nothing exercises it).
-- [ ] `Kernel` after move.
+- [x] Out-of-order `Context` destruction. *(Already tested since `255e5d1`,
+  with its §2 fix: "contexts ended out of order leave the survivors intact" in
+  `test_context.cpp`, and a restart after an out-of-order end.)*
+- [x] Two threads sharing one `Kernel` (the README promises it is safe;
+  nothing exercises it). *(`dc0f03b`: four threads share one `Kernel` against
+  Maxima, mixing a cached `evalPure` with a raw `eval` that clears the cache,
+  every question distinct, and every answer comes back to its own caller. The
+  session's locking was already tested over FakeTransport; this tests the
+  promise itself.)*
+- [x] `Kernel` after move. *(Already tested since `c1b91eb`, with its §2 fix:
+  every call on a moved-from `Kernel` throws `KernelError`.)*
 - [x] `mod`/`round` against Maxima's own answers — the numeric builtins
   are the one place the library computes something Maxima also computes,
   so cross-check them the way `test_integer.cpp` cross-checks bignums.
   *(`de0061e`: `test_numeric.cpp` checks 66 `mod` pairs and 12 `round` values
   against a live kernel. The other builtins are not yet cross-checked.)*
-- [ ] Parser: every Maxima operator the subset *claims* to reject should
+- [x] Parser: every Maxima operator the subset *claims* to reject should
   have a test that it does reject it, and `!!`, `**`, chained relations
-  should be decided and pinned.
+  should be decided and pinned. *(`7fbed5a`: every family of Maxima syntax
+  the subset leaves to `mx::parse` — assignment and definitions, quoting, `.`
+  and `^^`, subscripts, `and`/`or`/`not`, `if` and `for`, the `;` and `$`
+  terminators, the `?` Lisp escape — is a `ParseError`. The three decisions were
+  already pinned: `!!` is the double factorial, `**` is `^` (`e310a01`), and a
+  chained relation is refused unless parenthesised.)*
 
 ---
 
