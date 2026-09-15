@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace mx::detail {
+namespace proxima::detail {
 
 /// A scripted ITransport for tests: no process, no pipes, no Maxima.
 ///
@@ -53,4 +53,4 @@ private:
     bool silentWhenExhausted_ = false;
 };
 
-} // namespace mx::detail
+} // namespace proxima::detail

@@ -20,7 +20,7 @@
 // the standard library's; these functions only move bytes between char8_t and
 // char. On POSIX a path is bytes already and they amount to copies.
 
-namespace mx::detail {
+namespace proxima::detail {
 
 /// A path as UTF-8.
 ///
@@ -72,4 +72,4 @@ inline std::string describePath(const std::filesystem::path &path) {
     return tryToUtf8(path).value_or("<a path that is not valid Unicode>");
 }
 
-} // namespace mx::detail
+} // namespace proxima::detail

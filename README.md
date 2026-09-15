@@ -1,21 +1,23 @@
-# maxima_cpp
+# Proxima
+
+*Formerly maxima_cpp.*
 
 Symbolic mathematics in C++, with [Maxima](https://maxima.sourceforge.io) doing
 the work in a child process. No Maxima syntax in the interface, no strings
 standing in for expressions.
 
 ```cpp
-#include <mx/functions.hpp>
-#include <mx/numeric.hpp>
-#include <mx/ops.hpp>
+#include <proxima/functions.hpp>
+#include <proxima/numeric.hpp>
+#include <proxima/ops.hpp>
 
-const mx::Symbol x("x");
+const proxima::Symbol x("x");
 
-const mx::Expr f = pow(mx::Expr(x), 2) * mx::sin(x);
+const proxima::Expr f = pow(proxima::Expr(x), 2) * proxima::sin(x);
 
-if (const auto integral = mx::integrate(f, x)) {
+if (const auto integral = proxima::integrate(f, x)) {
     std::cout << integral->str() << '\n';                       // cos(x)*(2 - x^2) + 2*x*sin(x)
-    std::cout << mx::evalNumeric(*integral, {{"x", 1.0}});      // 2.22324
+    std::cout << proxima::evalNumeric(*integral, {{"x", 1.0}});      // 2.22324
 }
 ```
 
@@ -23,17 +25,17 @@ if (const auto integral = mx::integrate(f, x)) {
 
 ### Expressions
 
-`mx::Expr` is an immutable value: copying is a pointer copy, the hash is
+`proxima::Expr` is an immutable value: copying is a pointer copy, the hash is
 computed once, and equality is structural. It works in `std::unordered_map`,
 `std::find` and anything else expecting a regular type — and because it is a
 local value rather than a handle into the Maxima process, it survives a kernel
 restart.
 
 ```cpp
-const mx::Symbol x("x"), y("y");
+const proxima::Symbol x("x"), y("y");
 
-mx::Expr f = pow(mx::Expr(x), 2) + 3 * x + 2;   // operators
-f = mx::Expr::parse("x^2 + 3*x + 2");           // or infix text, no kernel
+proxima::Expr f = pow(proxima::Expr(x), 2) + 3 * x + 2;   // operators
+f = proxima::Expr::parse("x^2 + 3*x + 2");           // or infix text, no kernel
 ```
 
 Ten node kinds — `Integer`, `Rational`, `Real`, `Symbol`, `Add`, `Mul`, `Pow`,
@@ -44,7 +46,7 @@ holds Maxima source for whatever is not an application at all. A result from
 Maxima is never unrepresentable.
 
 **Arithmetic is exact, and unbounded.** `1/3 + 2/5` is `11/15`, not `0.7333…`,
-and `2` is not `2.0`. `mx::Integer` has no fixed width, so `30!` is a number you
+and `2` is not `2.0`. `proxima::Integer` has no fixed width, so `30!` is a number you
 can compute with rather than a value that wraps or has to be handed back to
 Maxima. Values that fit in 64 bits never allocate.
 
@@ -83,14 +85,14 @@ Builders for `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`
 `asinh`, `acosh`, `atanh`, `log`, `abs`, `erf`, `floor`, `ceiling`, `signum`,
 `exp`, `sqrt`, and the constants `%pi`, `%e`, `%i`, `inf`, `minf`. They take an
 `Expr` or a `Symbol` and nothing else, so they never compete with `<cmath>` for
-a plain number: `mx::sqrt(Expr(2))`, not `mx::sqrt(2)`.
+a plain number: `proxima::sqrt(Expr(2))`, not `proxima::sqrt(2)`.
 Relations are built by name — `eq`, `ne`, `lt`, `le`, `gt`, `ge` — so that `==`
 can keep its ordinary meaning.
 
 For the same reason there is no `<`: `x < 0` would compile and mean "sorts
-before". The canonical order the normaliser uses is `mx::canonicalOrder` instead,
-with `mx::CanonicalLess` for sorting and for ordered containers:
-`std::set<Expr, mx::CanonicalLess>`, `std::map<Expr, T, mx::CanonicalLess>`.
+before". The canonical order the normaliser uses is `proxima::canonicalOrder` instead,
+with `proxima::CanonicalLess` for sorting and for ordered containers:
+`std::set<Expr, proxima::CanonicalLess>`, `std::map<Expr, T, proxima::CanonicalLess>`.
 Two expressions are equivalent in that order exactly when they are `==`.
 (`std::less` is not specialised for them: libc++ 22 ignores such a
 specialisation in its trees and calls `<` instead.)
@@ -98,17 +100,17 @@ specialisation in its trees and calls `<` instead.)
 Results chain, because what comes back is an expression rather than text:
 
 ```cpp
-mx::expand(mx::factor(mx::diff(f, x)));
+proxima::expand(proxima::factor(proxima::diff(f, x)));
 ```
 
 ### Two parsers
 
 `Expr::parse` is a Pratt parser over a subset of Maxima's grammar — arithmetic,
 comparisons, function application, lists, strings — and needs **no kernel**.
-Statements are refused; it parses expressions, not programs. `mx::parse` hands
+Statements are refused; it parses expressions, not programs. `proxima::parse` hands
 the text to Maxima and so accepts everything, at the cost of a round trip.
 
-They differ in more than grammar: **`Expr::parse` parses, `mx::parse` also
+They differ in more than grammar: **`Expr::parse` parses, `proxima::parse` also
 evaluates.** `5!` is `factorial(5)` to the first and `120` to the second.
 
 Precedences are Maxima's, including the two that catch people out: `^` is
@@ -121,23 +123,23 @@ right-associative (`x^2^3` is `x^(2^3)`) and unary minus binds looser than it
 gives Presentation MathML — a complete `<math>` element that browsers typeset
 natively, written in plain ASCII with character references for symbols like
 `&#x2212;` and `&#x3C0;`. All three are local — no kernel — and all three are
-ordinary clients of `<mx/render.hpp>`, which is the supported way to add
+ordinary clients of `<proxima/render.hpp>`, which is the supported way to add
 another.
 
 ```cpp
 std::cout << e;                         // (1 + x)/(x - 1)          also e.str()
-std::cout << std::format("{:tex}", e);  // \frac{1 + x}{x - 1}      also mx::toTeX(e)
+std::cout << std::format("{:tex}", e);  // \frac{1 + x}{x - 1}      also proxima::toTeX(e)
 std::cout << std::format("{:mathml}", e); // <math ...><mfrac>...</mfrac></math>
-std::cout << mx::render(e, MyOwn{});    // whatever you like
+std::cout << proxima::render(e, MyOwn{});    // whatever you like
 ```
 
-`operator<<` and `std::formatter` work for `Expr`, `Symbol` and `mx::Integer`.
+`operator<<` and `std::formatter` work for `Expr`, `Symbol` and `proxima::Integer`.
 After a notation, or instead of one, a format spec takes the usual string
 options: `{:>30}`, `{:tex:*<40}`. An unknown notation is a `std::format_error`,
 so with a constant format string it does not compile.
 
 A renderer is a **plain struct** — it inherits nothing, overrides nothing, and
-owes this library no base class. Conformance is a concept, and `mx::Renderer<T>`
+owes this library no base class. Conformance is a concept, and `proxima::Renderer<T>`
 erases the type, so one value can hold any of them. Supply `integer`, `real`,
 `symbol`, `verbatim`, `sum`, `product`, `fraction`, `power`, `call`, `relation`
 and `group`; `root`, `list` and `negate` are synthesised from those if you omit
@@ -184,17 +186,17 @@ Once a closed form exists, turning it into numbers is ordinary arithmetic — no
 round trip per point.
 
 ```cpp
-mx::evalNumeric(*integral, {{"x", 1.0}});        // 2.22324, one shot
-mx::isEvaluable(e, bindings);                    // ask without catching
+proxima::evalNumeric(*integral, {{"x", 1.0}});        // 2.22324, one shot
+proxima::isEvaluable(e, bindings);                    // ask without catching
 ```
 
 For repeated evaluation — plotting, root-finding, quadrature — compile once:
 
 ```cpp
-const mx::Compiled f(*integral, x);
+const proxima::Compiled f(*integral, x);
 for (int i = 0; i < points; ++i) { plot(f(i * step)); }
 
-const auto g = mx::asFunction(*integral, x);     // same thing, as a std::function
+const auto g = proxima::asFunction(*integral, x);     // same thing, as a std::function
 ```
 
 `Compiled` resolves every symbol to an argument slot and every function to a
@@ -207,7 +209,7 @@ function is an error rather than a guess.
 
 ### Assumptions
 
-`mx::Context` opens a Maxima context and discards it on destruction —
+`proxima::Context` opens a Maxima context and discards it on destruction —
 assumptions *and* declarations, which forgetting each assumption individually
 would not achieve. Contexts nest and inherit. A contradictory assumption is
 refused. `declare` covers `Integer`, `Even`, `Odd`, `Rational`, `Real`,
@@ -267,7 +269,7 @@ by default: a library should compute the same answer on every machine.
   - Debian/Ubuntu: `apt install maxima maxima-sbcl`
 
 Nothing else needs installing. The library depends on two parts of Boost —
-Boost.Multiprecision, which backs `mx::Integer`, and Boost.Process (v2), which
+Boost.Multiprecision, which backs `proxima::Integer`, and Boost.Process (v2), which
 starts the Maxima child and talks to it over Boost.Asio pipes. Both are fetched
 by CPM at configure time and built as part of the project, so there is no system
 package to add and no version to match. Maxima is not needed to build at all; it
@@ -286,11 +288,11 @@ other presets configure in seconds. The cache defaults to `~/.cache/CPM`; set
 elsewhere.
 
 `cmake --install` installs Boost's headers into the same prefix as this library.
-That is deliberate rather than untidy: `mx::Integer` holds a `cpp_int` by value,
-so `<mx/integer.hpp>` needs them, and an installed library whose public header
+That is deliberate rather than untidy: `proxima::Integer` holds a `cpp_int` by value,
+so `<proxima/integer.hpp>` needs them, and an installed library whose public header
 does not compile would be no use. Boost.Process's compiled library goes there
-too: it never appears in a public header, but `maxima_cpp` is a static library,
-so a consumer's executable links it. A consumer's `find_package(maxima_cpp)` then
+too: it never appears in a public header, but `proxima` is a static library,
+so a consumer's executable links it. A consumer's `find_package(proxima)` then
 resolves Boost from that prefix — the same Boost this library was compiled
 against. Consumers who carry their own Boost should expect it to be found first
 only if their `CMAKE_PREFIX_PATH` says so.
@@ -323,8 +325,8 @@ cmake --install build/linux --prefix /usr/local
 ```
 
 ```cmake
-find_package(maxima_cpp 0.1 REQUIRED)
-target_link_libraries(my_app PRIVATE mx::maxima_cpp)
+find_package(proxima 0.1 REQUIRED)
+target_link_libraries(my_app PRIVATE proxima::proxima)
 ```
 
 ## Failure is an outcome, not an exception
@@ -333,12 +335,12 @@ Three kinds of thing can go wrong, and they are kept apart deliberately.
 
 | | |
 |---|---|
-| `mx::Failure`, returned in `std::expected` | an ordinary mathematical outcome: no closed form, no solution, unparseable source |
-| `mx::MaximaError`, thrown | Maxima objected to an operation with no ordinary way to fail — `diff`, `expand`, `subst`. Means a caller mistake |
-| `mx::KernelError`, thrown | the conversation broke down: the kernel died, or nothing answered in time |
+| `proxima::Failure`, returned in `std::expected` | an ordinary mathematical outcome: no closed form, no solution, unparseable source |
+| `proxima::MaximaError`, thrown | Maxima objected to an operation with no ordinary way to fail — `diff`, `expand`, `subst`. Means a caller mistake |
+| `proxima::KernelError`, thrown | the conversation broke down: the kernel died, or nothing answered in time |
 
 ```cpp
-if (const auto result = mx::integrate(mx::exp(mx::sin(x)), x)) {
+if (const auto result = proxima::integrate(proxima::exp(proxima::sin(x)), x)) {
     use(*result);
 } else {
     std::cerr << result.error().message << '\n';   // no closed form for ...
@@ -353,14 +355,14 @@ cannot be answered. The kernel turns the question into an error naming the
 missing fact, so it tells you exactly what to supply:
 
 ```cpp
-const auto stuck = mx::integrate(pow(mx::Expr(x), mx::Expr(n)), x);
+const auto stuck = proxima::integrate(pow(proxima::Expr(x), proxima::Expr(n)), x);
 stuck.error().message;
 // "this computation needs an assumption that was not supplied.
 //  Maxima asked: Is n equal to -1?"
 
-mx::Context ctx;
-ctx.assume(gt(mx::Expr(n), mx::Expr(0)));
-mx::integrate(pow(mx::Expr(x), mx::Expr(n)), x);   // x^(1 + n)*(1 + n)^(-1)
+proxima::Context ctx;
+ctx.assume(gt(proxima::Expr(n), proxima::Expr(0)));
+proxima::integrate(pow(proxima::Expr(x), proxima::Expr(n)), x);   // x^(1 + n)*(1 + n)^(-1)
 ```
 
 The scope ends when `ctx` does, taking the assumption with it — and invalidating
@@ -380,7 +382,7 @@ separate process, which is a licensing requirement and not merely a convenience.
 
 ## Licence
 
-maxima_cpp is released under the MIT licence; see [LICENSE](LICENSE).
+Proxima is released under the MIT licence; see [LICENSE](LICENSE).
 
 Maxima is GPL. It is run as a **separate process** communicating over pipes,
 which keeps the licences separate — this library is not a derivative work of it.

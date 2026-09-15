@@ -35,7 +35,7 @@ Work since, and what it turned up that the review had not found:
   headed `$SUBST` evaluated to itself; and two tests had been passing for the
   wrong reason, provoking errors with `Symbol("5")` that only erred because
   printing turned the symbol into a number.
-- **User-supplied renderers** (`666756c`). A type-erased `mx::Renderer<T>` over
+- **User-supplied renderers** (`666756c`). A type-erased `proxima::Renderer<T>` over
   a shared presentation layer, with `str()` reimplemented on top of it.
   Resolves §3's "printer runs the normaliser" and §4's `-1*x` printing. Found:
   `x - (1 + y)` printed as `x - 1 + y`, which re-parses as a different
@@ -118,7 +118,7 @@ Work since, and what it turned up that the review had not found:
   whatever `std::less<T>` has been specialised to, and that calls `<`, which
   `Expr` deliberately lacks. A ten-line program with no library code shows the
   same. The specialisations are gone; ordered containers name
-  `mx::CanonicalLess`.
+  `proxima::CanonicalLess`.
 - **§5, one commit each** (`3ea48d5` … `edd45a1`). Three of the seven had
   already been fixed by earlier work and are ticked with those commits. Found
   on the way: the dead `Opaque` fallback in `mapRational` was not dead — a
@@ -181,7 +181,7 @@ These produce a result that disagrees with Maxima, silently.
   which accepts them by standard conversion. The exclusion achieves the
   opposite of its intent. Fix: make the `double` constructor a template
   constrained on `std::floating_point`, or `= delete` the `bool` and `char`
-  overloads explicitly. Same hazard exists on `mx::Integer`'s constructors
+  overloads explicitly. Same hazard exists on `proxima::Integer`'s constructors
   for anything that later adds a floating constructor. (Measured.)
 
   *Outcome:* fixed in `aac36c1`, with both suggested fixes together. The trap
@@ -191,7 +191,7 @@ These produce a result that disagrees with Maxima, silently.
   `IntegralNumber` and `BooleanOrCharacter` — now decide it for both classes,
   keeping `std::int8_t` and `std::uint8_t` (spelled with `signed char` and
   `unsigned char`) as numbers. The deleted constructors make the error name
-  the type: `use of deleted function 'mx::Expr::Expr(T) [with T = bool]'`.
+  the type: `use of deleted function 'proxima::Expr::Expr(T) [with T = bool]'`.
 
 - [x] **`Expr::parse("x!!")` gives `factorial(factorial(x))`.** In Maxima
   `!!` is the double factorial — a different function. The parser claims to
@@ -227,7 +227,7 @@ These produce a result that disagrees with Maxima, silently.
   either reject NaN at `Expr::real` (throw) or give it a total order
   (`std::strong_order` on the bit pattern) and a spelling. (Measured.)
 
-  *Partly done:* since `b71ccdf`, sending a NaN to Maxima throws `mx::Error`
+  *Partly done:* since `b71ccdf`, sending a NaN to Maxima throws `proxima::Error`
   instead of arriving as the symbol `nan`. The ordering UB, the equality/hash
   mismatch and `str()` printing `nan` all remain.
 
@@ -347,7 +347,7 @@ These produce a result that disagrees with Maxima, silently.
   `Expr::real(±inf)` is now the symbol `inf` or `minf`, so it prints and reads
   back as itself, and does not fold: `Expr(inf) + Expr(-inf)` stays a sum rather
   than throwing for NaN. A numeric fold whose result is not finite throws
-  `mx::Error`; with no infinite Real left to be an operand, that is always an
+  `proxima::Error`; with no infinite Real left to be an operand, that is always an
   overflow. Dividing by a real whose reciprocal would overflow stays a negative
   power, as other unfolded divisions do. The encoders' infinite-Real branches
   are gone, and `fuzz_parser` checks the round trip for everything again.
@@ -373,8 +373,8 @@ These produce a result that disagrees with Maxima, silently.
 
   This is reachable from: `Kernel::eval` / `evalPure` with user text,
   any `Expr::opaque(...)`, any `Symbol` or `Expr::function` head containing
-  a character Maxima's reader treats specially, and `mx::parse` — no,
-  `mx::parse` is safe: it quotes the text into a string literal for
+  a character Maxima's reader treats specially, and `proxima::parse` — no,
+  `proxima::parse` is safe: it quotes the text into a string literal for
   `parse_string`, which is exactly the right idea.
 
   Fixes, in increasing ambition:
@@ -443,7 +443,7 @@ These produce a result that disagrees with Maxima, silently.
 - [x] **`PersistentCache::readField` trusts the stored length.** A corrupt
   or hostile `.reply` file with length `18446744073709551615` makes
   `text.resize()` throw `std::length_error` / `bad_alloc`, which escapes
-  `evalPure` as a non-`mx::Error` exception. Cap the length (a reply cannot
+  `evalPure` as a non-`proxima::Error` exception. Cap the length (a reply cannot
   exceed the file size) and treat anything else as a miss.
 
   *Outcome:* fixed in `a2a55fd`, capping each field at what remains of the
@@ -682,7 +682,7 @@ Fine at today's sizes; these are the walls you will hit.
   renderer, and the usual string options follow, after a colon when a notation
   is given (`{:tex:>40}`). An unknown notation is a `std::format_error`, which
   for a constant format string is a compile error. The stream operators are
-  defined out of line, so `<mx/expr.hpp>` does not pull in `<ostream>`.
+  defined out of line, so `<proxima/expr.hpp>` does not pull in `<ostream>`.
 
 - [x] **`Expr` has no ordering.** It cannot be a `std::map` key, cannot be
   sorted, cannot be put in a `std::set` — yet a total order already exists
@@ -692,8 +692,8 @@ Fine at today's sizes; these are the walls you will hit.
   *Outcome:* done in `dda4dee`, deliberately not as `operator<=>` or `<`:
   `Expr` converts implicitly from numbers and symbols, so `x < 0` would compile
   and mean "sorts before" rather than build `lt(x, 0)`. Instead there is
-  `mx::canonicalOrder`, a `std::weak_ordering` since 0.0 and -0.0 are equal but
-  print differently; and `mx::CanonicalLess`, for sorting and for
+  `proxima::canonicalOrder`, a `std::weak_ordering` since 0.0 and -0.0 are equal but
+  print differently; and `proxima::CanonicalLess`, for sorting and for
   `std::set<Expr, CanonicalLess>`. (`std::less` was specialised for `Expr` and
   `Symbol` at first, so containers needed no comparator; removed after
   MinGW/clang 22 failed to compile it. libc++ 22's tree replaces `std::less<T>`
@@ -710,9 +710,9 @@ Fine at today's sizes; these are the walls you will hit.
   in `src/core` — no kernel — would be the single most-used helper in any
   numeric-driver code, and it composes with `Compiled`.
 
-  *Outcome:* done in `5bc2844`, as `mx::replace` in `<mx/traverse.hpp>`,
+  *Outcome:* done in `5bc2844`, as `proxima::replace` in `<proxima/traverse.hpp>`,
   beside `contains`, which moved there because it needs no kernel either;
-  `<mx/ops.hpp>` includes the new header, so no caller changed. The result is
+  `<proxima/ops.hpp>` includes the new header, so no caller changed. The result is
   rebuilt through the builders, so it is normalised — `3*x + 2` at x = 2 is 8 —
   but not evaluated: `sin(x)` at 0 is `sin(0)`, which is the difference from
   `subst`. Untouched subtrees are shared. Opaque text that mentions the symbol
@@ -741,9 +741,9 @@ Fine at today's sizes; these are the walls you will hit.
   parsing s-expressions themselves. Keep `eval` for the raw case.
 
   *Outcome:* done in `a88c5e0`: `Kernel::evalExpr`, for text or an `Expr`,
-  with `eval`'s cache semantics, and a free `mx::toExpr(const Reply &)`, so an
+  with `eval`'s cache semantics, and a free `proxima::toExpr(const Reply &)`, so an
   `evalPure` or `evalTracked` reply reads the same way without a method for
-  every combination. `Failure` moved to `<mx/reply.hpp>`. The operations and
+  every combination. `Failure` moved to `<proxima/reply.hpp>`. The operations and
   `Context` read their replies through `toExpr`, replacing two private copies of
   the parse.
 
@@ -768,12 +768,12 @@ Fine at today's sizes; these are the walls you will hit.
   session survives.
 
 - [x] **`functions.hpp` puts `sin`, `cos`, `log`, `abs`, `exp`, `sqrt` in
-  `namespace mx`.** Under `using namespace mx;` with `<cmath>` in scope,
-  `abs(x)` for an `int x` now has a viable `mx::abs(Expr)` candidate via
+  `namespace proxima`.** Under `using namespace proxima;` with `<cmath>` in scope,
+  `abs(x)` for an `int x` now has a viable `proxima::abs(Expr)` candidate via
   the implicit constructor; overload resolution still picks the
   `int`/`double` one, but it is the kind of thing that turns into an
   ambiguity the day someone adds an overload. Consider a sub-namespace
-  (`mx::fn`) or accept it and document "don't `using namespace mx`".
+  (`proxima::fn`) or accept it and document "don't `using namespace proxima`".
   Also: `minusInf()` vs `inf()` naming; `tanh`, `asinh`, `acosh`, `atanh`,
   `erf`, `floor`, `ceiling`, `signum` are in the numeric builtin table but
   have no builder; `%gamma` is a Maxima constant the numeric layer does
@@ -782,12 +782,12 @@ Fine at today's sizes; these are the walls you will hit.
 
   *Outcome:* done in `33e5f90`, by removing the hazard rather than documenting
   it: the builders are templates constrained to an `Expr` or a `Symbol`, so a
-  call on a plain number has no mx candidate at all. Found: the builders were not
-  the only case. `mx::abs` and `mx::gcd` on `Integer`, and `mx::pow`, offered
+  call on a plain number has no Proxima candidate at all. Found: the builders were not
+  the only case. `proxima::abs` and `proxima::gcd` on `Integer`, and `proxima::pow`, offered
   the same implicit-constructor candidate; `abs` now takes exactly an `Integer`,
   and `gcd` and `pow` need at least one argument of their own type, so
   `pow(x, 2)` and `gcd(n, 1001)` still work. The one call relying on the old
-  behaviour was `tour.cpp`'s `mx::sin(0)`. Compile-time checks pin all of it.
+  behaviour was `tour.cpp`'s `proxima::sin(0)`. Compile-time checks pin all of it.
   Also done: builders for `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `floor`,
   `ceiling` and `signum`, each round-tripped through Maxima in a test; `minf()`,
   with `minusInf()` deprecated; `%gamma` in the numeric layer; `%phi` and
@@ -813,7 +813,7 @@ Fine at today's sizes; these are the walls you will hit.
   an integer (kind 4)". Add a `to_string(Kind)` / `kindName()` — it is
   also wanted for tests and logging.
 
-  *Outcome:* done in `498e495`: `mx::kindName`, with `operator<<` and a
+  *Outcome:* done in `498e495`: `proxima::kindName`, with `operator<<` and a
   `std::formatter` for `Kind`; the message now reads "(its kind is Symbol)".
   `tour.cpp` carried its own copy of the same switch, which is gone.
 
@@ -851,19 +851,19 @@ Fine at today's sizes; these are the walls you will hit.
 The comments are unusually good at saying *why*, which makes the stale ones
 stand out. All refer to plan steps as future work that has since shipped:
 
-- [x] `include/mx/expr.hpp`, `Expr::parse` doc: a paragraph is truncated
+- [x] `include/proxima/expr.hpp`, `Expr::parse` doc: a paragraph is truncated
   mid-sentence ("…becomes an Opaque node holding its") and then
   contradicted by the next one. Delete the stale paragraph.
   *(Fixed in `3ea48d5`.)*
-- [x] `include/mx/reply.hpp`: "Text only for now: PLAN.md step 7 adds the
+- [x] `include/proxima/reply.hpp`: "Text only for now: PLAN.md step 7 adds the
   reader… Until then this is the rawest useful thing". *(Fixed.)*
-- [x] `include/mx/kernel.hpp`: "This is the whole public surface for now…
+- [x] `include/proxima/kernel.hpp`: "This is the whole public surface for now…
   structured expressions arrive with the term layer (PLAN.md steps 7-9)".
   *(Fixed in `b71ccdf`.)*
-- [x] `include/mx/ops.hpp`, `sharedKernel`: "Not thread-safe — see PLAN.md
+- [x] `include/proxima/ops.hpp`, `sharedKernel`: "Not thread-safe — see PLAN.md
   step 13". Wrong, see §2. *(Already fixed in `2a74041`, which rewrote the
   doc: starting it is thread-safe, and calls on it take turns.)*
-- [x] `include/mx/context.hpp`: "so that PLAN.md step 14's cache key can
+- [x] `include/proxima/context.hpp`: "so that PLAN.md step 14's cache key can
   include them". *(Fixed in `bddb2f0`. The step shipped differently: a change of
   assumptions clears the reply cache, and the persistent cache keys on the replay
   journal. The C++ copy only backs `assumptions()`.)*
@@ -874,7 +874,7 @@ stand out. All refer to plan steps as future work that has since shipped:
 - [x] `src/transport/child_process_win32.cpp`: "Step 13 replaces this
   with a dedicated reader thread feeding a bounded queue". *(Gone with the file
   in `83f3bc8`, when Boost.Process replaced the hand-written transports.)*
-- [x] `include/mx/config.hpp`, `timeout`: "Maxima keeps computing until it
+- [x] `include/proxima/config.hpp`, `timeout`: "Maxima keeps computing until it
   is killed" — true, but `recover()` *does* kill it on timeout; say so,
   since the current wording suggests a runaway process is left behind.
   *(Fixed in `6f5a2a7`, which also says every timeout pays for a startup.)*
@@ -1017,9 +1017,9 @@ candidates, most valuable first.
   *Outcome:* done in `980947c`, on every target of this project's own:
   `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion
   -Wold-style-cast` for GCC and Clang, `/W4` for MSVC and clang-cl, and
-  `-Werror` or `/WX` behind `MAXIMA_CPP_WARNINGS_AS_ERRORS`, off by default for
+  `-Werror` or `/WX` behind `PROXIMA_WARNINGS_AS_ERRORS`, off by default for
   a CI to turn on. It was not quite free: it found three warnings the earlier
-  GCC sweep had missed. MSVC's C4459, a local `version` hiding `mx::version`;
+  GCC sweep had missed. MSVC's C4459, a local `version` hiding `proxima::version`;
   GCC's `-Wcomment`, a `//` line of ASCII art ending in a backslash, in a test
   the sweep had not compiled; and a sign conversion that only Linux's
   `uint64_t`, `unsigned long` there, raises. All four compilers now build it
@@ -1098,7 +1098,7 @@ Maxima itself). Gaps, all cheap:
 - [x] Parser: every Maxima operator the subset *claims* to reject should
   have a test that it does reject it, and `!!`, `**`, chained relations
   should be decided and pinned. *(`7fbed5a`: every family of Maxima syntax
-  the subset leaves to `mx::parse` — assignment and definitions, quoting, `.`
+  the subset leaves to `proxima::parse` — assignment and definitions, quoting, `.`
   and `^^`, subscripts, `and`/`or`/`not`, `if` and `for`, the `;` and `$`
   terminators, the `?` Lisp escape — is a `ParseError`. The three decisions were
   already pinned: `!!` is the double factorial, `**` is `^` (`e310a01`), and a

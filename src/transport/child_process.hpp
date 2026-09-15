@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace mx::detail {
+namespace proxima::detail {
 
 /// Runs a child process with its stdin and stdout (and stderr) bound to pipes.
 ///
@@ -59,4 +59,4 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-} // namespace mx::detail
+} // namespace proxima::detail

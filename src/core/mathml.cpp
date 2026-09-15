@@ -1,6 +1,6 @@
-#include <mx/mathml.hpp>
+#include <proxima/mathml.hpp>
 
-#include <mx/render.hpp>
+#include <proxima/render.hpp>
 
 #include <charconv>
 #include <cmath>
@@ -11,7 +11,7 @@
 #include <utility>
 
 // A Presentation MathML renderer, written as an ordinary user of
-// mx/render.hpp — a plain struct, inheriting nothing — like the TeX one beside
+// proxima/render.hpp — a plain struct, inheriting nothing — like the TeX one beside
 // it.
 //
 // Every operation returns exactly one element, wrapping several in <mrow>
@@ -19,7 +19,7 @@
 // child as a single argument: <mfrac> and <msup> take exactly two children,
 // and a stray sibling would silently become a third.
 
-namespace mx {
+namespace proxima {
 namespace {
 
 // Numeric character references, so the output is plain ASCII.
@@ -296,4 +296,4 @@ std::string toMathML(const Expr &expr) {
            + render(expr, MathMLRenderer{}) + "</math>";
 }
 
-} // namespace mx
+} // namespace proxima

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <mx/expr.hpp>
-#include <mx/symbol.hpp>
+#include <proxima/expr.hpp>
+#include <proxima/symbol.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -13,7 +13,7 @@
 #include <string_view>
 #include <vector>
 
-namespace mx {
+namespace proxima {
 
 /// Values for the symbols in an expression.
 ///
@@ -76,7 +76,7 @@ private:
 /// and paying milliseconds per point to ask Maxima would make plotting or
 /// integrating it numerically absurd.
 ///
-/// For repeated evaluation use mx::Compiled, which is far faster: this looks
+/// For repeated evaluation use proxima::Compiled, which is far faster: this looks
 /// every symbol up by name, in a map, on every occurrence.
 ///
 /// Named constants are recognised as Maxima spells them: `%pi`, `%e`, `%phi`
@@ -84,7 +84,7 @@ private:
 /// `minf`. An explicit binding wins over them, so a symbol called `%e` can be
 /// given a different value if that is genuinely what is wanted.
 ///
-/// Throws mx::EvalError for anything it cannot turn into a number: an unbound
+/// Throws proxima::EvalError for anything it cannot turn into a number: an unbound
 /// symbol, a function it does not know, a relation, or an Opaque node — the
 /// last being Maxima source text this library never interpreted, which is
 /// precisely why it cannot be evaluated here.
@@ -146,7 +146,7 @@ public:
     /// in now. A name in
     /// `variables` shadows both.
     ///
-    /// Throws mx::EvalError if the expression cannot be turned into numbers.
+    /// Throws proxima::EvalError if the expression cannot be turned into numbers.
     Compiled(const Expr &expr, std::span<const Symbol> variables,
              const Bindings &constants = {});
 
@@ -179,4 +179,4 @@ private:
 std::function<double(double)> asFunction(const Expr &expr, const Symbol &variable,
                                          const Bindings &fixed = {});
 
-} // namespace mx
+} // namespace proxima

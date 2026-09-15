@@ -1,13 +1,13 @@
 #pragma once
 
-#include <mx/expr.hpp>
+#include <proxima/expr.hpp>
 
 #include <cstddef>
 #include <string>
 #include <variant>
 #include <vector>
 
-namespace mx::detail {
+namespace proxima::detail {
 
 /// A Rational's value: reduced, with the sign on the numerator and a
 /// denominator that is always positive and coprime with it.
@@ -79,4 +79,4 @@ struct Node {
     }
 };
 
-} // namespace mx::detail
+} // namespace proxima::detail

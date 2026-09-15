@@ -7,16 +7,16 @@
 
 #include <doctest/doctest.h>
 
-#include <mx/expr.hpp>
-#include <mx/symbol.hpp>
+#include <proxima/expr.hpp>
+#include <proxima/symbol.hpp>
 
 #include <cmath>
 #include <limits>
 #include <string>
 
-using mx::Expr;
-using mx::Kind;
-using mx::Symbol;
+using proxima::Expr;
+using proxima::Kind;
+using proxima::Symbol;
 
 TEST_CASE("nested sums and products are flattened") {
     const Symbol x("x");
@@ -113,9 +113,9 @@ TEST_CASE("the identities of exponentiation apply") {
 
 TEST_CASE("folding cannot overflow, so it never gives up") {
     // This used to abandon the fold and leave the terms unevaluated, because
-    // the sum did not fit in 64 bits. mx::Integer is unbounded now, so the
+    // the sum did not fit in 64 bits. proxima::Integer is unbounded now, so the
     // arithmetic simply happens.
-    const mx::Integer max("9223372036854775807");
+    const proxima::Integer max("9223372036854775807");
 
     const Expr sum = Expr(max) + Expr(max);
     REQUIRE(sum.kind() == Kind::Integer);
@@ -130,7 +130,7 @@ TEST_CASE("folding cannot overflow, so it never gives up") {
         // which matters more now that nothing stops them.
         Expr total = Expr(0);
         for (int i = 1; i <= 40; ++i) {
-            total = total + Expr::rational(mx::Integer(1), mx::Integer(i));
+            total = total + Expr::rational(proxima::Integer(1), proxima::Integer(i));
         }
         REQUIRE(total.kind() == Kind::Rational);
         // The 40th harmonic number, exactly, and in lowest terms.

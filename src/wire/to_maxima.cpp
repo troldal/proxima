@@ -2,7 +2,7 @@
 
 #include "wire/from_maxima.hpp"
 
-#include <mx/errors.hpp>
+#include <proxima/errors.hpp>
 
 #include <cctype>
 #include <charconv>
@@ -11,7 +11,7 @@
 #include <string_view>
 #include <utility>
 
-namespace mx::detail {
+namespace proxima::detail {
 namespace {
 
 /// Heads whose Maxima internal spelling is not `$NAME`.
@@ -247,4 +247,4 @@ std::string toMaxima(const Expr &expr) {
     return out;
 }
 
-} // namespace mx::detail
+} // namespace proxima::detail

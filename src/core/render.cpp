@@ -1,4 +1,4 @@
-#include <mx/render.hpp>
+#include <proxima/render.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -18,7 +18,7 @@
 // Rational becomes a Fraction and `x^(1/2)` becomes a Root because those are
 // the same number spelled for a reader; `x - x` still has two terms.
 
-namespace mx::detail {
+namespace proxima::detail {
 namespace {
 
 DisplayNode leaf(DisplayKind kind) {
@@ -299,4 +299,4 @@ DisplayNode toDisplay(const Expr &expr) {
     return display(expr);
 }
 
-} // namespace mx::detail
+} // namespace proxima::detail

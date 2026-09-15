@@ -13,7 +13,7 @@
 #include "transport/process_env.hpp"
 #include "util/utf8.hpp"
 
-#include <mx/errors.hpp>
+#include <proxima/errors.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -24,8 +24,8 @@
 #include <string_view>
 #include <vector>
 
-using mx::detail::ChildProcessTransport;
-using mx::detail::mergeEnvironment;
+using proxima::detail::ChildProcessTransport;
+using proxima::detail::mergeEnvironment;
 using namespace std::chrono_literals;
 
 namespace {
@@ -88,15 +88,15 @@ std::string commandShell() {
 // --- environment merging ------------------------------------------------------
 
 TEST_CASE("an override that matches nothing is appended") {
-    const auto entries = mergeEnvironment({{"MX_TEST_NEW_VAR", "hello"}});
-    CHECK(contains(entries, "MX_TEST_NEW_VAR=hello"));
-    CHECK(countWithName(entries, "MX_TEST_NEW_VAR") == 1);
+    const auto entries = mergeEnvironment({{"PROXIMA_TEST_NEW_VAR", "hello"}});
+    CHECK(contains(entries, "PROXIMA_TEST_NEW_VAR=hello"));
+    CHECK(countWithName(entries, "PROXIMA_TEST_NEW_VAR") == 1);
 }
 
 TEST_CASE("the inherited environment is kept") {
     // A child that loses PATH cannot resolve its own shared libraries, so this
     // has to be a merge rather than a replacement.
-    const auto entries = mergeEnvironment({{"MX_TEST_X", "1"}});
+    const auto entries = mergeEnvironment({{"PROXIMA_TEST_X", "1"}});
     CHECK(entries.size() > 1);
     const bool keptPath
         = std::any_of(entries.begin(), entries.end(), [](const std::string &e) {
@@ -107,7 +107,7 @@ TEST_CASE("the inherited environment is kept") {
 
 TEST_CASE("merging with no overrides reproduces the environment") {
     const auto plain = mergeEnvironment({});
-    const auto withOne = mergeEnvironment({{"MX_TEST_ONLY", "1"}});
+    const auto withOne = mergeEnvironment({{"PROXIMA_TEST_ONLY", "1"}});
     CHECK(withOne.size() == plain.size() + 1);
 }
 
@@ -143,8 +143,8 @@ TEST_CASE("launching a nonexistent executable throws rather than returning") {
     // Both platforms report this synchronously, as an exception, rather than
     // producing a transport that looks alive.
     CHECK_THROWS_AS(ChildProcessTransport({"no_such_program_xyz_12345"}),
-                    mx::KernelError);
-    CHECK_THROWS_AS(ChildProcessTransport({}), mx::KernelError);
+                    proxima::KernelError);
+    CHECK_THROWS_AS(ChildProcessTransport({}), proxima::KernelError);
 }
 
 TEST_CASE("what a real child writes comes back") {
@@ -254,11 +254,11 @@ TEST_CASE("a slow child: many empty reads, then more than one read's worth") {
 
 TEST_CASE("an environment override reaches the child") {
 #ifdef _WIN32
-    ChildProcessTransport child({commandShell(), "/c", "echo %MX_TRANSPORT_TEST%"},
-                                {{"MX_TRANSPORT_TEST", "value42"}});
+    ChildProcessTransport child({commandShell(), "/c", "echo %PROXIMA_TRANSPORT_TEST%"},
+                                {{"PROXIMA_TRANSPORT_TEST", "value42"}});
 #else
-    ChildProcessTransport child({"/bin/sh", "-c", "echo \"$MX_TRANSPORT_TEST\""},
-                                {{"MX_TRANSPORT_TEST", "value42"}});
+    ChildProcessTransport child({"/bin/sh", "-c", "echo \"$PROXIMA_TRANSPORT_TEST\""},
+                                {{"PROXIMA_TRANSPORT_TEST", "value42"}});
 #endif
     // Without the override the output would be the unexpanded name, or empty.
     CHECK(readUntil(child, "value42").find("value42") != std::string::npos);
@@ -281,7 +281,7 @@ TEST_CASE("an executable under a non-ASCII directory starts") {
     // would not be found and the constructor would throw.
     const std::filesystem::path dir
         = std::filesystem::temp_directory_path()
-          / mx::detail::pathFromUtf8(std::string("mx_transport_") + kUnicodeBytes);
+          / proxima::detail::pathFromUtf8(std::string("mx_transport_") + kUnicodeBytes);
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     REQUIRE_FALSE(ec);
@@ -303,10 +303,10 @@ TEST_CASE("an executable under a non-ASCII directory starts") {
 
     {
 #ifdef _WIN32
-        ChildProcessTransport child({mx::detail::toUtf8(shell), "/c",
+        ChildProcessTransport child({proxima::detail::toUtf8(shell), "/c",
                                      "echo mx_unicode^_ok"});
 #else
-        ChildProcessTransport child({mx::detail::toUtf8(shell), "-c",
+        ChildProcessTransport child({proxima::detail::toUtf8(shell), "-c",
                                      "echo mx_unicode'_'ok"});
 #endif
         CHECK(readUntil(child, "mx_unicode_ok").find("mx_unicode_ok")
@@ -323,17 +323,17 @@ TEST_CASE("non-ASCII arguments and environment values arrive intact") {
     // the same characters — and the variable expanded at all — to match.
     ChildProcessTransport child(
         {commandShell(), "/c",
-         std::string("if \"%MX_TRANSPORT_TEST%\"==\"") + kUnicodeBytes
+         std::string("if \"%PROXIMA_TRANSPORT_TEST%\"==\"") + kUnicodeBytes
              + "\" (echo mx_same) else (echo mx_different)"},
-        {{"MX_TRANSPORT_TEST", kUnicodeBytes}});
+        {{"PROXIMA_TRANSPORT_TEST", kUnicodeBytes}});
     const std::string output = readUntil(child, "mx_");
     CHECK(output.find("mx_same") != std::string::npos);
 #else
     // POSIX passes bytes through untouched, so they can be compared directly.
     ChildProcessTransport child(
-        {"/bin/sh", "-c", "printf '[%s][%s]' \"$1\" \"$MX_TRANSPORT_TEST\"", "sh",
+        {"/bin/sh", "-c", "printf '[%s][%s]' \"$1\" \"$PROXIMA_TRANSPORT_TEST\"", "sh",
          kUnicodeBytes},
-        {{"MX_TRANSPORT_TEST", kUnicodeBytes}});
+        {{"PROXIMA_TRANSPORT_TEST", kUnicodeBytes}});
     const std::string expected
         = std::string("[") + kUnicodeBytes + "][" + kUnicodeBytes + "]";
     CHECK(readUntil(child, expected).find(expected) != std::string::npos);
@@ -344,7 +344,7 @@ TEST_CASE("an executable path that is not UTF-8 is a KernelError") {
     // Only Windows transcodes, so only Windows can reject it; on POSIX the
     // bytes are a legitimate, if nonexistent, file name.
     CHECK_THROWS_AS(ChildProcessTransport({"no_such\xFF" "program"}),
-                    mx::KernelError);
+                    proxima::KernelError);
 }
 
 #ifndef _WIN32

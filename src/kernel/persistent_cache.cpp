@@ -12,7 +12,7 @@
 #include <system_error>
 #include <vector>
 
-namespace mx::detail {
+namespace proxima::detail {
 namespace {
 
 /// Sixteen hex digits that name this process among every writer that may
@@ -77,7 +77,7 @@ bool readField(std::istream &in, std::string &text) {
                                                         length)));
 }
 
-constexpr const char *kFormat = "maxima_cpp-cache-1";
+constexpr const char *kFormat = "proxima-cache-1";
 
 /// How old a temporary must be before a sweep takes it for an orphan. No
 /// writer takes anything like this long to write one entry.
@@ -322,4 +322,4 @@ void PersistentCache::insert(std::string_view source, const Reply &reply) const 
     }
 }
 
-} // namespace mx::detail
+} // namespace proxima::detail

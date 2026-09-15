@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 
-namespace mx {
+namespace proxima {
 
 /// Settings for a Kernel.
 struct Config {
@@ -89,4 +89,4 @@ struct Config {
     std::filesystem::path userDir;
 };
 
-} // namespace mx
+} // namespace proxima

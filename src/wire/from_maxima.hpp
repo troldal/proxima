@@ -2,12 +2,12 @@
 
 #include "wire/sexpr.hpp"
 
-#include <mx/expr.hpp>
+#include <proxima/expr.hpp>
 
 #include <string>
 #include <string_view>
 
-namespace mx::detail {
+namespace proxima::detail {
 
 /// Maps Maxima's internal representation onto an Expr.
 ///
@@ -33,4 +33,4 @@ Expr fromMaxima(const SExpr &form);
 /// Exposed for testing.
 std::string decodeMaximaName(std::string_view raw);
 
-} // namespace mx::detail
+} // namespace proxima::detail

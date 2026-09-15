@@ -1,11 +1,11 @@
 #pragma once
 
-#include <mx/expr.hpp>
+#include <proxima/expr.hpp>
 
 #include <string>
 #include <string_view>
 
-namespace mx::detail {
+namespace proxima::detail {
 
 /// Renders an Expr as the text of a Maxima internal form — a Lisp
 /// s-expression such as `((MPLUS) 1 $X)` — for the kernel's `cppread` helper
@@ -24,7 +24,7 @@ namespace mx::detail {
 /// `(MPLUS SIMP)`), so Maxima simplifies what it is handed rather than
 /// trusting it.
 ///
-/// Throws mx::Error for a value with no Maxima spelling, which today means
+/// Throws proxima::Error for a value with no Maxima spelling, which today means
 /// only a NaN.
 std::string toMaxima(const Expr &expr);
 
@@ -39,4 +39,4 @@ std::string encodeMaximaName(std::string_view name);
 /// wraps every request in one of these.
 std::string stringLiteral(std::string_view text);
 
-} // namespace mx::detail
+} // namespace proxima::detail

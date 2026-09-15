@@ -1,11 +1,11 @@
 #pragma once
 
-#include <mx/expr.hpp>
-#include <mx/symbol.hpp>
+#include <proxima/expr.hpp>
+#include <proxima/symbol.hpp>
 
 #include <concepts>
 
-namespace mx {
+namespace proxima {
 
 /// Builders for the functions common enough that spelling them
 /// `Expr::function("sin", {x})` every time would be noise.
@@ -16,10 +16,10 @@ namespace mx {
 /// and `x^(1/2)` internally, so building them that way keeps the two
 /// representations in step.
 ///
-/// They take an Expr or a Symbol and nothing else — mx::ExprArgument, whose
+/// They take an Expr or a Symbol and nothing else — proxima::ExprArgument, whose
 /// note says why: they share their names with <cmath>, and must not be
 /// candidates for a call on a plain number. For the square root of 2 as an
-/// expression, write `mx::sqrt(Expr(2))`.
+/// expression, write `proxima::sqrt(Expr(2))`.
 
 namespace detail {
 inline Expr applyNamed(const char *head, const Expr &argument) {
@@ -115,17 +115,17 @@ Expr sqrt(const T &x) {
 
 /// The derivative of `f` with respect to `variable`, `order` times, *as a
 /// noun*: Maxima's `'diff(f, x, n)`, which stays a derivative rather than
-/// being computed. What a differential equation for mx::ode2 is written with,
+/// being computed. What a differential equation for proxima::ode2 is written with,
 /// since `diff(y, x)` of a plain symbol `y` would simply evaluate to 0. For
-/// the derivative computed, use mx::diff.
+/// the derivative computed, use proxima::diff.
 inline Expr derivative(const Expr &f, const Expr &variable, unsigned order = 1) {
     return Expr::function("'diff", {f, variable, Expr(order)});
 }
 
 /// The constants, spelled as Maxima names them. Maxima knows two more that
 /// have no builder, being rarer: `%phi`, the golden ratio, and `%gamma`, the
-/// Euler–Mascheroni constant — `Expr::symbol("%phi")`. mx::evalNumeric and
-/// mx::Compiled know all of them.
+/// Euler–Mascheroni constant — `Expr::symbol("%phi")`. proxima::evalNumeric and
+/// proxima::Compiled know all of them.
 inline Expr pi() {
     return Expr::symbol("%pi");
 }
@@ -142,9 +142,9 @@ inline Expr inf() {
 inline Expr minf() {
     return Expr::symbol("minf");
 }
-[[deprecated("use mx::minf(), which is Maxima's spelling, as inf() is")]]
+[[deprecated("use proxima::minf(), which is Maxima's spelling, as inf() is")]]
 inline Expr minusInf() {
     return minf();
 }
 
-} // namespace mx
+} // namespace proxima

@@ -43,7 +43,7 @@
       "inherits": "linux",
       "displayName": "Linux (WSL)",
       "description": "Same build as `linux`, but with the build tree kept on the Linux filesystem. Building into a directory under /mnt/c is markedly slower, since every file operation crosses the 9P filesystem bridge to Windows.",
-      "binaryDir": "/tmp/maxima_cpp-build/${presetName}"
+      "binaryDir": "/tmp/proxima-build/${presetName}"
     }
   ],
   "buildPresets": [

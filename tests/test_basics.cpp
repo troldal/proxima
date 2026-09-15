@@ -4,14 +4,14 @@
 
 #include <doctest/doctest.h>
 
-#include <mx/config.hpp>
-#include <mx/errors.hpp>
+#include <proxima/config.hpp>
+#include <proxima/errors.hpp>
 
 #include <exception>
 #include <string>
 
 TEST_CASE("a default Config asks for discovery rather than a fixed path") {
-    const mx::Config config;
+    const proxima::Config config;
     // Empty is meaningful: it means "find Maxima yourself". A hard-coded
     // default would quietly work on the machine it was written on and nowhere
     // else.
@@ -25,21 +25,21 @@ TEST_CASE("a default Config asks for discovery rather than a fixed path") {
 TEST_CASE("KernelError is catchable at every level of the hierarchy") {
     // PLAN.md step 11 splits failures two ways: infrastructure failures throw,
     // mathematical ones ("no closed form") come back as std::expected. Callers
-    // therefore need to be able to catch mx::Error without knowing which
+    // therefore need to be able to catch proxima::Error without knowing which
     // concrete kernel failure occurred.
     SUBCASE("as its own type") {
-        CHECK_THROWS_AS(throw mx::KernelError("boom"), mx::KernelError);
+        CHECK_THROWS_AS(throw proxima::KernelError("boom"), proxima::KernelError);
     }
     SUBCASE("as the library base") {
-        CHECK_THROWS_AS(throw mx::KernelError("boom"), mx::Error);
+        CHECK_THROWS_AS(throw proxima::KernelError("boom"), proxima::Error);
     }
     SUBCASE("as std::exception") {
-        CHECK_THROWS_AS(throw mx::KernelError("boom"), std::exception);
+        CHECK_THROWS_AS(throw proxima::KernelError("boom"), std::exception);
     }
     SUBCASE("message survives") {
         try {
-            throw mx::KernelError("boom");
-        } catch (const mx::Error &e) {
+            throw proxima::KernelError("boom");
+        } catch (const proxima::Error &e) {
             CHECK(std::string(e.what()) == "boom");
         }
     }

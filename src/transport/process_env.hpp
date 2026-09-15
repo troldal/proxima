@@ -4,7 +4,7 @@
 #include <utility>
 #include <vector>
 
-namespace mx::detail {
+namespace proxima::detail {
 
 /// A name/value pair layered over the inherited environment.
 using EnvOverride = std::pair<std::string, std::string>;
@@ -21,4 +21,4 @@ using EnvOverride = std::pair<std::string, std::string>;
 std::vector<std::string>
 mergeEnvironment(const std::vector<EnvOverride> &overrides);
 
-} // namespace mx::detail
+} // namespace proxima::detail

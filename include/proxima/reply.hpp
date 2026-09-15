@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace mx {
+namespace proxima {
 
 /// The outcome of one Maxima evaluation.
 ///
@@ -10,7 +10,7 @@ namespace mx {
 /// — no closed form, a malformed expression, division by zero — is an ordinary
 /// outcome and arrives here as `ok == false` with a reason. An *infrastructure*
 /// failure — the kernel died, the protocol desynchronised, nothing answered in
-/// time — is genuinely exceptional and is thrown as mx::KernelError instead.
+/// time — is genuinely exceptional and is thrown as proxima::KernelError instead.
 struct Reply {
     /// False when Maxima signalled an error while evaluating.
     bool ok = false;
@@ -19,7 +19,7 @@ struct Reply {
     /// "((MTIMES SIMP) 2 $X ((%SIN SIMP) $X))". Empty when `ok` is false.
     ///
     /// Raw by design: this is the kernel's escape hatch, for a caller who
-    /// wants the wire form itself. mx::toExpr reads it into an mx::Expr, and
+    /// wants the wire form itself. proxima::toExpr reads it into an proxima::Expr, and
     /// Kernel::evalExpr evaluates and reads in one step.
     std::string value;
 
@@ -32,11 +32,11 @@ struct Reply {
 ///
 /// An ordinary outcome, not a malfunction: Maxima genuinely cannot integrate
 /// every integrand or solve every equation. Infrastructure failures — the
-/// kernel died, nothing answered in time — throw mx::KernelError instead, and
-/// operations with no ordinary failure mode throw mx::MaximaError.
+/// kernel died, nothing answered in time — throw proxima::KernelError instead, and
+/// operations with no ordinary failure mode throw proxima::MaximaError.
 struct Failure {
     /// Human-readable, and usually Maxima's own wording.
     std::string message;
 };
 
-} // namespace mx
+} // namespace proxima

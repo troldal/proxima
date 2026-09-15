@@ -2,19 +2,19 @@
 
 // A two-dimensional text renderer, supplied by the *user* of the library.
 //
-// Nothing here is part of maxima_cpp. It is a plain struct written against
-// <mx/render.hpp> — it inherits nothing, overrides nothing, and the library
+// Nothing here is part of Proxima. It is a plain struct written against
+// <proxima/render.hpp> — it inherits nothing, overrides nothing, and the library
 // has never heard of it — which is the point of including it in the examples:
 // this is what writing your own renderer looks like.
 //
 // Its output type is a Box rather than a string, because laying out a
 // fraction or raising an exponent needs to know each part's width, height and
-// baseline before placing it. That is why mx::render is generic over what a
+// baseline before placing it. That is why proxima::render is generic over what a
 // renderer returns.
 //
 // Plain ASCII, so it prints anywhere.
 
-#include <mx/render.hpp>
+#include <proxima/render.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -98,7 +98,7 @@ inline std::string centred(const std::string &row, std::size_t width) {
 } // namespace detail
 
 struct Renderer {
-    Box integer(const mx::Integer &value) { return text(value.toString()); }
+    Box integer(const proxima::Integer &value) { return text(value.toString()); }
 
     Box real(double value) {
         std::string s = std::to_string(value);
@@ -119,7 +119,7 @@ struct Renderer {
 
     Box verbatim(std::string_view source) { return text(source); }
 
-    Box sum(std::span<const mx::Term<Box>> terms) {
+    Box sum(std::span<const proxima::Term<Box>> terms) {
         Box out = text(terms.empty() ? "0" : "");
         for (std::size_t i = 0; i < terms.size(); ++i) {
             if (i == 0) {
@@ -233,9 +233,9 @@ struct Renderer {
         return detail::beside({text("["), inside, text("]")});
     }
 
-    Box relation(mx::RelOp op, const Box &lhs, const Box &rhs) {
+    Box relation(proxima::RelOp op, const Box &lhs, const Box &rhs) {
         return detail::beside(
-            {lhs, text(" " + std::string(mx::symbolFor(op)) + " "), rhs});
+            {lhs, text(" " + std::string(proxima::symbolFor(op)) + " "), rhs});
     }
 
     /// Brackets that grow with their contents.
@@ -259,26 +259,26 @@ struct Renderer {
 
     // --- the notation delimits itself in three places ---------------------
 
-    mx::Strength strengthOf(mx::Construct construct) {
+    proxima::Strength strengthOf(proxima::Construct construct) {
         // A drawn fraction or radical needs no brackets around it.
-        if (construct == mx::Construct::Fraction
-            || construct == mx::Construct::Root) {
-            return mx::Strength::Atom;
+        if (construct == proxima::Construct::Fraction
+            || construct == proxima::Construct::Root) {
+            return proxima::Strength::Atom;
         }
-        return mx::defaultStrength(construct);
+        return proxima::defaultStrength(construct);
     }
 
-    mx::Strength contextFor(mx::Slot slot) {
+    proxima::Strength contextFor(proxima::Slot slot) {
         switch (slot) {
-        case mx::Slot::Numerator:
-        case mx::Slot::Denominator:
-        case mx::Slot::Exponent:
-        case mx::Slot::Radicand:
+        case proxima::Slot::Numerator:
+        case proxima::Slot::Denominator:
+        case proxima::Slot::Exponent:
+        case proxima::Slot::Radicand:
             // Above or below a rule, raised, or under a radical: the layout
             // already shows where the subexpression begins and ends.
-            return mx::Strength::Loosest;
+            return proxima::Strength::Loosest;
         default:
-            return mx::defaultContext(slot);
+            return proxima::defaultContext(slot);
         }
     }
 
@@ -286,8 +286,8 @@ struct Renderer {
 };
 
 /// Renders `expr` as rows of text joined by newlines, trailing spaces trimmed.
-inline std::string draw(const mx::Expr &expr) {
-    const Box box = mx::render(expr, Renderer{});
+inline std::string draw(const proxima::Expr &expr) {
+    const Box box = proxima::render(expr, Renderer{});
     std::string out;
     for (std::size_t i = 0; i < box.height(); ++i) {
         std::string row = box.rows[i];

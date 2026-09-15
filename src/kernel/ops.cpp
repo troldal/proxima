@@ -1,14 +1,14 @@
-#include <mx/ops.hpp>
+#include <proxima/ops.hpp>
 
 #include "wire/to_maxima.hpp"
 
-#include <mx/errors.hpp>
+#include <proxima/errors.hpp>
 
 #include <algorithm>
 #include <string>
 #include <utility>
 
-namespace mx {
+namespace proxima {
 namespace {
 
 /// Sends a form to Maxima and maps the reply back into an expression.
@@ -436,4 +436,4 @@ std::expected<double, Failure> findRoot(const Expr &expr, const Symbol &wrt,
                                    + " and " + std::to_string(high)});
 }
 
-} // namespace mx
+} // namespace proxima

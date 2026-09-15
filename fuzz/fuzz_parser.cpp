@@ -1,12 +1,12 @@
 // Fuzzes Expr::parse, the offline reader of infix text.
 //
-// Two properties. Any text is parsed or refused with mx::Error — nothing else.
+// Two properties. Any text is parsed or refused with proxima::Error — nothing else.
 // And what parses prints back to text that parses to the same expression: the
 // printer's promise, which the round-trip tests check on a fixed list and this
 // checks on whatever the fuzzer invents.
 
-#include <mx/errors.hpp>
-#include <mx/expr.hpp>
+#include <proxima/errors.hpp>
+#include <proxima/expr.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -29,19 +29,19 @@ namespace {
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size) {
     const std::string_view text(reinterpret_cast<const char *>(data), size);
 
-    mx::Expr parsed;
+    proxima::Expr parsed;
     try {
-        parsed = mx::Expr::parse(text);
-    } catch (const mx::Error &) {
+        parsed = proxima::Expr::parse(text);
+    } catch (const proxima::Error &) {
         return 0; // Refused, which is a fine answer to most text.
     }
 
     const std::string printed = parsed.str();
     try {
-        if (!(mx::Expr::parse(printed) == parsed)) {
+        if (!(proxima::Expr::parse(printed) == parsed)) {
             fail(text, printed, "the printed text parses to a different expression");
         }
-    } catch (const mx::Error &error) {
+    } catch (const proxima::Error &error) {
         fail(text, printed, error.what());
     }
     return 0;

@@ -1,11 +1,11 @@
 #pragma once
 
-#include <mx/expr.hpp>
+#include <proxima/expr.hpp>
 
 #include <optional>
 #include <vector>
 
-namespace mx::detail {
+namespace proxima::detail {
 
 /// Puts a sum's terms into canonical form: nested sums spliced in, numeric
 /// terms folded into one, a zero dropped, and the rest ordered.
@@ -34,4 +34,4 @@ std::optional<Expr> normalizePower(const Expr &base, const Expr &exponent);
 /// a reshuffle that obscures diffs.
 int compareExpr(const Expr &lhs, const Expr &rhs);
 
-} // namespace mx::detail
+} // namespace proxima::detail

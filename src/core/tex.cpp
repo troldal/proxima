@@ -1,6 +1,6 @@
-#include <mx/tex.hpp>
+#include <proxima/tex.hpp>
 
-#include <mx/render.hpp>
+#include <proxima/render.hpp>
 
 #include <charconv>
 #include <span>
@@ -10,7 +10,7 @@
 #include <utility>
 
 // A LaTeX renderer, written the way a user of this library would write one: a
-// plain struct with the operations mx/render.hpp asks for, inheriting nothing
+// plain struct with the operations proxima/render.hpp asks for, inheriting nothing
 // and knowing nothing about the library's internals.
 //
 // Worth reading beside src/core/printer.cpp. The two produce entirely
@@ -19,7 +19,7 @@
 // carry their own braces, so TeX needs brackets in places infix text does not,
 // and does not need them in places infix text does.
 
-namespace mx {
+namespace proxima {
 namespace {
 
 /// Characters TeX reads as markup rather than as text.
@@ -286,4 +286,4 @@ std::string toTeX(const Expr &expr) {
     return render(expr, TeXRenderer{});
 }
 
-} // namespace mx
+} // namespace proxima

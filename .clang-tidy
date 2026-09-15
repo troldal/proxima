@@ -25,7 +25,7 @@ Checks: >
   google-explicit-constructor,
   misc-unused-using-decls,
   readability-braces-around-statements
-HeaderFilterRegex: '.*/(include/mx|src)/.*'
+HeaderFilterRegex: '.*/(include/proxima|src)/.*'
 CheckOptions:
   # A cast to void is how a discarded result is marked deliberate here: the
   # asio calls in child_process.cpp report their error through an argument too.

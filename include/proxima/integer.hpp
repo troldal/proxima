@@ -12,7 +12,7 @@
 #include <string>
 #include <string_view>
 
-namespace mx {
+namespace proxima {
 
 /// The character types. Integral to C++, but not numbers to anyone reading an
 /// expression: `'a'` in a formula is a mistake, not the value 97.
@@ -41,7 +41,7 @@ concept BooleanOrCharacter = std::same_as<T, bool> || CharacterType<T>;
 class Integer;
 
 namespace detail {
-// The implementations behind mx::abs and mx::gcd, which are templates only to
+// The implementations behind proxima::abs and proxima::gcd, which are templates only to
 // constrain what they accept.
 Integer absOf(const Integer &value);
 Integer gcdOf(const Integer &a, const Integer &b);
@@ -93,7 +93,7 @@ public:
         requires BooleanOrCharacter<T>
     Integer(T) = delete;
 
-    /// Reads a decimal literal, with an optional sign. Throws mx::ParseError if
+    /// Reads a decimal literal, with an optional sign. Throws proxima::ParseError if
     /// `text` is not one.
     explicit Integer(std::string_view text);
 
@@ -125,7 +125,7 @@ public:
     Integer operator*(const Integer &other) const;
 
     /// Truncating division, as C++ spells it: the quotient rounds toward zero
-    /// and the remainder takes the dividend's sign. Throws mx::Error on a zero
+    /// and the remainder takes the dividend's sign. Throws proxima::Error on a zero
     /// divisor.
     Integer operator/(const Integer &other) const;
     Integer operator%(const Integer &other) const;
@@ -152,7 +152,7 @@ private:
 /// The absolute value. Takes an Integer and nothing else: a plain
 /// `const Integer &` would make this a candidate for abs(-3) through the
 /// implicit constructor, which is <cstdlib>'s call to answer. See
-/// mx::ExprArgument for why that matters.
+/// proxima::ExprArgument for why that matters.
 template <std::same_as<Integer> T>
 Integer abs(const T &value) {
     return detail::absOf(value);
@@ -185,11 +185,11 @@ Integer gcd(const A &a, const B &b) {
 /// Writes the decimal digits, as toString() does.
 std::ostream &operator<<(std::ostream &out, const Integer &value);
 
-} // namespace mx
+} // namespace proxima
 
 template <>
-struct std::hash<mx::Integer> {
-    std::size_t operator()(const mx::Integer &value) const noexcept {
+struct std::hash<proxima::Integer> {
+    std::size_t operator()(const proxima::Integer &value) const noexcept {
         return value.hash();
     }
 };
@@ -197,8 +197,8 @@ struct std::hash<mx::Integer> {
 /// `std::format("{}", value)` is the decimal digits, with the usual string
 /// options for width and alignment: `{:>40}`.
 template <>
-struct std::formatter<mx::Integer, char> : std::formatter<std::string_view, char> {
-    auto format(const mx::Integer &value, std::format_context &context) const {
+struct std::formatter<proxima::Integer, char> : std::formatter<std::string_view, char> {
+    auto format(const proxima::Integer &value, std::format_context &context) const {
         const std::string digits = value.toString();
         return std::formatter<std::string_view, char>::format(std::string_view(digits),
                                                               context);

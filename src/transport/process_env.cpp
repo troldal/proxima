@@ -6,7 +6,7 @@
 #include <cctype>
 #include <string_view>
 
-namespace mx::detail {
+namespace proxima::detail {
 namespace {
 
 bool namesMatch(std::string_view a, std::string_view b) {
@@ -73,4 +73,4 @@ mergeEnvironment(const std::vector<EnvOverride> &overrides) {
     return entries;
 }
 
-} // namespace mx::detail
+} // namespace proxima::detail

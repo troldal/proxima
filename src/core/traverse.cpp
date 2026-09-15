@@ -1,6 +1,6 @@
-#include <mx/traverse.hpp>
+#include <proxima/traverse.hpp>
 
-#include <mx/errors.hpp>
+#include <proxima/errors.hpp>
 
 #include <algorithm>
 #include <string>
@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-namespace mx {
+namespace proxima {
 namespace {
 
 bool isIdentifierPart(char c) {
@@ -110,10 +110,10 @@ Expr replace(const Expr &expr, const Symbol &symbol, const Expr &value) {
         if (node.is(Kind::Opaque) && opaqueMentions(node.opaqueText(), symbol.name())) {
             throw Error("cannot replace " + symbol.name()
                         + " inside the unmodelled expression " + node.str()
-                        + " without parsing it; mx::subst has Maxima do it");
+                        + " without parsing it; proxima::subst has Maxima do it");
         }
         return node;
     });
 }
 
-} // namespace mx
+} // namespace proxima

@@ -4,7 +4,7 @@
 #include <string>
 #include <string_view>
 
-namespace mx::detail {
+namespace proxima::detail {
 
 /// A byte pipe to a child process.
 ///
@@ -48,4 +48,4 @@ public:
     virtual void terminate() = 0;
 };
 
-} // namespace mx::detail
+} // namespace proxima::detail

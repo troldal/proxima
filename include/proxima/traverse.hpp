@@ -1,7 +1,7 @@
 #pragma once
 
-#include <mx/expr.hpp>
-#include <mx/symbol.hpp>
+#include <proxima/expr.hpp>
+#include <proxima/symbol.hpp>
 
 #include <concepts>
 #include <functional>
@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-namespace mx {
+namespace proxima {
 
 // Local operations on the expression tree: no kernel, no round trip.
 //
@@ -90,7 +90,7 @@ Expr transform(const Expr &expr, F &&f) {
 bool contains(const Expr &expr, const Symbol &symbol);
 
 /// `expr` with every occurrence of `symbol` replaced by `value`: a tree
-/// rewrite, where mx::subst asks Maxima.
+/// rewrite, where proxima::subst asks Maxima.
 ///
 /// The result is built the way any expression is, so it is normalised —
 /// numbers fold (`3*x + 2` with x = 2 is 8) and identities go (`x*y` with
@@ -102,8 +102,8 @@ bool contains(const Expr &expr, const Symbol &symbol);
 /// A function whose head has the symbol's name is left alone: a head is a
 /// name, not the symbol. An Opaque node, Maxima text this library never
 /// parsed, cannot be rewritten without parsing it, so one that mentions
-/// `symbol` throws mx::Error rather than leave the symbol silently behind;
-/// mx::subst handles those.
+/// `symbol` throws proxima::Error rather than leave the symbol silently behind;
+/// proxima::subst handles those.
 Expr replace(const Expr &expr, const Symbol &symbol, const Expr &value);
 
-} // namespace mx
+} // namespace proxima

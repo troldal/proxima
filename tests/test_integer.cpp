@@ -4,10 +4,10 @@
 
 #include <doctest/doctest.h>
 
-#include <mx/errors.hpp>
-#include <mx/integer.hpp>
-#include <mx/kernel.hpp>
-#include <mx/ops.hpp>
+#include <proxima/errors.hpp>
+#include <proxima/integer.hpp>
+#include <proxima/kernel.hpp>
+#include <proxima/ops.hpp>
 
 #include <cstdint>
 #include <limits>
@@ -16,7 +16,7 @@
 #include <type_traits>
 #include <vector>
 
-using mx::Integer;
+using proxima::Integer;
 
 // bool and the character types are integral to C++ but not numbers. Integer
 // already refused bool and char, but not the wide character types, so
@@ -73,7 +73,7 @@ TEST_CASE("round-tripping through decimal") {
         CHECK_FALSE(Integer::parse("-").has_value());
         CHECK_FALSE(Integer::parse("12a").has_value());
         CHECK_FALSE(Integer::parse(" 1").has_value());
-        CHECK_THROWS_AS(Integer("nonsense"), mx::ParseError);
+        CHECK_THROWS_AS(Integer("nonsense"), proxima::ParseError);
     }
 }
 
@@ -108,7 +108,7 @@ TEST_CASE("the extreme negative value needs no special case") {
     const Integer min(kMinInt64);
     CHECK((-min).toString() == "9223372036854775808");
     CHECK((min / Integer(-1)).toString() == "9223372036854775808");
-    CHECK(mx::abs(min).toString() == "9223372036854775808");
+    CHECK(proxima::abs(min).toString() == "9223372036854775808");
     CHECK((min - Integer(1)).toString() == "-9223372036854775809");
 }
 
@@ -149,8 +149,8 @@ TEST_CASE("comparison orders correctly across the boundary") {
 }
 
 TEST_CASE("division by zero is refused") {
-    CHECK_THROWS_AS(Integer(1) / Integer(0), mx::Error);
-    CHECK_THROWS_AS(Integer(kFactorial30) % Integer(0), mx::Error);
+    CHECK_THROWS_AS(Integer(1) / Integer(0), proxima::Error);
+    CHECK_THROWS_AS(Integer(kFactorial30) % Integer(0), proxima::Error);
 }
 
 TEST_CASE("gcd") {
@@ -211,7 +211,7 @@ TEST_CASE("arithmetic agrees with Maxima on large random values") {
     // Maxima has arbitrary-precision integers of its own and decades of use
     // behind them. Checking against it is far stronger than checking against
     // values written out by the same person who wrote the code.
-    mx::Kernel kernel;
+    proxima::Kernel kernel;
     std::mt19937_64 generator(20240117);
 
     const auto randomDigits = [&generator](int count) {
@@ -224,7 +224,7 @@ TEST_CASE("arithmetic agrees with Maxima on large random values") {
     };
 
     const auto maximaSays = [&kernel](const std::string &expression) {
-        const mx::Reply reply = kernel.evalPure(expression);
+        const proxima::Reply reply = kernel.evalPure(expression);
         REQUIRE(reply.ok);
         return reply.value;
     };
@@ -258,13 +258,13 @@ TEST_CASE("arithmetic agrees with Maxima on large random values") {
 TEST_CASE("a factorial from Maxima is a number here") {
     // The whole point of the widening: this used to come back as Opaque text
     // that could be printed and nothing else.
-    mx::Kernel kernel;
-    const auto value = mx::parse("30!", kernel);
+    proxima::Kernel kernel;
+    const auto value = proxima::parse("30!", kernel);
     REQUIRE(value.has_value());
-    REQUIRE(value->kind() == mx::Kind::Integer);
+    REQUIRE(value->kind() == proxima::Kind::Integer);
 
     // Arithmetic on it happens here, with no further round trip.
-    const mx::Expr doubled = *value * mx::Expr(2);
+    const proxima::Expr doubled = *value * proxima::Expr(2);
     CHECK(doubled.str() == "530505719624382117272616960000000");
 
     // And Maxima agrees.

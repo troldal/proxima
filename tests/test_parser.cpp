@@ -3,17 +3,17 @@
 
 #include <doctest/doctest.h>
 
-#include <mx/errors.hpp>
-#include <mx/expr.hpp>
-#include <mx/functions.hpp>
-#include <mx/ops.hpp>
-#include <mx/symbol.hpp>
+#include <proxima/errors.hpp>
+#include <proxima/expr.hpp>
+#include <proxima/functions.hpp>
+#include <proxima/ops.hpp>
+#include <proxima/symbol.hpp>
 
 #include <string>
 
-using mx::Expr;
-using mx::Kind;
-using mx::Symbol;
+using proxima::Expr;
+using proxima::Kind;
+using proxima::Symbol;
 
 TEST_CASE("atoms") {
     CHECK(Expr::parse("42") == Expr(42));
@@ -93,7 +93,7 @@ TEST_CASE("** is ^, as Maxima reads it") {
     CHECK(Expr::parse("-x**2") == Expr::parse("-(x^2)"));
     CHECK(Expr::parse("x**2*y") == Expr::parse("x^2*y"));
     // Only when the stars are adjacent, as in Maxima's own lexer.
-    CHECK_THROWS_AS(static_cast<void>(Expr::parse("x * * 2")), mx::ParseError);
+    CHECK_THROWS_AS(static_cast<void>(Expr::parse("x * * 2")), proxima::ParseError);
 }
 
 TEST_CASE("a number beyond a double's range is refused, and says so") {
@@ -102,7 +102,7 @@ TEST_CASE("a number beyond a double's range is refused, and says so") {
         CAPTURE(source);
         CHECK_THROWS_WITH_AS(static_cast<void>(Expr::parse(source)),
                              doctest::Contains("out of the range of a double"),
-                             mx::ParseError);
+                             proxima::ParseError);
     }
     CHECK(Expr::parse("1e300") == Expr(1e300));
 }
@@ -119,13 +119,13 @@ TEST_CASE("unary operators") {
 TEST_CASE("function application") {
     const Symbol x("x");
 
-    CHECK(Expr::parse("sin(x)") == mx::sin(Expr(x)));
+    CHECK(Expr::parse("sin(x)") == proxima::sin(Expr(x)));
     CHECK(Expr::parse("f(x, y)")
           == Expr::function("f", {Expr(x), Expr::symbol("y")}));
     CHECK(Expr::parse("f()") == Expr::function("f", {}));
     // Nested, and with an expression as an argument.
     CHECK(Expr::parse("sin(cos(x + 1))")
-          == mx::sin(mx::cos(Expr(x) + 1)));
+          == proxima::sin(proxima::cos(Expr(x) + 1)));
 }
 
 TEST_CASE("lists use the bracket syntax Maxima does") {
@@ -157,12 +157,12 @@ TEST_CASE("relations") {
         for (const char *source :
              {"a < b < c", "a = b = c", "a # b # c", "a < b = c", "a = b + 1 < c"}) {
             CAPTURE(std::string(source));
-            CHECK_THROWS_AS(Expr::parse(source), mx::ParseError);
+            CHECK_THROWS_AS(Expr::parse(source), proxima::ParseError);
         }
         try {
             Expr::parse("a = b = c");
             FAIL("expected a ParseError");
-        } catch (const mx::ParseError &e) {
+        } catch (const proxima::ParseError &e) {
             // Where Maxima puts its caret: the second relation.
             CHECK(std::string(e.what()).find("offset 6") != std::string::npos);
         }
@@ -233,22 +233,22 @@ TEST_CASE("whitespace is irrelevant") {
 }
 
 TEST_CASE("malformed input is rejected, with the offset") {
-    CHECK_THROWS_AS(Expr::parse(""), mx::ParseError);
-    CHECK_THROWS_AS(Expr::parse("x +"), mx::ParseError);
-    CHECK_THROWS_AS(Expr::parse("(x"), mx::ParseError);
-    CHECK_THROWS_AS(Expr::parse("x)"), mx::ParseError);
-    CHECK_THROWS_AS(Expr::parse("f(x"), mx::ParseError);
-    CHECK_THROWS_AS(Expr::parse("[1, 2"), mx::ParseError);
-    CHECK_THROWS_AS(Expr::parse(R"("unterminated)"), mx::ParseError);
-    CHECK_THROWS_AS(Expr::parse("x @ y"), mx::ParseError);
+    CHECK_THROWS_AS(Expr::parse(""), proxima::ParseError);
+    CHECK_THROWS_AS(Expr::parse("x +"), proxima::ParseError);
+    CHECK_THROWS_AS(Expr::parse("(x"), proxima::ParseError);
+    CHECK_THROWS_AS(Expr::parse("x)"), proxima::ParseError);
+    CHECK_THROWS_AS(Expr::parse("f(x"), proxima::ParseError);
+    CHECK_THROWS_AS(Expr::parse("[1, 2"), proxima::ParseError);
+    CHECK_THROWS_AS(Expr::parse(R"("unterminated)"), proxima::ParseError);
+    CHECK_THROWS_AS(Expr::parse("x @ y"), proxima::ParseError);
     // Two expressions where one was promised.
-    CHECK_THROWS_AS(Expr::parse("1 2"), mx::ParseError);
+    CHECK_THROWS_AS(Expr::parse("1 2"), proxima::ParseError);
 
     SUBCASE("and the message says where") {
         try {
             Expr::parse("x + @");
             FAIL("expected a ParseError");
-        } catch (const mx::ParseError &e) {
+        } catch (const proxima::ParseError &e) {
             CHECK(std::string(e.what()).find("offset 4") != std::string::npos);
         }
     }
@@ -268,7 +268,7 @@ TEST_CASE("text nested too deep is refused, not a stack overflow") {
     for (const std::string *source :
          std::initializer_list<const std::string *>{&parens, &minuses, &powers}) {
         CHECK_THROWS_WITH_AS(static_cast<void>(Expr::parse(*source)),
-                             doctest::Contains("nested too deep"), mx::ParseError);
+                             doctest::Contains("nested too deep"), proxima::ParseError);
     }
 
     SUBCASE("while ordinary nesting, and a long flat sum, still parse") {
@@ -291,17 +291,17 @@ TEST_CASE("text nested too deep is refused, not a stack overflow") {
 
 TEST_CASE("statements are not expressions, and are refused") {
     // Assignment, definition and quoting are Maxima *programs*. Refusing them
-    // here is the boundary that keeps this a parser for expressions; mx::parse
+    // here is the boundary that keeps this a parser for expressions; proxima::parse
     // hands such things to Maxima itself.
-    CHECK_THROWS_AS(Expr::parse("a: 7"), mx::ParseError);
-    CHECK_THROWS_AS(Expr::parse("f(x) := x^2"), mx::ParseError);
-    CHECK_THROWS_AS(Expr::parse("'diff(f(x), x)"), mx::ParseError);
+    CHECK_THROWS_AS(Expr::parse("a: 7"), proxima::ParseError);
+    CHECK_THROWS_AS(Expr::parse("f(x) := x^2"), proxima::ParseError);
+    CHECK_THROWS_AS(Expr::parse("'diff(f(x), x)"), proxima::ParseError);
 }
 
 TEST_CASE("every Maxima operator outside the subset is refused") {
     // The subset is arithmetic, comparisons, application, lists and strings,
     // with !, !! and ** read as Maxima reads them. Each of these is Maxima
-    // syntax it does not take — mx::parse hands such text to Maxima — and each
+    // syntax it does not take — proxima::parse hands such text to Maxima — and each
     // must be refused, not read as something else.
     for (const char *source : {
              "a: 7", "a :: 7", "f(x) := x^2", "f(x) ::= x",  // assignment, definitions
@@ -315,7 +315,7 @@ TEST_CASE("every Maxima operator outside the subset is refused") {
              "a ~ b", "a -> b", "a | b",                     // operators Maxima does not have
          }) {
         CAPTURE(std::string(source));
-        CHECK_THROWS_AS(static_cast<void>(Expr::parse(source)), mx::ParseError);
+        CHECK_THROWS_AS(static_cast<void>(Expr::parse(source)), proxima::ParseError);
     }
 }
 
@@ -351,7 +351,7 @@ TEST_CASE("the offline parser agrees with Maxima's own") {
     // disagree, the offline one is wrong by definition — Maxima's parser is the
     // specification for the syntax it accepts.
     //
-    // Meaning, not structure. mx::parse evaluates as it parses — it answers
+    // Meaning, not structure. proxima::parse evaluates as it parses — it answers
     // x^2^3 with x^8 and 5! with 120 — whereas Expr::parse only builds and
     // normalises. Comparing the two directly would be comparing a parse against
     // an evaluation. So both sides are put through Maxima: its reading of the
@@ -384,11 +384,11 @@ TEST_CASE("the offline parser agrees with Maxima's own") {
          }) {
         const std::string text = source;
         CAPTURE(text);
-        const auto viaMaxima = mx::parse(source);
+        const auto viaMaxima = proxima::parse(source);
         REQUIRE(viaMaxima.has_value());
 
         const Expr offline = Expr::parse(source);
-        const auto offlineViaMaxima = mx::parse(offline.str());
+        const auto offlineViaMaxima = proxima::parse(offline.str());
         REQUIRE(offlineViaMaxima.has_value());
 
         INFO("offline: ", offline.str(), "   maxima: ", viaMaxima->str());
@@ -402,9 +402,9 @@ TEST_CASE("an offline-parsed expression is usable without a kernel first") {
     const Symbol x("x");
     const Expr f = Expr::parse("x^2*sin(x)");
 
-    const auto integral = mx::integrate(f, x);
+    const auto integral = proxima::integrate(f, x);
     REQUIRE(integral.has_value());
-    CHECK(mx::simplify(mx::diff(*integral, x)) == f);
+    CHECK(proxima::simplify(proxima::diff(*integral, x)) == f);
 }
 
 } // TEST_SUITE("maxima")

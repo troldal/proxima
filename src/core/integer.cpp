@@ -1,12 +1,12 @@
-#include <mx/errors.hpp>
-#include <mx/integer.hpp>
+#include <proxima/errors.hpp>
+#include <proxima/integer.hpp>
 
 #include <algorithm>
 #include <limits>
 #include <string>
 #include <utility>
 
-namespace mx {
+namespace proxima {
 namespace {
 
 constexpr std::int64_t kMinInt64 = std::numeric_limits<std::int64_t>::min();
@@ -174,4 +174,4 @@ Integer detail::gcdOf(const Integer &a, const Integer &b) {
         Integer::Backend(boost::multiprecision::gcd(a.value_, b.value_)));
 }
 
-} // namespace mx
+} // namespace proxima

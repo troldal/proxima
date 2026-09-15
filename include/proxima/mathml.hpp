@@ -1,10 +1,10 @@
 #pragma once
 
-#include <mx/expr.hpp>
+#include <proxima/expr.hpp>
 
 #include <string>
 
-namespace mx {
+namespace proxima {
 
 /// Renders an expression as Presentation MathML: a complete
 /// `<math xmlns="http://www.w3.org/1998/Math/MathML">` element, ready to
@@ -19,8 +19,8 @@ namespace mx {
 /// Output is ASCII: symbols such as the minus sign, pi and infinity are
 /// written as numeric character references, so it survives any encoding.
 ///
-/// Written as an ordinary user of mx/render.hpp, like toTeX(); see
+/// Written as an ordinary user of proxima/render.hpp, like toTeX(); see
 /// src/core/mathml.cpp.
 std::string toMathML(const Expr &expr);
 
-} // namespace mx
+} // namespace proxima

@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 
-namespace mx {
+namespace proxima {
 
 /// Base of every exception thrown by this library.
 class Error : public std::runtime_error {
@@ -15,7 +15,7 @@ public:
 ///
 /// This is an infrastructure failure, deliberately distinct from a
 /// mathematical one ("no closed form exists"), which is an ordinary outcome
-/// and is reported as an mx::Failure through std::expected instead.
+/// and is reported as an proxima::Failure through std::expected instead.
 class KernelError : public Error {
 public:
     using Error::Error;
@@ -37,7 +37,7 @@ public:
 ///
 /// Thrown only by the operations that have no ordinary way to fail — diff,
 /// expand, subst and the like. The ones that *can* ordinarily fail, such as
-/// integrate and solve, report it as an mx::Failure instead, because "there is
+/// integrate and solve, report it as an proxima::Failure instead, because "there is
 /// no closed form" is an answer rather than a malfunction.
 class MaximaError : public Error {
 public:
@@ -65,4 +65,4 @@ public:
     using Error::Error;
 };
 
-} // namespace mx
+} // namespace proxima

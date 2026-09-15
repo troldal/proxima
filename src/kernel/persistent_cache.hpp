@@ -1,6 +1,6 @@
 #pragma once
 
-#include <mx/reply.hpp>
+#include <proxima/reply.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -8,7 +8,7 @@
 #include <string>
 #include <string_view>
 
-namespace mx::detail {
+namespace proxima::detail {
 
 /// A cache of replies that outlives the process, stored as one file per entry.
 ///
@@ -118,4 +118,4 @@ std::string stableHash(std::string_view text);
 /// same name. Exposed for testing.
 std::filesystem::path temporaryPathFor(const std::filesystem::path &target);
 
-} // namespace mx::detail
+} // namespace proxima::detail

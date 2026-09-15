@@ -2,7 +2,7 @@
 
 #include <thread>
 
-namespace mx::detail {
+namespace proxima::detail {
 
 FakeTransport::FakeTransport(std::vector<std::string> responses)
     : responses_(std::move(responses)) {}
@@ -48,4 +48,4 @@ std::string FakeTransport::sentText() const {
     return all;
 }
 
-} // namespace mx::detail
+} // namespace proxima::detail

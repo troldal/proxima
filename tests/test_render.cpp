@@ -5,12 +5,12 @@
 
 #include <doctest/doctest.h>
 
-#include <mx/expr.hpp>
-#include <mx/functions.hpp>
-#include <mx/render.hpp>
-#include <mx/symbol.hpp>
-#include <mx/mathml.hpp>
-#include <mx/tex.hpp>
+#include <proxima/expr.hpp>
+#include <proxima/functions.hpp>
+#include <proxima/render.hpp>
+#include <proxima/symbol.hpp>
+#include <proxima/mathml.hpp>
+#include <proxima/tex.hpp>
 
 #include <algorithm>
 #include <functional>
@@ -20,12 +20,12 @@
 #include <string_view>
 #include <vector>
 
-using mx::Construct;
-using mx::Expr;
-using mx::Slot;
-using mx::Strength;
-using mx::Symbol;
-using mx::Term;
+using proxima::Construct;
+using proxima::Expr;
+using proxima::Slot;
+using proxima::Strength;
+using proxima::Symbol;
+using proxima::Term;
 
 TEST_CASE("the presentation layer fixes what every renderer would get wrong") {
     // Each of these was a defect in a TeX renderer written directly against
@@ -38,20 +38,20 @@ TEST_CASE("the presentation layer fixes what every renderer would get wrong") {
     SUBCASE("canonical order is not display order") {
         // Numbers sort first, so the tree says -1 + x.
         CHECK((Expr(x) - 1).str() == "x - 1");
-        CHECK(mx::toTeX(Expr(x) - 1) == "x - 1");
+        CHECK(proxima::toTeX(Expr(x) - 1) == "x - 1");
     }
     SUBCASE("a reciprocal is a fraction, not a negative power") {
         CHECK((Expr(1) / Expr(x)).str() == "1/x");
-        CHECK(mx::toTeX(Expr(1) / Expr(x)) == "\\frac{1}{x}");
+        CHECK(proxima::toTeX(Expr(1) / Expr(x)) == "\\frac{1}{x}");
     }
     SUBCASE("a rational coefficient is dismantled") {
         // Not a product containing 1/3.
         CHECK((Expr(x) / Expr(3)).str() == "x/3");
-        CHECK(mx::toTeX(Expr(x) / Expr(3)) == "\\frac{x}{3}");
+        CHECK(proxima::toTeX(Expr(x) / Expr(3)) == "\\frac{x}{3}");
     }
     SUBCASE("negation is a sign, not a factor of -1") {
         CHECK((-(Expr(x) + 1)).str() == "-(1 + x)");
-        CHECK(mx::toTeX(-(Expr(x) + 1)) == "-\\left(1 + x\\right)");
+        CHECK(proxima::toTeX(-(Expr(x) + 1)) == "-\\left(1 + x\\right)");
         CHECK((-Expr(x) - Expr(y)).str() == "-x - y");
     }
     SUBCASE("a negated term keeps its brackets") {
@@ -82,16 +82,16 @@ TEST_CASE("infix output still reads back as the same expression") {
         pow(Expr(x), 2),
         pow(-Expr(x), 2),
         pow(pow(Expr(x), 2), 3),
-        mx::sqrt(Expr(x)),
+        proxima::sqrt(Expr(x)),
         // Compound radicands. Every root here used to have a bare symbol under
         // it, which is how `1 - x^2^(1/2)` got past this test.
-        mx::sqrt(Expr(x) + 1),
-        mx::sqrt(Expr(1) - pow(Expr(x), 2)),
-        Expr(x) * mx::sqrt(Expr(1) - pow(Expr(x), 2)) / Expr(2),
+        proxima::sqrt(Expr(x) + 1),
+        proxima::sqrt(Expr(1) - pow(Expr(x), 2)),
+        Expr(x) * proxima::sqrt(Expr(1) - pow(Expr(x), 2)) / Expr(2),
         pow(Expr(x) * Expr(y), Expr::rational(1, 3)),
         pow(pow(Expr(x), 2), Expr::rational(1, 2)),
-        mx::exp(Expr(x)),
-        mx::sin(Expr(x)) / mx::cos(Expr(x)),
+        proxima::exp(Expr(x)),
+        proxima::sin(Expr(x)) / proxima::cos(Expr(x)),
         Expr::function("list", {Expr(1), Expr(x)}),
         eq(pow(Expr(x), 2), Expr(y)),
         Expr::rational(-1, 2),
@@ -106,7 +106,7 @@ TEST_CASE("a root is spelled as a power where that is what reads back") {
     // InfixRenderer defines no root(), so it gets the synthesised default —
     // and the default has to apply the same grouping the walk would, or it
     // emits `x^1/2`, which is `(x^1)/2`.
-    CHECK(mx::sqrt(Expr(Symbol("x"))).str() == "x^(1/2)");
+    CHECK(proxima::sqrt(Expr(Symbol("x"))).str() == "x^(1/2)");
     CHECK(pow(Expr(Symbol("x")), Expr::rational(1, 3)).str() == "x^(1/3)");
 
     SUBCASE("and the radicand is grouped as a power base") {
@@ -115,16 +115,16 @@ TEST_CASE("a root is spelled as a power where that is what reads back") {
         // that could not say it needed brackets. It is now a Power node,
         // walked like any other.
         const Symbol x("x");
-        CHECK(mx::sqrt(Expr(1) - pow(Expr(x), 2)).str() == "(1 - x^2)^(1/2)");
-        CHECK(mx::sqrt(Expr(x) + 1).str() == "(1 + x)^(1/2)");
-        CHECK(mx::sqrt(pow(Expr(x), 2)).str() == "(x^2)^(1/2)");
+        CHECK(proxima::sqrt(Expr(1) - pow(Expr(x), 2)).str() == "(1 - x^2)^(1/2)");
+        CHECK(proxima::sqrt(Expr(x) + 1).str() == "(1 + x)^(1/2)");
+        CHECK(proxima::sqrt(pow(Expr(x), 2)).str() == "(x^2)^(1/2)");
         // TeX has a radical, so it never needed the brackets.
-        CHECK(mx::toTeX(mx::sqrt(Expr(1) - pow(Expr(x), 2)))
+        CHECK(proxima::toTeX(proxima::sqrt(Expr(1) - pow(Expr(x), 2)))
               == "\\sqrt{1 - x^{2}}");
     }
     // TeX does define root(), so it gets a radical.
-    CHECK(mx::toTeX(mx::sqrt(Expr(Symbol("x")))) == "\\sqrt{x}");
-    CHECK(mx::toTeX(pow(Expr(Symbol("x")), Expr::rational(1, 3)))
+    CHECK(proxima::toTeX(proxima::sqrt(Expr(Symbol("x")))) == "\\sqrt{x}");
+    CHECK(proxima::toTeX(pow(Expr(Symbol("x")), Expr::rational(1, 3)))
           == "\\sqrt[3]{x}");
 }
 
@@ -132,35 +132,35 @@ TEST_CASE("TeX") {
     const Symbol x("x");
     const Symbol y("y");
 
-    CHECK(mx::toTeX(pow(Expr(x), 2) + 3 * Expr(x) + 2) == "2 + x^{2} + 3 x");
-    CHECK(mx::toTeX(Expr::rational(11, 15)) == "\\frac{11}{15}");
-    CHECK(mx::toTeX(mx::sin(Expr(x))) == "\\sin\\left(x\\right)");
-    CHECK(mx::toTeX(eq(pow(Expr(x), 2), Expr(y))) == "x^{2} = y");
-    CHECK(mx::toTeX(mx::pi()) == "\\pi");
-    CHECK(mx::toTeX(Expr::function("list", {Expr(1), Expr(x)}))
+    CHECK(proxima::toTeX(pow(Expr(x), 2) + 3 * Expr(x) + 2) == "2 + x^{2} + 3 x");
+    CHECK(proxima::toTeX(Expr::rational(11, 15)) == "\\frac{11}{15}");
+    CHECK(proxima::toTeX(proxima::sin(Expr(x))) == "\\sin\\left(x\\right)");
+    CHECK(proxima::toTeX(eq(pow(Expr(x), 2), Expr(y))) == "x^{2} = y");
+    CHECK(proxima::toTeX(proxima::pi()) == "\\pi");
+    CHECK(proxima::toTeX(Expr::function("list", {Expr(1), Expr(x)}))
           == "\\left[1, x\\right]");
 
     SUBCASE("a brace-delimited slot needs no brackets") {
         // The infix renderer must bracket both sides here; TeX must not.
         const Expr quotient = (Expr(x) + 1) / (Expr(x) - 1);
         CHECK(quotient.str() == "(1 + x)/(x - 1)");
-        CHECK(mx::toTeX(quotient) == "\\frac{1 + x}{x - 1}");
-        CHECK(mx::toTeX(pow(Expr(x), Expr(y) + 1)) == "x^{1 + y}");
+        CHECK(proxima::toTeX(quotient) == "\\frac{1 + x}{x - 1}");
+        CHECK(proxima::toTeX(pow(Expr(x), Expr(y) + 1)) == "x^{1 + y}");
     }
     SUBCASE("but a bracket is still a bracket where TeX has none of its own") {
-        CHECK(mx::toTeX(pow(Expr(x) + 1, 2)) == "\\left(1 + x\\right)^{2}");
-        CHECK(mx::toTeX(pow(Expr(-3), 2)) == "\\left(-3\\right)^{2}");
+        CHECK(proxima::toTeX(pow(Expr(x) + 1, 2)) == "\\left(1 + x\\right)^{2}");
+        CHECK(proxima::toTeX(pow(Expr(-3), 2)) == "\\left(-3\\right)^{2}");
     }
     SUBCASE("a name that is TeX markup is escaped") {
         // The underscore is a subscript; emitting it raw produces a document
         // that does not compile.
-        CHECK(mx::toTeX(Expr::function("bessel_j", {Expr(0), Expr(x)}))
+        CHECK(proxima::toTeX(Expr::function("bessel_j", {Expr(0), Expr(x)}))
               == "\\operatorname{bessel\\_j}\\left(0, x\\right)");
-        CHECK(mx::toTeX(Expr(Symbol("x_1"))) == "\\mathit{x\\_1}");
+        CHECK(proxima::toTeX(Expr(Symbol("x_1"))) == "\\mathit{x\\_1}");
     }
     SUBCASE("a multi-letter name is not a product of its letters") {
-        CHECK(mx::toTeX(Expr(Symbol("mass"))) == "\\mathit{mass}");
-        CHECK(mx::toTeX(Expr(Symbol("alpha"))) == "\\alpha");
+        CHECK(proxima::toTeX(Expr(Symbol("mass"))) == "\\mathit{mass}");
+        CHECK(proxima::toTeX(Expr(Symbol("alpha"))) == "\\alpha");
     }
 }
 
@@ -233,7 +233,7 @@ Box beside(const Box &left, const Box &right) {
 
 /// The renderer itself: a plain struct, inheriting nothing.
 struct Layout {
-    Box integer(const mx::Integer &value) { return text(value.toString()); }
+    Box integer(const proxima::Integer &value) { return text(value.toString()); }
     Box real(double value) { return text(std::to_string(value)); }
     Box symbol(std::string_view name) { return text(name); }
     Box verbatim(std::string_view source) { return text(source); }
@@ -312,8 +312,8 @@ struct Layout {
         return beside(out, text(")"));
     }
 
-    Box relation(mx::RelOp op, const Box &lhs, const Box &rhs) {
-        return beside(beside(lhs, text(" " + std::string(mx::symbolFor(op)) + " ")),
+    Box relation(proxima::RelOp op, const Box &lhs, const Box &rhs) {
+        return beside(beside(lhs, text(" " + std::string(proxima::symbolFor(op)) + " ")),
                       rhs);
     }
 
@@ -343,18 +343,18 @@ struct Layout {
     Strength strengthOf(Construct construct) {
         // A drawn fraction needs no brackets of its own.
         return construct == Construct::Fraction ? Strength::Atom
-                                                : mx::defaultStrength(construct);
+                                                : proxima::defaultStrength(construct);
     }
 
     Strength contextFor(Slot slot) {
         return slot == Slot::Numerator || slot == Slot::Denominator
                    ? Strength::Loosest
-                   : mx::defaultContext(slot);
+                   : proxima::defaultContext(slot);
     }
 };
 
 std::string drawn(const Expr &expr) {
-    const Box box = mx::render(expr, Layout{});
+    const Box box = proxima::render(expr, Layout{});
     std::string out;
     for (std::size_t i = 0; i < box.lines.size(); ++i) {
         if (i != 0) {
@@ -399,7 +399,7 @@ TEST_CASE("a renderer whose output is not a string") {
                   \    y/
         */
         const std::string picture
-            = drawn(mx::sin(Expr(x)) * (Expr(1) / Expr(y) + 1));
+            = drawn(proxima::sin(Expr(x)) * (Expr(1) / Expr(y) + 1));
         CHECK(picture.find('/') != std::string::npos);
         CHECK(picture.find('|') != std::string::npos);
         CHECK(picture.find('\\') != std::string::npos);
@@ -407,7 +407,7 @@ TEST_CASE("a renderer whose output is not a string") {
     SUBCASE("a delimited slot is not bracketed twice") {
         // The call already supplies parentheses, so the fraction inside needs
         // none of its own.
-        CHECK(drawn(mx::sin(Expr(1) / Expr(x))) == "    1\nsin(-)\n    x");
+        CHECK(drawn(proxima::sin(Expr(1) / Expr(x))) == "    1\nsin(-)\n    x");
     }
 }
 
@@ -416,7 +416,7 @@ TEST_CASE("optional operations are synthesised from the required ones") {
     // three anyway — through its own power(), call() and sum().
     const Symbol x("x");
 
-    CHECK(drawn(mx::sqrt(Expr(x))).find("1") != std::string::npos); // x^(1/2)
+    CHECK(drawn(proxima::sqrt(Expr(x))).find("1") != std::string::npos); // x^(1/2)
     CHECK(drawn(Expr::function("list", {Expr(1), Expr(2)})) == "list(1, 2)");
     CHECK(drawn(-(Expr(x) + 1)) == "-(1 + x)");
 }
@@ -427,7 +427,7 @@ TEST_CASE("a renderer can be held by reference and read afterwards") {
     // way to keep your own object.
     struct Counting {
         int symbols = 0;
-        std::string integer(const mx::Integer &v) { return v.toString(); }
+        std::string integer(const proxima::Integer &v) { return v.toString(); }
         std::string real(double v) { return std::to_string(v); }
         std::string symbol(std::string_view n) {
             ++symbols;
@@ -466,7 +466,7 @@ TEST_CASE("a renderer can be held by reference and read afterwards") {
             }
             return out + ")";
         }
-        std::string relation(mx::RelOp, const std::string &a,
+        std::string relation(proxima::RelOp, const std::string &a,
                              const std::string &b) {
             return a + "=" + b;
         }
@@ -478,14 +478,14 @@ TEST_CASE("a renderer can be held by reference and read afterwards") {
 
     Counting counter;
     const std::string out
-        = mx::render(Expr(x) + Expr(y) + Expr(x), std::ref(counter));
+        = proxima::render(Expr(x) + Expr(y) + Expr(x), std::ref(counter));
     CHECK(out == "x+x+y");
     // Reachable afterwards, which is the whole point of std::ref here.
     CHECK(counter.symbols == 3);
 
     SUBCASE("whereas a renderer passed by value is consumed") {
         Counting owned;
-        static_cast<void>(mx::render(Expr(x) + Expr(y), owned));
+        static_cast<void>(proxima::render(Expr(x) + Expr(y), owned));
         // `owned` was copied into the wrapper; the copy did the counting.
         CHECK(owned.symbols == 0);
     }
@@ -493,7 +493,7 @@ TEST_CASE("a renderer can be held by reference and read afterwards") {
 
 TEST_CASE("the erased renderer is a movable value") {
     struct Trivial {
-        std::string integer(const mx::Integer &v) { return v.toString(); }
+        std::string integer(const proxima::Integer &v) { return v.toString(); }
         std::string real(double) { return "r"; }
         std::string symbol(std::string_view n) { return std::string(n); }
         std::string verbatim(std::string_view) { return "?"; }
@@ -508,27 +508,27 @@ TEST_CASE("the erased renderer is a movable value") {
         std::string call(std::string_view, std::span<const std::string>) {
             return "f";
         }
-        std::string relation(mx::RelOp, const std::string &,
+        std::string relation(proxima::RelOp, const std::string &,
                              const std::string &) {
             return "=";
         }
         std::string group(const std::string &s) { return s; }
     };
 
-    mx::Renderer<std::string> renderer{Trivial{}};
-    CHECK(mx::render(Expr(7), renderer) == "7");
+    proxima::Renderer<std::string> renderer{Trivial{}};
+    CHECK(proxima::render(Expr(7), renderer) == "7");
 
-    mx::Renderer<std::string> moved = std::move(renderer);
-    CHECK(mx::render(Expr(8), moved) == "8");
+    proxima::Renderer<std::string> moved = std::move(renderer);
+    CHECK(proxima::render(Expr(8), moved) == "8");
 
     SUBCASE("and one type holds any renderer") {
         // The point of erasing: these are the same type despite being
         // different renderers.
-        std::vector<mx::Renderer<std::string>> renderers;
+        std::vector<proxima::Renderer<std::string>> renderers;
         renderers.emplace_back(Trivial{});
         renderers.emplace_back(std::move(moved));
         CHECK(renderers.size() == 2);
-        CHECK(mx::render(Expr(9), renderers[0]) == "9");
+        CHECK(proxima::render(Expr(9), renderers[0]) == "9");
     }
 }
 
@@ -543,7 +543,7 @@ constexpr std::string_view kMathClose = "</math>";
 /// toMathML without the <math> wrapper, which every case would otherwise
 /// repeat.
 std::string mathml(const Expr &expr) {
-    const std::string out = mx::toMathML(expr);
+    const std::string out = proxima::toMathML(expr);
     REQUIRE(out.starts_with(kMathOpen));
     REQUIRE(out.ends_with(kMathClose));
     return out.substr(kMathOpen.size(),
@@ -624,13 +624,13 @@ TEST_CASE("MathML") {
     CHECK(mathml(Expr(x) - 1) == "<mrow><mi>x</mi><mo>&#x2212;</mo><mn>1</mn></mrow>");
     CHECK(mathml(2 * Expr(x))
           == "<mrow><mn>2</mn><mo>&#x2062;</mo><mi>x</mi></mrow>");
-    CHECK(mathml(mx::pi()) == "<mi>&#x3C0;</mi>");
+    CHECK(mathml(proxima::pi()) == "<mi>&#x3C0;</mi>");
     CHECK(mathml(le(x, y)) == "<mrow><mi>x</mi><mo>&#x2264;</mo><mi>y</mi></mrow>");
 
     SUBCASE("structure maps onto elements") {
         CHECK(mathml(pow(Expr(x), Expr::rational(1, 3)))
               == "<mroot><mi>x</mi><mn>3</mn></mroot>");
-        CHECK(mathml(mx::sqrt(Expr(1) - pow(Expr(x), 2)))
+        CHECK(mathml(proxima::sqrt(Expr(1) - pow(Expr(x), 2)))
               == "<msqrt><mrow><mn>1</mn><mo>&#x2212;</mo>"
                  "<msup><mi>x</mi><mn>2</mn></msup></mrow></msqrt>");
     }
@@ -657,8 +657,8 @@ TEST_CASE("MathML") {
         CHECK(mathml(Expr(1e-7))
               == "<mrow><mn>1</mn><mo>&#xD7;</mo><msup><mn>10</mn>"
                  "<mrow><mo>&#x2212;</mo><mn>7</mn></mrow></msup></mrow>");
-        CHECK(mx::toTeX(Expr(1e-7)) == "1 \\times 10^{-7}");
-        CHECK(mx::toTeX(Expr(1e300)) == "1 \\times 10^{300}");
+        CHECK(proxima::toTeX(Expr(1e-7)) == "1 \\times 10^{-7}");
+        CHECK(proxima::toTeX(Expr(1e300)) == "1 \\times 10^{300}");
     }
 }
 
@@ -676,19 +676,19 @@ TEST_CASE("MathML output is well formed for every kind of node") {
         Expr(-2.5) * Expr(x),
         Expr(1e300),
         Expr(std::numeric_limits<double>::infinity()),
-        mx::minf(),
-        mx::sin(Expr(x)) / mx::cos(Expr(x)),
+        proxima::minf(),
+        proxima::sin(Expr(x)) / proxima::cos(Expr(x)),
         pow(pow(Expr(x), 2), 3),
         pow(Expr(x) * Expr(y), Expr::rational(1, 3)),
         ne(Expr(x), Expr(0)),
-        Expr::function("list", {Expr(1), Expr(x), mx::sin(Expr(y))}),
+        Expr::function("list", {Expr(1), Expr(x), proxima::sin(Expr(y))}),
         Expr::function("bessel_j", {Expr(0), Expr(x)}),
         Expr::opaque("<script>&"),
-        (mx::sqrt(pow(Expr(b), 2) - 4 * Expr(a) * Expr(c)) - Expr(b))
+        (proxima::sqrt(pow(Expr(b), 2) - 4 * Expr(a) * Expr(c)) - Expr(b))
             / (2 * Expr(a)),
     };
     for (const Expr &expr : corpus) {
-        const std::string out = mx::toMathML(expr);
+        const std::string out = proxima::toMathML(expr);
         CAPTURE(out);
         CHECK(wellFormed(out) == "ok");
     }

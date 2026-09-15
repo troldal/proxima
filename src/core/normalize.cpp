@@ -1,6 +1,6 @@
 #include "core/normalize.hpp"
 
-#include <mx/errors.hpp>
+#include <proxima/errors.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -17,12 +17,12 @@
 // rest are Maxima's business — one canonicaliser, which is the whole reason
 // SymEngine was dropped.
 
-namespace mx::detail {
+namespace proxima::detail {
 namespace {
 
 /// An exact rational accumulator.
 ///
-/// Nothing here checks for overflow, because mx::Integer has none. Before it
+/// Nothing here checks for overflow, because proxima::Integer has none. Before it
 /// was unbounded this was three checked helpers and a failure path that left
 /// the terms unfolded.
 struct Exact {
@@ -134,7 +134,7 @@ bool canonicallyBefore(const Expr &a, const Expr &b) {
 }
 
 /// Folds sorted numeric operands into one. Always succeeds: exact arithmetic
-/// cannot fail now that mx::Integer is unbounded.
+/// cannot fail now that proxima::Integer is unbounded.
 Expr fold(std::span<const Expr> numbers, bool isProduct) {
     // One number is already its own fold, and rebuilding an equal node for it
     // was an allocation on every `x + 1`. The one exception is a lone -0.0 in a
@@ -371,4 +371,4 @@ std::optional<Expr> normalizePower(const Expr &base, const Expr &exponent) {
     return std::nullopt;
 }
 
-} // namespace mx::detail
+} // namespace proxima::detail

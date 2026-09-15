@@ -1,9 +1,9 @@
 #pragma once
 
-#include <mx/expr.hpp>
-#include <mx/kernel.hpp>
-#include <mx/symbol.hpp>
-#include <mx/traverse.hpp> // contains and replace, which need no kernel.
+#include <proxima/expr.hpp>
+#include <proxima/kernel.hpp>
+#include <proxima/symbol.hpp>
+#include <proxima/traverse.hpp> // contains and replace, which need no kernel.
 
 #include <cstddef>
 #include <expected>
@@ -12,7 +12,7 @@
 #include <string_view>
 #include <vector>
 
-namespace mx {
+namespace proxima {
 
 /// The process-wide kernel, started on first use and shut down at exit.
 ///
@@ -21,9 +21,9 @@ namespace mx {
 /// Kernel: starting it on first use is thread-safe, and calls on it take turns.
 ///
 /// Shut down during static destruction, like any function-local static. An
-/// mx::Context still open on it by then — one with static storage duration,
+/// proxima::Context still open on it by then — one with static storage duration,
 /// say — does not call into the destroyed kernel: its operations throw
-/// mx::KernelError, and its destructor does nothing.
+/// proxima::KernelError, and its destructor does nothing.
 Kernel &sharedKernel();
 
 /// Parses Maxima source into an expression.
@@ -37,7 +37,7 @@ std::expected<Expr, Failure> parse(std::string_view source,
 
 // --- Operations with no ordinary way to fail ------------------------------
 //
-// These throw mx::MaximaError if Maxima objects, because there is no sensible
+// These throw proxima::MaximaError if Maxima objects, because there is no sensible
 // mathematical reason for them to.
 
 /// Differentiates `expr` with respect to `wrt`, `order` times.
@@ -60,7 +60,7 @@ Expr simplify(const Expr &expr, Kernel &kernel = sharedKernel());
 
 /// Substitutes `value` for every occurrence of `symbol`, in Maxima, which
 /// evaluates the result: `sin(x)` with x = 0 comes back as 0. For a rewrite
-/// that needs no kernel and does not evaluate, see mx::replace.
+/// that needs no kernel and does not evaluate, see proxima::replace.
 Expr subst(const Expr &expr, const Symbol &symbol, const Expr &value,
            Kernel &kernel = sharedKernel());
 
@@ -140,7 +140,7 @@ solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
 /// A differential equation's general solution, from Maxima's `ode2`, for a
 /// first- or second-order ordinary equation.
 ///
-/// Write derivatives with mx::derivative: `eq(derivative(y, x), y)` is
+/// Write derivatives with proxima::derivative: `eq(derivative(y, x), y)` is
 /// y' = y. The answer is a relation `y = ...` holding Maxima's constants of
 /// integration, `%c` for a first-order equation and `%k1`, `%k2` for a
 /// second-order one. A Failure when ode2 cannot solve it, which Maxima says by
@@ -154,14 +154,14 @@ std::expected<Expr, Failure> ode2(const Expr &equation, const Symbol &dependent,
 /// Maxima's three-valued answer to a predicate.
 enum class Truth { False, True, Unknown };
 
-/// Asks Maxima whether `predicate` holds, under whatever mx::Context
+/// Asks Maxima whether `predicate` holds, under whatever proxima::Context
 /// assumptions are in force: with `a > 0` assumed, `is(gt(a, 0))` is True and
 /// `is(lt(a, 0))` False; with nothing assumed, both are Unknown.
 ///
-/// Throws mx::MaximaError if Maxima answers anything but a truth value.
+/// Throws proxima::MaximaError if Maxima answers anything but a truth value.
 Truth is(const Expr &predicate, Kernel &kernel = sharedKernel());
 
-// --- More rearrangement: these throw mx::MaximaError if Maxima objects ------
+// --- More rearrangement: these throw proxima::MaximaError if Maxima objects ------
 
 /// The Taylor expansion of `expr` in `wrt` about `at`, up to `wrt^order`, as
 /// an ordinary expression: `taylor(sin(x), x, 0, 5)` is x - x^3/6 + x^5/120.
@@ -183,7 +183,7 @@ Expr partfrac(const Expr &expr, const Symbol &wrt, Kernel &kernel = sharedKernel
 
 /// Maxima's `float`: every number and numeric constant in `expr` as a
 /// double, symbols left alone — `%pi + x` is 3.141592653589793 + x. For
-/// evaluation with no kernel, see mx::evalNumeric. (Not `float`, which C++
+/// evaluation with no kernel, see proxima::evalNumeric. (Not `float`, which C++
 /// reserves.)
 Expr toFloat(const Expr &expr, Kernel &kernel = sharedKernel());
 
@@ -196,7 +196,7 @@ Expr coeff(const Expr &expr, const Expr &term, int power = 1,
 // --- Sums and products -------------------------------------------------------
 
 /// The sum of `term` for `index` from `from` to `to`, in closed form:
-/// `sum(k, k, 1, n)` is n*(n + 1)/2, and `to` may be mx::inf().
+/// `sum(k, k, 1, n)` is n*(n + 1)/2, and `to` may be proxima::inf().
 ///
 /// A Failure when Maxima finds no closed form, which it says by handing back
 /// the sum unevaluated. Maxima's `simpsum` is on for this evaluation only.
@@ -214,7 +214,7 @@ std::expected<Expr, Failure> product(const Expr &term, const Symbol &index,
 
 /// How many distinct real roots the univariate polynomial has in the
 /// half-open interval (low, high] — Sturm sequences, so the count is exact.
-/// Throws mx::MaximaError for anything but a univariate polynomial with
+/// Throws proxima::MaximaError for anything but a univariate polynomial with
 /// rational coefficients.
 std::size_t nroots(const Expr &polynomial, const Expr &low = Expr::symbol("minf"),
                    const Expr &high = Expr::symbol("inf"),
@@ -223,7 +223,7 @@ std::size_t nroots(const Expr &polynomial, const Expr &low = Expr::symbol("minf"
 /// The distinct real roots of a univariate polynomial, each once however
 /// repeated, as exact rationals within Maxima's `rootsepsilon` (1e-7) of the
 /// root — or exactly, when the root is rational. In the order Maxima gives
-/// them, which is not sorted. Throws mx::MaximaError for anything but a
+/// them, which is not sorted. Throws proxima::MaximaError for anything but a
 /// univariate polynomial with rational coefficients.
 std::vector<Expr> realroots(const Expr &polynomial, Kernel &kernel = sharedKernel());
 
@@ -236,4 +236,4 @@ std::expected<double, Failure> findRoot(const Expr &expr, const Symbol &wrt,
                                         double low, double high,
                                         Kernel &kernel = sharedKernel());
 
-} // namespace mx
+} // namespace proxima

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <mx/config.hpp>
-#include <mx/expr.hpp>
-#include <mx/reply.hpp>
+#include <proxima/config.hpp>
+#include <proxima/expr.hpp>
+#include <proxima/reply.hpp>
 
 #include <chrono>
 #include <cstddef>
@@ -12,7 +12,7 @@
 #include <string>
 #include <string_view>
 
-namespace mx {
+namespace proxima {
 
 namespace detail {
 class MaximaSession;
@@ -23,7 +23,7 @@ class MaximaSession;
 /// The session is started on construction and shut down on destruction, so a
 /// single Kernel serves many queries without paying process startup each time.
 ///
-/// The operations in mx/ops.hpp are the intended way in; this is the layer
+/// The operations in proxima/ops.hpp are the intended way in; this is the layer
 /// beneath them. Each entry point comes in two forms. One takes an Expr, which
 /// travels to Maxima as structure — its internal s-expression — and is the
 /// form the operations use. The other takes Maxima source text, for anything
@@ -46,7 +46,7 @@ public:
 
     /// Moves the Maxima session. The kernel moved from has none left: it can
     /// be destroyed or assigned to, and any other call on it throws
-    /// mx::KernelError. So does an mx::Context still pointing at it.
+    /// proxima::KernelError. So does an proxima::Context still pointing at it.
     Kernel(Kernel &&) noexcept;
     Kernel &operator=(Kernel &&) noexcept;
 
@@ -61,7 +61,7 @@ public:
     /// includes text Maxima cannot even parse: it is read inside the error
     /// trap, so `eval("(1")` fails with a message rather than waiting out
     /// Config::timeout. Only infrastructure failures throw: see
-    /// mx::KernelError.
+    /// proxima::KernelError.
     ///
     /// **Discards the reply cache.** This entry point can evaluate anything,
     /// including statements that change Maxima's state — an assignment, a new
@@ -87,7 +87,7 @@ public:
     ///
     /// Cached answers are still answers to *this* kernel's current state. The
     /// cache is discarded whenever that state might have changed: any eval(),
-    /// any assumption added or dropped through mx::Context.
+    /// any assumption added or dropped through proxima::Context.
     Reply evalPure(std::string_view expression);
     Reply evalPure(const Expr &form);
 
@@ -100,7 +100,7 @@ public:
     /// Config::cacheDirectory usable — a persistent entry is keyed on that
     /// state, so an unrecorded change would make the key a lie.
     ///
-    /// mx::Context is the intended caller; there is rarely a reason to use this
+    /// proxima::Context is the intended caller; there is rarely a reason to use this
     /// directly. Use eval() for anything else, which assumes the worst.
     Reply evalTracked(std::string_view statement);
     Reply evalTracked(const Expr &form);
@@ -112,7 +112,7 @@ public:
     /// A Maxima error is the Failure, carrying Maxima's message. Everything
     /// eval's notes say about the reply cache and Config::cacheDirectory holds
     /// here too; for a question known to change nothing, read an evalPure
-    /// reply with mx::toExpr instead, which keeps both.
+    /// reply with proxima::toExpr instead, which keeps both.
     std::expected<Expr, Failure> evalExpr(std::string_view expression);
     std::expected<Expr, Failure> evalExpr(const Expr &form);
 
@@ -139,7 +139,7 @@ public:
     /// Maxima is a separate process holding mutable state — assumptions,
     /// declarations, bindings — that a restart would otherwise silently lose,
     /// making later results quietly wrong rather than obviously broken. Scoped
-    /// state such as mx::Context registers itself here; there is rarely a
+    /// state such as proxima::Context registers itself here; there is rarely a
     /// reason to call this directly.
     std::uint64_t remember(std::string_view statement);
     std::uint64_t remember(const Expr &form);
@@ -163,7 +163,7 @@ public:
     bool persistenceActive() const;
 
     /// Replaces Maxima with a fresh process and replays what this kernel
-    /// remembers — every mx::Context's assumptions and declarations — so the
+    /// remembers — every proxima::Context's assumptions and declarations — so the
     /// session is exactly what that record describes.
     ///
     /// Anything else is lost, which is the point: bindings and definitions made
@@ -188,11 +188,11 @@ private:
 };
 
 /// A reply read into an expression: its value when `ok`, and a Failure
-/// carrying the reason when not. How every operation in mx/ops.hpp reads its
+/// carrying the reason when not. How every operation in proxima/ops.hpp reads its
 /// reply, and how to read one from evalPure or evalTracked.
 ///
-/// Throws mx::ParseError if the value is not a Maxima term. No reply from a
+/// Throws proxima::ParseError if the value is not a Maxima term. No reply from a
 /// kernel should be one: it would mean the protocol itself had failed.
 std::expected<Expr, Failure> toExpr(const Reply &reply);
 
-} // namespace mx
+} // namespace proxima

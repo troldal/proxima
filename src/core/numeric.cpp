@@ -1,6 +1,6 @@
-#include <mx/numeric.hpp>
+#include <proxima/numeric.hpp>
 
-#include <mx/errors.hpp>
+#include <proxima/errors.hpp>
 
 #include <algorithm>
 #include <array>
@@ -12,7 +12,7 @@
 #include <string_view>
 #include <utility>
 
-namespace mx {
+namespace proxima {
 namespace {
 
 using detail::Instruction;
@@ -573,4 +573,4 @@ std::function<double(double)> asFunction(const Expr &expr, const Symbol &variabl
     };
 }
 
-} // namespace mx
+} // namespace proxima

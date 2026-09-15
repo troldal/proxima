@@ -1,13 +1,13 @@
 #pragma once
 
-#include <mx/expr.hpp>
+#include <proxima/expr.hpp>
 
 #include <format>
 #include <functional>
 #include <iosfwd>
 #include <string>
 
-namespace mx {
+namespace proxima {
 
 /// A named unknown.
 ///
@@ -47,13 +47,13 @@ inline Symbol operator""_sym(const char *name, std::size_t length) {
 
 } // namespace literals
 
-} // namespace mx
+} // namespace proxima
 
 /// Formats as the expression it is, with the same notations: `{:tex}` writes
 /// `%pi` as `\pi`.
 template <>
-struct std::formatter<mx::Symbol, char> : std::formatter<mx::Expr, char> {
-    auto format(const mx::Symbol &symbol, std::format_context &context) const {
-        return std::formatter<mx::Expr, char>::format(symbol.expr(), context);
+struct std::formatter<proxima::Symbol, char> : std::formatter<proxima::Expr, char> {
+    auto format(const proxima::Symbol &symbol, std::format_context &context) const {
+        return std::formatter<proxima::Expr, char>::format(symbol.expr(), context);
     }
 };

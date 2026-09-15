@@ -1,14 +1,14 @@
-#include <mx/kernel.hpp>
+#include <proxima/kernel.hpp>
 
 #include "kernel/session.hpp"
 #include "wire/from_maxima.hpp"
 #include "wire/sexpr.hpp"
 #include "wire/to_maxima.hpp"
 
-#include <mx/errors.hpp>
-#include <mx/expr.hpp>
+#include <proxima/errors.hpp>
+#include <proxima/expr.hpp>
 
-namespace mx {
+namespace proxima {
 
 // The special members are defined here rather than in the header because
 // detail::MaximaSession is incomplete at the point of declaration.
@@ -107,4 +107,4 @@ void Kernel::restart() {
     session().restart();
 }
 
-} // namespace mx
+} // namespace proxima

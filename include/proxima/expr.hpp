@@ -1,6 +1,6 @@
 #pragma once
 
-#include <mx/integer.hpp>
+#include <proxima/integer.hpp>
 
 #include <compare>
 #include <concepts>
@@ -14,20 +14,20 @@
 #include <string_view>
 #include <vector>
 
-namespace mx {
+namespace proxima {
 
 class Expr;
 class Symbol;
 
 /// An Expr, or a Symbol, which converts to one.
 ///
-/// What mx::pow insists on for at least one argument, and the builders in
-/// <mx/functions.hpp> for theirs. They share names with <cmath>, and an
+/// What proxima::pow insists on for at least one argument, and the builders in
+/// <proxima/functions.hpp> for theirs. They share names with <cmath>, and an
 /// argument of plain `const Expr &` would accept a plain number too, through
-/// Expr's implicit constructor — so under `using namespace mx`, `pow(2, 3)` or
-/// `abs(-3)` would find an mx candidate: losing overload resolution today, and
+/// Expr's implicit constructor — so under `using namespace proxima`, `pow(2, 3)` or
+/// `abs(-3)` would find a Proxima candidate: losing overload resolution today, and
 /// an ambiguity the day someone adds an overload. With this constraint, a call
-/// on plain numbers alone has no mx candidate at all.
+/// on plain numbers alone has no Proxima candidate at all.
 template <typename T>
 concept ExprArgument = std::same_as<T, Expr> || std::same_as<T, Symbol>;
 
@@ -40,14 +40,14 @@ struct Node;
 Expr makeExpr(std::shared_ptr<const Node> node);
 
 /// Whether two expressions share one representation. Implies ==, but not the
-/// other way round, which is why mx::transform asks this rather than == to
+/// other way round, which is why proxima::transform asks this rather than == to
 /// tell an operand came back untouched: 0.0 and -0.0 are equal, and a rewrite
 /// from one to the other must not be mistaken for no change.
 bool sameRepresentation(const Expr &lhs, const Expr &rhs) noexcept;
 } // namespace detail
 
 enum class Kind {
-    Integer,  ///< An exact whole number that fits in mx::Integer.
+    Integer,  ///< An exact whole number that fits in proxima::Integer.
     Rational, ///< An exact fraction, normalised, denominator positive.
     Real,     ///< An inexact double.
     Symbol,   ///< A named unknown: x, y, %pi.
@@ -95,7 +95,7 @@ public:
     Expr();
 
     /// Implicit from any integral type that is a number, so `x + 1` works. See
-    /// mx::IntegralNumber for which those are.
+    /// proxima::IntegralNumber for which those are.
     template <typename T>
         requires IntegralNumber<T>
     Expr(T value) : Expr(makeInteger(static_cast<Integer>(value))) {} // NOLINT
@@ -129,7 +129,7 @@ public:
     /// function application, lists, strings. Statements — assignment,
     /// definition, quoting, non-commutative multiplication — are not here,
     /// because this parses expressions rather than programs. For those, and for
-    /// anything else exotic, mx::parse hands the text to Maxima's own parser
+    /// anything else exotic, proxima::parse hands the text to Maxima's own parser
     /// and so cannot drift from it; the price is needing a running kernel.
     ///
     /// `**` is accepted as `^`, as Maxima accepts it. A literal too large for a
@@ -141,21 +141,21 @@ public:
     ///
     /// Exactness is preserved — `1/3` is a Rational, not 0.333…
     ///
-    /// Integers of any size are read exactly — `mx::Integer` is unbounded —
+    /// Integers of any size are read exactly — `proxima::Integer` is unbounded —
     /// so a factorial pasted in as text is a number rather than a blob.
     ///
     /// **This parses; it does not evaluate.** `Expr::parse("5!")` is
     /// `factorial(5)` and `Expr::parse("2^3")` is `2^3`, normalised but not
-    /// computed. mx::parse differs here as well as in grammar: it hands the
+    /// computed. proxima::parse differs here as well as in grammar: it hands the
     /// text to Maxima, which evaluates as it reads, and answers 120 and 8.
     ///
-    /// Throws mx::ParseError, naming the offset, for anything malformed.
+    /// Throws proxima::ParseError, naming the offset, for anything malformed.
     static Expr parse(std::string_view source);
 
     static Expr integer(Integer value);
 
     /// An exact fraction, reduced, with the sign carried by the numerator.
-    /// A whole result collapses to Kind::Integer. Throws mx::Error if
+    /// A whole result collapses to Kind::Integer. Throws proxima::Error if
     /// `denominator` is zero.
     static Expr rational(Integer numerator, Integer denominator);
 
@@ -165,12 +165,12 @@ public:
     /// Maxima, which has no floating-point infinity. So it prints, and reads
     /// back, as that symbol, and does not fold: `Expr(inf) + 1.0` stays a sum.
     ///
-    /// NaN is refused: throws mx::Error. It has no meaning in Maxima and no
+    /// NaN is refused: throws proxima::Error. It has no meaning in Maxima and no
     /// spelling that reads back, and because it is not equal to itself it has
     /// no place in the canonical order the normaliser sorts operands by.
     ///
     /// Arithmetic on finite numbers that would overflow to infinity throws
-    /// mx::Error too, as Maxima reports a floating-point overflow:
+    /// proxima::Error too, as Maxima reports a floating-point overflow:
     /// `Expr(1e308) * Expr(10.0)`, or an integer of a few hundred digits times
     /// 1.0.
     static Expr real(double value);
@@ -204,7 +204,7 @@ public:
     /// True for a number that is negative. False for every non-number.
     bool isNegativeNumber() const;
 
-    /// Accessors. Each throws mx::Error if the expression is not of the kind it
+    /// Accessors. Each throws proxima::Error if the expression is not of the kind it
     /// asks for, rather than returning something meaningless.
     Integer integerValue() const;
     Integer numerator() const;
@@ -278,7 +278,7 @@ Expr gt(Expr lhs, Expr rhs);
 Expr ge(Expr lhs, Expr rhs);
 
 /// The two sides of a relation: `lhs(le(x + 1, 3))` is `x + 1`. Local, and
-/// stricter than Maxima's: anything but a relation throws mx::Error, where
+/// stricter than Maxima's: anything but a relation throws proxima::Error, where
 /// Maxima's lhs would hand the expression back unchanged and hide the mistake.
 Expr lhs(const Expr &relation);
 Expr rhs(const Expr &relation);
@@ -334,11 +334,11 @@ std::string notate(const Expr &expr, Notation notation);
 
 } // namespace detail
 
-} // namespace mx
+} // namespace proxima
 
 template <>
-struct std::hash<mx::Expr> {
-    std::size_t operator()(const mx::Expr &value) const noexcept {
+struct std::hash<proxima::Expr> {
+    std::size_t operator()(const proxima::Expr &value) const noexcept {
         return value.hash();
     }
 };
@@ -349,7 +349,7 @@ struct std::hash<mx::Expr> {
 /// notation by a colon — `{:>30}`, `{:tex:*<40}`. An unknown notation is a
 /// std::format_error, which for a constant format string means a compile error.
 template <>
-struct std::formatter<mx::Expr, char> {
+struct std::formatter<proxima::Expr, char> {
     constexpr auto parse(std::format_parse_context &context) {
         auto it = context.begin();
         const auto end = context.end();
@@ -365,34 +365,34 @@ struct std::formatter<mx::Expr, char> {
         };
 
         if (startsWith("tex")) {
-            notation_ = mx::detail::Notation::TeX;
+            notation_ = proxima::detail::Notation::TeX;
             it += 3;
         } else if (startsWith("mathml")) {
-            notation_ = mx::detail::Notation::MathML;
+            notation_ = proxima::detail::Notation::MathML;
             it += 6;
         }
-        if (notation_ != mx::detail::Notation::Infix && it != end && *it == ':') {
+        if (notation_ != proxima::detail::Notation::Infix && it != end && *it == ':') {
             ++it;
         }
         context.advance_to(it);
         return text_.parse(context);
     }
 
-    auto format(const mx::Expr &expr, std::format_context &context) const {
-        const std::string written = mx::detail::notate(expr, notation_);
+    auto format(const proxima::Expr &expr, std::format_context &context) const {
+        const std::string written = proxima::detail::notate(expr, notation_);
         return text_.format(std::string_view(written), context);
     }
 
 private:
-    mx::detail::Notation notation_ = mx::detail::Notation::Infix;
+    proxima::detail::Notation notation_ = proxima::detail::Notation::Infix;
     std::formatter<std::string_view, char> text_;
 };
 
-/// `std::format("{}", kind)` is mx::kindName(kind), with the usual string
+/// `std::format("{}", kind)` is proxima::kindName(kind), with the usual string
 /// options: `{:>8}`.
 template <>
-struct std::formatter<mx::Kind, char> : std::formatter<std::string_view, char> {
-    auto format(mx::Kind kind, std::format_context &context) const {
-        return std::formatter<std::string_view, char>::format(mx::kindName(kind), context);
+struct std::formatter<proxima::Kind, char> : std::formatter<std::string_view, char> {
+    auto format(proxima::Kind kind, std::format_context &context) const {
+        return std::formatter<std::string_view, char>::format(proxima::kindName(kind), context);
     }
 };

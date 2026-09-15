@@ -1,6 +1,6 @@
 #include "kernel/cache.hpp"
 
-namespace mx::detail {
+namespace proxima::detail {
 
 const Reply *ReplyCache::find(const std::string &key) {
     const auto found = index_.find(key);
@@ -38,4 +38,4 @@ void ReplyCache::clear() {
     index_.clear();
 }
 
-} // namespace mx::detail
+} // namespace proxima::detail

@@ -5,7 +5,7 @@
 
 #include "wire/sexpr.hpp"
 
-#include <mx/errors.hpp>
+#include <proxima/errors.hpp>
 
 #include <cstdint>
 #include <fstream>
@@ -14,8 +14,8 @@
 #include <string>
 #include <vector>
 
-using mx::detail::parseSExpr;
-using mx::detail::SExpr;
+using proxima::detail::parseSExpr;
+using proxima::detail::SExpr;
 
 TEST_CASE("atoms") {
     SUBCASE("integers") {
@@ -134,15 +134,15 @@ TEST_CASE("bar-quoted symbols keep their name without the bars") {
 }
 
 TEST_CASE("malformed input is rejected rather than half-read") {
-    CHECK_THROWS_AS(parseSExpr("(1 2"), mx::ParseError);
-    CHECK_THROWS_AS(parseSExpr("1 2)"), mx::ParseError);
-    CHECK_THROWS_AS(parseSExpr(""), mx::ParseError);
-    CHECK_THROWS_AS(parseSExpr("   "), mx::ParseError);
-    CHECK_THROWS_AS(parseSExpr(R"("unterminated)"), mx::ParseError);
-    CHECK_THROWS_AS(parseSExpr("|unterminated"), mx::ParseError);
+    CHECK_THROWS_AS(parseSExpr("(1 2"), proxima::ParseError);
+    CHECK_THROWS_AS(parseSExpr("1 2)"), proxima::ParseError);
+    CHECK_THROWS_AS(parseSExpr(""), proxima::ParseError);
+    CHECK_THROWS_AS(parseSExpr("   "), proxima::ParseError);
+    CHECK_THROWS_AS(parseSExpr(R"("unterminated)"), proxima::ParseError);
+    CHECK_THROWS_AS(parseSExpr("|unterminated"), proxima::ParseError);
     // Two expressions where one was promised means the frame was mis-split.
-    CHECK_THROWS_AS(parseSExpr("1 2"), mx::ParseError);
-    CHECK_THROWS_AS(parseSExpr("(1) (2)"), mx::ParseError);
+    CHECK_THROWS_AS(parseSExpr("1 2"), proxima::ParseError);
+    CHECK_THROWS_AS(parseSExpr("(1) (2)"), proxima::ParseError);
 }
 
 TEST_CASE("a ';' in a reply is refused, rather than read for ever") {
@@ -151,16 +151,16 @@ TEST_CASE("a ';' in a reply is refused, rather than read for ever") {
     // Maxima never puts a comment in a reply.
     CHECK_THROWS_AS(static_cast<void>(
                         parseSExpr("((BIGFLOAT SIMP 56) 450359;96273704960 1)")),
-                    mx::ParseError);
-    CHECK_THROWS_AS(static_cast<void>(parseSExpr(";")), mx::ParseError);
-    CHECK_THROWS_AS(static_cast<void>(parseSExpr("(a ; b)")), mx::ParseError);
+                    proxima::ParseError);
+    CHECK_THROWS_AS(static_cast<void>(parseSExpr(";")), proxima::ParseError);
+    CHECK_THROWS_AS(static_cast<void>(parseSExpr("(a ; b)")), proxima::ParseError);
 }
 
 TEST_CASE("dotted pairs are rejected explicitly") {
     // Maxima's term representation is proper lists throughout. Treating the dot
     // as an ordinary symbol would corrupt the tree instead of reporting that
     // something unmodelled arrived.
-    CHECK_THROWS_AS(parseSExpr("(a . b)"), mx::ParseError);
+    CHECK_THROWS_AS(parseSExpr("(a . b)"), proxima::ParseError);
 }
 
 TEST_CASE("a reply truncated by Lisp's print limits is refused, not misread") {
@@ -168,8 +168,8 @@ TEST_CASE("a reply truncated by Lisp's print limits is refused, not misread") {
     // *print-level* it replaces a deep one with `#`. Both used to read as
     // ordinary symbols, turning a truncated reply into a plausible, wrong
     // expression.
-    CHECK_THROWS_AS(parseSExpr("(1 2 ...)"), mx::ParseError);
-    CHECK_THROWS_AS(parseSExpr("((MPLUS SIMP) $X #)"), mx::ParseError);
+    CHECK_THROWS_AS(parseSExpr("(1 2 ...)"), proxima::ParseError);
+    CHECK_THROWS_AS(parseSExpr("((MPLUS SIMP) $X #)"), proxima::ParseError);
 
     SUBCASE("while a symbol really called that is escaped, and still reads") {
         const SExpr quoted = parseSExpr("(A |...| |#|)");
@@ -191,12 +191,12 @@ TEST_CASE("a reply truncated by Lisp's print limits is refused, not misread") {
 
 TEST_CASE("reading past the end of a list is an error, not undefined") {
     const SExpr value = parseSExpr("(1 2)");
-    CHECK_THROWS_AS(value.at(2), mx::ParseError);
+    CHECK_THROWS_AS(value.at(2), proxima::ParseError);
 }
 
 TEST_CASE("deep nesting is bounded rather than overflowing the stack") {
-    const std::string tooDeep(mx::detail::kMaxSExprDepth + 10, '(');
-    CHECK_THROWS_AS(parseSExpr(tooDeep), mx::ParseError);
+    const std::string tooDeep(proxima::detail::kMaxSExprDepth + 10, '(');
+    CHECK_THROWS_AS(parseSExpr(tooDeep), proxima::ParseError);
 
     // Comfortably deep input still parses.
     const std::size_t depth = 200;
@@ -230,7 +230,7 @@ TEST_CASE("every recorded Maxima reply parses") {
     // tests/golden/record.sh. The point is that the reader is checked against
     // what Maxima actually emits rather than what it was imagined to emit —
     // and that this check needs no Maxima installed.
-    std::ifstream golden(std::string(MX_GOLDEN_DIR) + "/internal_forms.tsv");
+    std::ifstream golden(std::string(PROXIMA_GOLDEN_DIR) + "/internal_forms.tsv");
     REQUIRE_MESSAGE(golden.is_open(), "cannot open the golden transcript file");
 
     int cases = 0;

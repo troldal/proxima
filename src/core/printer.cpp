@@ -1,5 +1,5 @@
-#include <mx/expr.hpp>
-#include <mx/render.hpp>
+#include <proxima/expr.hpp>
+#include <proxima/render.hpp>
 
 #include <charconv>
 #include <span>
@@ -9,7 +9,7 @@
 
 // Expr::str(), as a renderer like any other.
 //
-// This file is the proof that mx/render.hpp is sufficient: the library's own
+// This file is the proof that proxima/render.hpp is sufficient: the library's own
 // printer is an ordinary user of it, with no privileged access, and it fits in
 // a plain struct that inherits nothing. Everything that used to be here —
 // precedence, when to parenthesise, hoisting a minus out of a term, rebuilding
@@ -22,7 +22,7 @@
 // the internal s-expression — so nothing about the protocol depends on what
 // this emits.
 
-namespace mx {
+namespace proxima {
 namespace {
 
 std::string renderReal(double value) {
@@ -123,4 +123,4 @@ std::string Expr::str() const {
     return render(*this, InfixRenderer{});
 }
 
-} // namespace mx
+} // namespace proxima

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <mx/expr.hpp>
+#include <proxima/expr.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-namespace mx {
+namespace proxima {
 
 /// How tightly a rendered construct binds, and how tightly a child must bind
 /// to avoid being grouped. Ordinary precedence, with two extra rungs: `Atom`
@@ -235,7 +235,7 @@ namespace detail {
 ///
 /// In a public header because the walk below is a template on the renderer's
 /// output type and so has to be visible — the same reason detail::Instruction
-/// is in mx/numeric.hpp. Nothing outside src/core builds one.
+/// is in proxima/numeric.hpp. Nothing outside src/core builds one.
 enum class DisplayKind {
     Integer,
     Real,
@@ -375,7 +375,7 @@ inline constexpr std::size_t kRendererStorage = 6 * sizeof(void *);
 /// state afterwards:
 ///
 ///     TeXRenderer tex;
-///     const std::string out = mx::render(expr, std::ref(tex));
+///     const std::string out = proxima::render(expr, std::ref(tex));
 ///     for (const std::string &package : tex.packagesUsed()) { ... }
 template <typename T>
 class Renderer {
@@ -752,7 +752,7 @@ T render(const Expr &expr, Renderer<T> &renderer) {
 }
 
 /// Renders `expr` with anything that satisfies RendererFor, deducing the
-/// output type from the renderer itself: `mx::render(e, TeX{})`.
+/// output type from the renderer itself: `proxima::render(e, TeX{})`.
 template <typename R, typename T = RenderResult<std::remove_cvref_t<R>>>
     requires(!std::same_as<std::remove_cvref_t<R>, Renderer<T>>)
 T render(const Expr &expr, R &&renderer) {
@@ -760,4 +760,4 @@ T render(const Expr &expr, R &&renderer) {
     return render(expr, erased);
 }
 
-} // namespace mx
+} // namespace proxima

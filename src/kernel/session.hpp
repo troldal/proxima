@@ -10,8 +10,8 @@
 #include "transport/itransport.hpp"
 #include "transport/process_env.hpp"
 
-#include <mx/config.hpp>
-#include <mx/reply.hpp>
+#include <proxima/config.hpp>
+#include <proxima/reply.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -23,7 +23,7 @@
 #include <utility>
 #include <vector>
 
-namespace mx::detail {
+namespace proxima::detail {
 
 /// Drives a persistent Maxima session.
 ///
@@ -169,7 +169,7 @@ public:
     /// then remember — another thread's evalPure can run between the two,
     /// compute under Maxima's new state, and file its answer under the
     /// journal's old one, where a persistent cache keeps it beyond this
-    /// process. mx::Context makes every change this way.
+    /// process. proxima::Context makes every change this way.
     void converseAtomically(const std::function<void(Conversation &)> &steps);
 
     /// Discards every cached reply.
@@ -189,7 +189,7 @@ public:
     /// The kernel is a separate process holding mutable state — assumptions,
     /// declarations, bindings — that a restart would otherwise silently lose,
     /// leaving later results quietly wrong rather than obviously broken. Scoped
-    /// state such as mx::Context registers itself here.
+    /// state such as proxima::Context registers itself here.
     std::uint64_t remember(Payload payload);
 
     /// Stops replaying the statement `handle` names.
@@ -327,4 +327,4 @@ private:
     bool recovering_ = false;
 };
 
-} // namespace mx::detail
+} // namespace proxima::detail

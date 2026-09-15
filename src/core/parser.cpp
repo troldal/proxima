@@ -1,5 +1,5 @@
-#include <mx/errors.hpp>
-#include <mx/expr.hpp>
+#include <proxima/errors.hpp>
+#include <proxima/expr.hpp>
 
 #include <charconv>
 #include <cstdint>
@@ -18,7 +18,7 @@
 // application, lists. Statements — assignment, definition, quoting,
 // non-commutative multiplication, blocks — are not here, because this parses
 // expressions rather than programs. Anything beyond the subset goes to
-// mx::parse, which hands the text to Maxima's own parser and so cannot drift
+// proxima::parse, which hands the text to Maxima's own parser and so cannot drift
 // from it.
 //
 // Precedences are Maxima's, which matters for the two that surprise people:
@@ -30,7 +30,7 @@
 // `factorial(double_factorial(x))`, and only `x! !`, with a space, is a
 // factorial taken twice.
 
-namespace mx {
+namespace proxima {
 namespace {
 
 enum Precedence {
@@ -478,7 +478,7 @@ private:
 
     static Expr number(const Token &token) {
         if (token.isInteger) {
-            // Any size: mx::Integer is unbounded, so a literal factorial reads
+            // Any size: proxima::Integer is unbounded, so a literal factorial reads
             // as a number rather than as opaque text.
             if (auto value = Integer::parse(token.text)) {
                 return Expr::integer(std::move(*value));
@@ -515,4 +515,4 @@ Expr Expr::parse(std::string_view source) {
     return Parser(source).parse();
 }
 
-} // namespace mx
+} // namespace proxima

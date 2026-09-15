@@ -21,7 +21,7 @@ about dependencies in general. A second algebra engine would canonicalise
 differently from Maxima, and a third-party infix parser would have to be taught
 Maxima's precedence and then kept in step with it. Neither objection applies to
 a library that does no algebra and decides no form, which is why
-Boost.Multiprecision backs `mx::Integer` — see *Unbounded integers* below. An
+Boost.Multiprecision backs `proxima::Integer` — see *Unbounded integers* below. An
 earlier draft of this document read these two constraints as a blanket ban on
 dependencies; that was a misreading, and it cost a few hundred lines of
 hand-written bignum arithmetic.
@@ -31,7 +31,7 @@ hand-written bignum arithmetic.
 ## Architecture
 
 ```
- Layer 5  Public API          mx::Expr, mx::Symbol, mx::Context
+ Layer 5  Public API          proxima::Expr, proxima::Symbol, proxima::Context
           value semantics, operators, free functions. No <windows.h>,
           no Maxima types in these headers.
               |
@@ -114,7 +114,7 @@ latch onto the wrong `sbcl.exe`.
 ## Target layout
 
 ```
-include/mx/          expr.hpp  symbol.hpp  ops.hpp  context.hpp
+include/proxima/          expr.hpp  symbol.hpp  ops.hpp  context.hpp
                      config.hpp  errors.hpp  numeric.hpp
 src/core/            node.cpp  normalize.cpp  printer.cpp  eval.cpp
 src/wire/            sexpr.hpp/.cpp        (generic s-expr tree + reader)
@@ -126,7 +126,8 @@ examples/demo.cpp
 tests/
 ```
 
-Namespace `mx`, library target `maxima_cpp`. Rename to taste.
+Namespace `proxima`, library target `proxima`. (They were `mx` and
+`maxima_cpp` until the project was renamed Proxima.)
 
 ---
 
@@ -154,10 +155,10 @@ becomes "start a session, evaluate a few statements, print the raw text".
 
 Create the layout above. `main.cpp` becomes `examples/demo.cpp`. Move
 `MaximaSession` verbatim into `src/kernel/kernel.cpp` with an internal header.
-Add a `maxima_cpp` library target that the demo links. Public surface for now:
+Add a `proxima` library target that the demo links. Public surface for now:
 
 ```cpp
-namespace mx { class Kernel { public: std::string evalRaw(std::string_view); }; }
+namespace proxima { class Kernel { public: std::string evalRaw(std::string_view); }; }
 ```
 
 - *Compiles:* yes, behaviour unchanged.
@@ -281,8 +282,8 @@ prompts, or a stale frame, and all of it is discarded. The handshake is now a
 framed probe — reading until *its* frame arrives is what synchronises the
 stream.
 
-`mx::Kernel::evalRaw(statement)` becomes `eval(expression)` returning
-`mx::Reply { ok, value, reason }`. Note the argument change: an expression with
+`proxima::Kernel::evalRaw(statement)` becomes `eval(expression)` returning
+`proxima::Reply { ok, value, reason }`. Note the argument change: an expression with
 no terminator, since it is substituted into a wrapper that supplies its own.
 
 - *Compiles:* yes.
@@ -317,7 +318,7 @@ tokeniser and a stack-based reader. Pure, no I/O, no Maxima knowledge.
 **Deviation from the original sketch.** The plan said `Kernel` would gain
 `SExpr eval(...)`. It did not: `SExpr` stays internal, in `src/wire/`, and the
 public API is unchanged. Exposing it would publish a type that steps 9 and 11
-then retract once `mx::Expr` arrives — a breaking change for no gain, since
+then retract once `proxima::Expr` arrives — a breaking change for no gain, since
 `Expr`'s `Opaque` node already covers the escape-hatch case `SExpr` would have
 served. The reader is exercised instead by tests on three fronts: string
 literals, the recorded golden file, and live Maxima replies.
@@ -361,10 +362,10 @@ multiprecision dependency. A value that does not fit becomes an `Opaque` node
 carrying its digits: still exact, still printable, still round-trips through
 Maxima, just not open to arithmetic on this side. `30!` is the ordinary case,
 and an integration test confirms it satisfies `is(<printed> = 30!)` in Maxima.
-Widening later means changing the `mx::Integer` alias and the two places that
+Widening later means changing the `proxima::Integer` alias and the two places that
 check for overflow.
 
-> **Superseded.** `mx::Integer` is an unbounded integer over
+> **Superseded.** `proxima::Integer` is an unbounded integer over
 > Boost.Multiprecision; there is no `Opaque` fallback for numbers any more. See
 > *Unbounded integers*. The estimate in the last sentence was about right.
 
@@ -492,7 +493,7 @@ internal representation uses (`x + 1` arrives as `((MPLUS SIMP) 1 $X)`), so
 normalisation is a no-op on anything mapped back from Maxima rather than a
 reshuffle that obscures diffs.
 
-**Folding refuses to wrap.** Exact arithmetic that would overflow `mx::Integer`
+**Folding refuses to wrap.** Exact arithmetic that would overflow `proxima::Integer`
 is abandoned and the terms stay unfolded — correct, if less tidy, and far better
 than a silently wrong number. The accumulator reduces after every step, which is
 what keeps a long sum of fractions from overflowing on the denominators alone.
@@ -519,7 +520,7 @@ display-only concession — a *negative* leading constant is moved to the end, s
 
 ### Step 11. Operations and shared kernel
 
-`include/mx/ops.hpp` and `include/mx/functions.hpp`. A lazily-started
+`include/proxima/ops.hpp` and `include/proxima/functions.hpp`. A lazily-started
 `sharedKernel()` is the default last argument of every operation, so the common
 case needs no ceremony and an explicit kernel is still available.
 
@@ -527,9 +528,9 @@ case needs no ceremony and an explicit kernel is still available.
 
 | | |
 |---|---|
-| `mx::KernelError` (thrown) | the conversation broke down — kernel died, nothing answered in time |
-| `mx::MaximaError` (thrown) | Maxima objected to an operation that has no ordinary way to fail: `diff`, `expand`, `factor`, `simplify`, `subst` |
-| `mx::Failure` (returned) | an ordinary mathematical outcome: no closed form, no solution, unparseable source |
+| `proxima::KernelError` (thrown) | the conversation broke down — kernel died, nothing answered in time |
+| `proxima::MaximaError` (thrown) | Maxima objected to an operation that has no ordinary way to fail: `diff`, `expand`, `factor`, `simplify`, `subst` |
+| `proxima::Failure` (returned) | an ordinary mathematical outcome: no closed form, no solution, unparseable source |
 
 `std::expected` is used only where failure is an answer. Making `diff` return one
 would force `.value()` on every call for a case that means the caller made a
@@ -588,7 +589,7 @@ asked.
 
 ### Step 12. `Context` / assumptions
 
-`mx::Context` opens a fresh Maxima context on construction and kills it on
+`proxima::Context` opens a fresh Maxima context on construction and kills it on
 destruction. Maxima's own contexts do the work, so this really is a scope rather
 than a best-effort undo: `killcontext` discards the assumptions *and* the
 declarations, which forgetting each assumption individually would not.
@@ -597,7 +598,7 @@ Built on `supcontext(child, parent)` rather than `newcontext`, so contexts nest
 — `newcontext` would parent the new scope on `initial` and lose the enclosing
 one's facts.
 
-A contradictory assumption throws `mx::MaximaError`. Maxima detects it, and
+A contradictory assumption throws `proxima::MaximaError`. Maxima detects it, and
 carrying on with an inconsistent set of facts would make every later result in
 the scope meaningless. A redundant one is accepted quietly.
 
@@ -652,7 +653,7 @@ and then reports: only that call is lost.
 The journal is what makes this worth doing. A kernel that came back *working*
 but missing the caller's assumptions would answer every later question
 confidently and wrongly, with nothing to announce that anything had happened —
-worse than an outright failure. `mx::Context` registers its `supcontext`,
+worse than an outright failure. `proxima::Context` registers its `supcontext`,
 `assume` and `declare` statements with `Kernel::remember`, and drops them on
 scope exit, so replay reconstructs exactly the scopes that are still live. Order
 is preserved, which is what makes nested scopes come back nested.
@@ -718,7 +719,7 @@ eagerly is merely slower. So the rule is to assume the worst:
 - **`Kernel::evalPure` is the cached path**, and carries an explicit promise:
   the expression only asks. Every operation in `ops.hpp` satisfies it.
 - **Adding or dropping an assumption discards the cache**, through the same
-  `remember`/`forget` calls `mx::Context` already made for the replay journal.
+  `remember`/`forget` calls `proxima::Context` already made for the replay journal.
   That one matters most: `sqrt(x^2)` is `abs(x)` until `x > 0` is assumed and
   `x` afterwards, so a cache surviving the assumption would keep handing back
   `abs(x)` — confidently, and wrongly. A test asserts exactly that, in both
@@ -741,7 +742,7 @@ transport tests, for nothing. Anyone persisting this cache must add it.
 
 ### Step 15. Numeric evaluation and packaging
 
-**`mx::evalNumeric`** walks the tree, entirely locally. That is the point: once
+**`proxima::evalNumeric`** walks the tree, entirely locally. That is the point: once
 Maxima has produced a closed form, turning it into numbers is ordinary
 arithmetic, and paying a millisecond round trip per point would make plotting it
 or integrating it numerically absurd. `asFunction` binds one variable for
@@ -755,16 +756,16 @@ than a guess — silently returning something plausible for a function that is n
 actually implemented would be far worse than refusing. The same applies to the
 nodes that have no numeric meaning: a relation, and `Opaque`, which is Maxima
 source this library never interpreted and so has nothing that could evaluate it.
-`mx::EvalError` names the culprit.
+`proxima::EvalError` names the culprit.
 
-**Packaging.** `install`/`export` with a generated `maxima_cppConfig.cmake`, so
+**Packaging.** `install`/`export` with a generated `proximaConfig.cmake`, so
 
 ```cmake
-find_package(maxima_cpp 0.1 REQUIRED)
-target_link_libraries(my_app PRIVATE mx::maxima_cpp)
+find_package(proxima 0.1 REQUIRED)
+target_link_libraries(my_app PRIVATE proxima::proxima)
 ```
 
-works from an install prefix. `mx/version.hpp` is generated from
+works from an install prefix. `proxima/version.hpp` is generated from
 `cmake/version.hpp.in`, so the version cannot drift from the one in
 `CMakeLists.txt`. `target_include_directories` uses `BUILD_INTERFACE` and
 `INSTALL_INTERFACE`, so the same target serves both a `add_subdirectory` consumer
@@ -884,12 +885,12 @@ quoting and environment-block tests), 7 integration on both.
    noticed: `solve(equations, unknowns)`, with the single-unknown form
    delegating to it. See step 11.
 5. ~~**Offline `parse()`**~~ — built after step 15: `Expr::parse` is a Pratt
-   parser over a subset of Maxima's grammar, needing no kernel. `mx::parse`
+   parser over a subset of Maxima's grammar, needing no kernel. `proxima::parse`
    remains for anything outside that subset. See below.
 6. ~~**A persistent cache**~~ — built after step 15, via
    `Config::cacheDirectory`. See below; the version stamp turned out to be the
    smaller half of the problem.
-7. ~~**Repeated numeric evaluation**~~ — built after step 15 as `mx::Compiled`,
+7. ~~**Repeated numeric evaluation**~~ — built after step 15 as `proxima::Compiled`,
    without the third-party evaluator this item had assumed. See below.
 
 ### Two parsers, and how they differ
@@ -905,8 +906,8 @@ right-associative (`x^2^3` is `x^(2^3)`), and unary minus binds *looser* than
 `^` (`-x^2` is `-(x^2)`).
 
 The difference that matters most is not the grammar, though. **`Expr::parse`
-parses; `mx::parse` parses and evaluates.** `Expr::parse("5!")` is
-`factorial(5)`; `mx::parse("5!")` is `120`, because Maxima evaluates as it
+parses; `proxima::parse` parses and evaluates.** `Expr::parse("5!")` is
+`factorial(5)`; `proxima::parse("5!")` is `120`, because Maxima evaluates as it
 reads. Writing the agreement test against structure rather than meaning was
 wrong for exactly this reason, and the test now compares both sides *through*
 Maxima: its reading of the original text against its reading of what the offline
@@ -942,7 +943,7 @@ The assumption state is taken from the replay journal built in step 13, which
 already records exactly the statements that constitute it. That also decides
 what happens after a raw `Kernel::eval`: nothing in its text says whether it
 changed Maxima's state, so the journal can no longer be trusted to describe the
-session, and persistence switches itself off for that kernel. `mx::Context` uses
+session, and persistence switches itself off for that kernel. `proxima::Context` uses
 `Kernel::evalTracked` instead, which promises the change *is* in the journal.
 
 Entries are written to a temporary and renamed into place, so a reader never
@@ -966,7 +967,7 @@ plot 200,000 points. Most of that was not arithmetic: every symbol *occurrence*
 did a `std::map<std::string, double>` lookup, and every function application a
 linear search by name.
 
-`mx::Compiled` does that work once. The tree is flattened to postfix
+`proxima::Compiled` does that work once. The tree is flattened to postfix
 instructions over a small stack, symbols are resolved to positions in the
 caller's argument array, constants are folded into a pool, and function names
 become table indices. Errors move to construction, which is where they belong —
@@ -990,7 +991,7 @@ table, so they cannot disagree about what `log` means.
 
 ### Unbounded integers
 
-`mx::Integer` was `std::int64_t` with an `Opaque` fallback. It is now an
+`proxima::Integer` was `std::int64_t` with an `Opaque` fallback. It is now an
 arbitrary-precision integer backed by **Boost.Multiprecision's `cpp_int`**,
 behind a facade that fixes the spelling of the operations and keeps two fast
 paths of its own.
@@ -1041,7 +1042,7 @@ backend and is the evidence the swap was clean. Boost matches every edge case
 this class documents, checked before relying on any of it — truncating division,
 remainder taking the dividend's sign, `gcd` non-negative, and `gcd(0, 0) == 0`.
 The one behaviour not inherited is division by zero, which `cpp_int` reports as
-`std::overflow_error`; it is checked for first, so the error stays `mx::Error`.
+`std::overflow_error`; it is checked for first, so the error stays `proxima::Error`.
 
 ### Why the hand-written version went
 
@@ -1075,7 +1076,7 @@ code in precisely the spot where hand-written bignum code most often goes
 subtly wrong.
 
 Boost costs about 420 ms of compile time per translation unit, and because
-`<mx/integer.hpp>` reaches every consumer through `<mx/expr.hpp>`, consumers pay
+`<proxima/integer.hpp>` reaches every consumer through `<proxima/expr.hpp>`, consumers pay
 it too. That is the whole price, and it is the right trade.
 
 **Fetched, not found.** Boost comes in through CPM, from the CMake-native
@@ -1107,7 +1108,7 @@ patch flags onto someone else's target. Do not pin below 1.89.
 
 `BOOST_SKIP_INSTALL_RULES` is `OFF`, against the usual advice for a fetched
 dependency, so `cmake --install` puts Boost's headers in the same prefix as this
-library. `mx::Integer` holds a `cpp_int` by value, so `<mx/integer.hpp>` needs
+library. `proxima::Integer` holds a `cpp_int` by value, so `<proxima/integer.hpp>` needs
 them; skipping the install rules would produce an installed library whose public
 header does not compile. This is the exact opposite of the `DOCTEST_NO_INSTALL`
 decision in step 3, and for the exact opposite reason: a test framework is our
@@ -1217,7 +1218,7 @@ TeX. So the extension point is not "walk the tree" — that was always possible
 and was never the hard part — but "receive the presentation decisions already
 made".
 
-Three layers, in `include/mx/render.hpp` and `src/core/render.cpp`:
+Three layers, in `include/proxima/render.hpp` and `src/core/render.cpp`:
 
 1. **Presentation.** `Expr` becomes a display tree: a leading negative constant
    moves so `x - 1` does not read `-1 + x`; a product splits above and below the
@@ -1334,7 +1335,7 @@ Smaller things found on the way:
 - Asio names its Windows pipes with `BCryptGenRandom`, and `Boost::process`
   does not carry `bcrypt` in its link interface; the MinGW linker does not find
   it unaided, so `CMakeLists.txt` adds it.
-- `maxima_cpp` is static, so an installed consumer links Boost.Process even
+- `proxima` is static, so an installed consumer links Boost.Process even
   though no public header mentions it; the package config finds it.
 - The Win32 quoting tests went with the quoter. What replaced them runs real
   children — cmd.exe or `/bin/sh` — through the transport: output coming back,

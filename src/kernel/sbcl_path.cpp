@@ -15,7 +15,7 @@
 // Kept apart from discovery.cpp so that <windows.h> reaches one translation
 // unit and no further.
 
-namespace mx::detail {
+namespace proxima::detail {
 
 #ifdef _WIN32
 namespace {
@@ -72,4 +72,4 @@ std::filesystem::path sbclReadablePath(const std::filesystem::path &path) {
 #endif
 }
 
-} // namespace mx::detail
+} // namespace proxima::detail

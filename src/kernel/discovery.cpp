@@ -2,14 +2,14 @@
 
 #include "util/utf8.hpp"
 
-#include <mx/errors.hpp>
+#include <proxima/errors.hpp>
 
 #include <boost/process/v2/environment.hpp>
 
 #include <algorithm>
 #include <system_error>
 
-namespace mx::detail {
+namespace proxima::detail {
 namespace {
 
 namespace fs = std::filesystem;
@@ -322,4 +322,4 @@ MaximaInstall discoverMaxima(const Config &config, const EnvLookup &env) {
     throw KernelError(message);
 }
 
-} // namespace mx::detail
+} // namespace proxima::detail

@@ -5,18 +5,18 @@
 #include "wire/from_maxima.hpp"
 #include "wire/sexpr.hpp"
 
-#include <mx/errors.hpp>
-#include <mx/expr.hpp>
+#include <proxima/errors.hpp>
+#include <proxima/expr.hpp>
 
 #include <fstream>
 #include <sstream>
 #include <string>
 
-using mx::Expr;
-using mx::Kind;
-using mx::detail::decodeMaximaName;
-using mx::detail::fromMaxima;
-using mx::detail::parseSExpr;
+using proxima::Expr;
+using proxima::Kind;
+using proxima::detail::decodeMaximaName;
+using proxima::detail::fromMaxima;
+using proxima::detail::parseSExpr;
 
 namespace {
 
@@ -76,7 +76,7 @@ TEST_CASE("exact rationals stay exact") {
 }
 
 TEST_CASE("a large integer arrives as a number, exactly") {
-    // 30!. mx::Integer is unbounded, so this is an Integer node rather than
+    // 30!. proxima::Integer is unbounded, so this is an Integer node rather than
     // the Opaque text it used to become.
     const Expr value = mapExpr("265252859812191058636308480000000");
     CHECK(value.kind() == Kind::Integer);
@@ -93,14 +93,14 @@ TEST_CASE("a rational with large parts is still a rational") {
         "((RAT SIMP) 265252859812191058636308480000000 31)");
     CHECK(value.kind() == Kind::Rational);
     CHECK(value.numerator().toString() == "265252859812191058636308480000000");
-    CHECK(value.denominator() == mx::Integer(31));
+    CHECK(value.denominator() == proxima::Integer(31));
 
     SUBCASE("and a reducible one is reduced") {
         const Expr reducible = mapExpr(
             "((RAT SIMP) 265252859812191058636308480000000 3)");
         CHECK(reducible.numerator().toString()
               == "88417619937397019545436160000000");
-        CHECK(reducible.denominator() == mx::Integer(1));
+        CHECK(reducible.denominator() == proxima::Integer(1));
     }
 }
 
@@ -123,7 +123,7 @@ TEST_CASE("extra head flags are ignored") {
 
 TEST_CASE("relations map to typed nodes rather than applications") {
     CHECK(mapExpr("((MEQUAL SIMP) $X 1)").kind() == Kind::Relation);
-    CHECK(mapExpr("((MEQUAL SIMP) $X 1)").relationOp() == mx::RelOp::Equal);
+    CHECK(mapExpr("((MEQUAL SIMP) $X 1)").relationOp() == proxima::RelOp::Equal);
 
     CHECK(mapped("((MEQUAL SIMP) $X 1)") == "x = 1");
     CHECK(mapped("((MGREATERP SIMP) $X 0)") == "x > 0");
@@ -179,15 +179,15 @@ TEST_CASE("strings become Maxima source text, re-escaped") {
 }
 
 TEST_CASE("a malformed term is rejected rather than half-mapped") {
-    CHECK_THROWS_AS(fromMaxima(parseSExpr("()")), mx::ParseError);
-    CHECK_THROWS_AS(fromMaxima(parseSExpr("((42 SIMP) 1)")), mx::ParseError);
+    CHECK_THROWS_AS(fromMaxima(parseSExpr("()")), proxima::ParseError);
+    CHECK_THROWS_AS(fromMaxima(parseSExpr("((42 SIMP) 1)")), proxima::ParseError);
 
     SUBCASE("including a rational that is not one") {
         // These used to become Opaque text, "(1/0)" and "($X/2)", and so
         // survived as something that looked like an answer.
-        CHECK_THROWS_AS(fromMaxima(parseSExpr("((RAT SIMP) 1 0)")), mx::ParseError);
-        CHECK_THROWS_AS(fromMaxima(parseSExpr("((RAT SIMP) $X 2)")), mx::ParseError);
-        CHECK_THROWS_AS(fromMaxima(parseSExpr("((RAT SIMP) 1)")), mx::ParseError);
+        CHECK_THROWS_AS(fromMaxima(parseSExpr("((RAT SIMP) 1 0)")), proxima::ParseError);
+        CHECK_THROWS_AS(fromMaxima(parseSExpr("((RAT SIMP) $X 2)")), proxima::ParseError);
+        CHECK_THROWS_AS(fromMaxima(parseSExpr("((RAT SIMP) 1)")), proxima::ParseError);
     }
 }
 
@@ -195,7 +195,7 @@ TEST_CASE("every recorded Maxima reply maps to something printable") {
     // Same golden file the reader is checked against. Here the point is that
     // nothing Maxima actually emits reaches a mapping hole: every recorded form
     // produces an Expr, and every Expr produces non-empty Maxima text.
-    std::ifstream golden(std::string(MX_GOLDEN_DIR) + "/internal_forms.tsv");
+    std::ifstream golden(std::string(PROXIMA_GOLDEN_DIR) + "/internal_forms.tsv");
     REQUIRE_MESSAGE(golden.is_open(), "cannot open the golden transcript file");
 
     int cases = 0;

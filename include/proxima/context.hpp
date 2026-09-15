@@ -1,16 +1,16 @@
 #pragma once
 
-#include <mx/expr.hpp>
-#include <mx/kernel.hpp>
-#include <mx/ops.hpp>
-#include <mx/symbol.hpp>
+#include <proxima/expr.hpp>
+#include <proxima/kernel.hpp>
+#include <proxima/ops.hpp>
+#include <proxima/symbol.hpp>
 
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
-namespace mx {
+namespace proxima {
 
 /// A property a symbol can be declared to have.
 ///
@@ -60,9 +60,9 @@ std::string_view nameOf(Feature feature);
 /// operation that fails with "needs an assumption" is telling you precisely
 /// what to put in a Context.
 ///
-///     mx::Context ctx;
+///     proxima::Context ctx;
 ///     ctx.assume(gt(Expr(n), Expr(-1)));
-///     const auto result = mx::integrate(pow(Expr(x), Expr(n)), x);
+///     const auto result = proxima::integrate(pow(Expr(x), Expr(n)), x);
 ///
 /// ## State, and what happens if the kernel restarts
 ///
@@ -81,7 +81,7 @@ std::string_view nameOf(Feature feature);
 ///
 /// A Context refers to its Kernel, so the Kernel should outlive it. One that
 /// does not — a Context with static storage duration outliving sharedKernel()
-/// at exit, say — can tell: its operations throw mx::KernelError, and its
+/// at exit, say — can tell: its operations throw proxima::KernelError, and its
 /// destructor has nothing left to tidy and does nothing.
 class Context {
 public:
@@ -100,7 +100,7 @@ public:
 
     /// Assumes a relation holds, e.g. `gt(Expr(x), Expr(0))`.
     ///
-    /// Throws mx::MaximaError if the assumption contradicts one already in
+    /// Throws proxima::MaximaError if the assumption contradicts one already in
     /// force — Maxima detects that, and silently carrying on with an
     /// inconsistent set of facts would make every later result meaningless.
     /// A redundant assumption is accepted quietly.
@@ -146,4 +146,4 @@ private:
     std::vector<std::uint64_t> replayHandles_;
 };
 
-} // namespace mx
+} // namespace proxima

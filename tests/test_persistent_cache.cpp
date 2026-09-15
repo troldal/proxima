@@ -5,14 +5,14 @@
 
 #include "kernel/persistent_cache.hpp"
 
-#include <mx/config.hpp>
-#include <mx/context.hpp>
-#include <mx/errors.hpp>
-#include <mx/expr.hpp>
-#include <mx/functions.hpp>
-#include <mx/kernel.hpp>
-#include <mx/ops.hpp>
-#include <mx/symbol.hpp>
+#include <proxima/config.hpp>
+#include <proxima/context.hpp>
+#include <proxima/errors.hpp>
+#include <proxima/expr.hpp>
+#include <proxima/functions.hpp>
+#include <proxima/kernel.hpp>
+#include <proxima/ops.hpp>
+#include <proxima/symbol.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -21,23 +21,23 @@
 #include <string>
 #include <vector>
 
-using mx::Expr;
-using mx::Symbol;
-using mx::detail::PersistentCache;
+using proxima::Expr;
+using proxima::Symbol;
+using proxima::detail::PersistentCache;
 
 namespace {
 
 /// A directory of its own per test, removed first so a rerun starts clean.
 std::filesystem::path scratch(const std::string &name) {
     const std::filesystem::path path
-        = std::filesystem::temp_directory_path() / "mx_cache_tests" / name;
+        = std::filesystem::temp_directory_path() / "proxima_cache_tests" / name;
     std::error_code ec;
     std::filesystem::remove_all(path, ec);
     return path;
 }
 
-mx::Reply valued(const std::string &value) {
-    mx::Reply reply;
+proxima::Reply valued(const std::string &value) {
+    proxima::Reply reply;
     reply.ok = true;
     reply.value = value;
     return reply;
@@ -78,7 +78,7 @@ TEST_CASE("values containing newlines and quotes survive") {
     const auto directory = scratch("awkward");
     const PersistentCache cache(directory, "stamp");
 
-    mx::Reply reply;
+    proxima::Reply reply;
     reply.ok = false;
     reply.value = "";
     reply.reason = "line one\nline \"two\"\n\nand a trailing newline\n";
@@ -117,7 +117,7 @@ TEST_CASE("a corrupt or truncated entry is ignored, not misread") {
     // Truncate every file in the directory to its first line.
     for (const auto &entry : std::filesystem::directory_iterator(directory)) {
         std::ofstream out(entry.path(), std::ios::binary | std::ios::trunc);
-        out << "maxima_cpp-cache-1\n";
+        out << "proxima-cache-1\n";
     }
     CHECK_FALSE(cache.find("q").has_value());
 }
@@ -126,7 +126,7 @@ TEST_CASE("a length larger than the file is a miss, not an exception") {
     // Fields are length-prefixed, and the length used to be trusted: a corrupt
     // or hostile entry claiming 18446744073709551615 bytes made the reader try
     // to allocate that much, and std::length_error escaped evalPure — not an
-    // mx::Error, and not a cache miss.
+    // proxima::Error, and not a cache miss.
     const auto directory = scratch("huge_length");
     const PersistentCache cache(directory, "stamp");
     cache.insert("q", valued("42"));
@@ -136,21 +136,21 @@ TEST_CASE("a length larger than the file is a miss, not an exception") {
 
     SUBCASE("in the first field") {
         std::ofstream out(entry, std::ios::binary | std::ios::trunc);
-        out << "maxima_cpp-cache-1\n18446744073709551615\n";
+        out << "proxima-cache-1\n18446744073709551615\n";
     }
     SUBCASE("after a key that matches") {
         // The key is the stamp, a blank line, then the question.
         const std::string key = "stamp\n\nq";
         std::ofstream out(entry, std::ios::binary | std::ios::trunc);
-        out << "maxima_cpp-cache-1\n"
+        out << "proxima-cache-1\n"
             << key.size() << '\n' << key << "1\n1" << "18446744073709551615\n";
     }
     SUBCASE("or just longer than what is there") {
         std::ofstream out(entry, std::ios::binary | std::ios::trunc);
-        out << "maxima_cpp-cache-1\n1000\nshort";
+        out << "proxima-cache-1\n1000\nshort";
     }
 
-    std::optional<mx::Reply> found;
+    std::optional<proxima::Reply> found;
     CHECK_NOTHROW(found = cache.find("q"));
     CHECK_FALSE(found.has_value());
 }
@@ -174,8 +174,8 @@ TEST_CASE("a temporary is named for its writer, not only its order") {
     // could be renamed into place. The name now carries a per-process token.
     const std::filesystem::path target
         = std::filesystem::path("somewhere") / "0123456789abcdef.reply";
-    const std::filesystem::path first = mx::detail::temporaryPathFor(target);
-    const std::filesystem::path second = mx::detail::temporaryPathFor(target);
+    const std::filesystem::path first = proxima::detail::temporaryPathFor(target);
+    const std::filesystem::path second = proxima::detail::temporaryPathFor(target);
 
     CHECK(first != second);
     CHECK(first.parent_path() == target.parent_path());
@@ -339,10 +339,10 @@ TEST_CASE("the hash is stable, and not std::hash") {
     // A cache on disk outlives the build that wrote it, and
     // std::hash<std::string> differs between standard libraries. These values
     // are FNV-1a and must not drift.
-    CHECK(mx::detail::stableHash("") == "cbf29ce484222325");
-    CHECK(mx::detail::stableHash("a") == "af63dc4c8601ec8c");
-    CHECK(mx::detail::stableHash("foobar") == "85944171f73967e8");
-    CHECK(mx::detail::stableHash("a").size() == 16);
+    CHECK(proxima::detail::stableHash("") == "cbf29ce484222325");
+    CHECK(proxima::detail::stableHash("a") == "af63dc4c8601ec8c");
+    CHECK(proxima::detail::stableHash("foobar") == "85944171f73967e8");
+    CHECK(proxima::detail::stableHash("a").size() == 16);
 }
 
 // --- Against a real kernel -------------------------------------------------
@@ -351,27 +351,27 @@ TEST_SUITE("maxima") {
 
 TEST_CASE("an answer survives the kernel that computed it") {
     const auto directory = scratch("across_kernels");
-    mx::Config config;
+    proxima::Config config;
     config.cacheDirectory = directory;
 
     const Symbol x("x");
     const Expr question = pow(Expr(x) + 1, 12);
 
     {
-        mx::Kernel first(config);
-        mx::expand(question, first);
+        proxima::Kernel first(config);
+        proxima::expand(question, first);
         CHECK(fileCount(directory) > 0);
     }
 
     // A second kernel, a fresh Maxima process, and an empty in-memory cache.
-    mx::Kernel second(config);
-    const Expr answer = mx::expand(question, second);
+    proxima::Kernel second(config);
+    const Expr answer = proxima::expand(question, second);
 
     // The count is what makes this conclusive: an answer computed afresh would
     // land in the in-memory cache too, so the presence of an entry proves
     // nothing on its own. Only persistentHits distinguishes the two.
     CHECK(second.cacheStats().persistentHits == 1);
-    CHECK(answer == mx::expand(question, second));
+    CHECK(answer == proxima::expand(question, second));
 }
 
 TEST_CASE("an assumption is part of the key, not an afterthought") {
@@ -381,23 +381,23 @@ TEST_CASE("an assumption is part of the key, not an afterthought") {
     // and unlike the in-memory cache, there is no moment at which the second
     // process could be told to discard anything.
     const auto directory = scratch("assumption_key");
-    mx::Config config;
+    proxima::Config config;
     config.cacheDirectory = directory;
 
     const Symbol x("assumption_key_probe");
-    const Expr root = mx::sqrt(pow(Expr(x), 2));
+    const Expr root = proxima::sqrt(pow(Expr(x), 2));
 
     {
-        mx::Kernel assuming(config);
-        mx::Context ctx(assuming);
+        proxima::Kernel assuming(config);
+        proxima::Context ctx(assuming);
         ctx.assume(gt(Expr(x), Expr(0)));
-        CHECK(mx::simplify(root, assuming) == Expr(x));
+        CHECK(proxima::simplify(root, assuming) == Expr(x));
     }
 
     // A different process would see only the directory. This kernel makes no
     // assumption, so it must not be handed the assuming kernel's answer.
-    mx::Kernel plain(config);
-    CHECK(mx::simplify(root, plain) == mx::abs(Expr(x)));
+    proxima::Kernel plain(config);
+    CHECK(proxima::simplify(root, plain) == proxima::abs(Expr(x)));
 }
 
 TEST_CASE("a raw eval switches persistence off for that kernel") {
@@ -405,20 +405,20 @@ TEST_CASE("a raw eval switches persistence off for that kernel") {
     // so the journal can no longer be trusted to describe the session — and the
     // journal is what the key is built from.
     const auto directory = scratch("raw_eval");
-    mx::Config config;
+    proxima::Config config;
     config.cacheDirectory = directory;
 
-    mx::Kernel kernel(config);
+    proxima::Kernel kernel(config);
     const Symbol x("x");
 
-    mx::expand(pow(Expr(x) + 1, 5), kernel);
+    proxima::expand(pow(Expr(x) + 1, 5), kernel);
     const std::size_t before = fileCount(directory);
     CHECK(before > 0);
     CHECK(kernel.persistenceActive());
 
     kernel.eval("raw_eval_probe: 7");
     CHECK_FALSE(kernel.persistenceActive());
-    mx::expand(pow(Expr(x) + 1, 6), kernel);
+    proxima::expand(pow(Expr(x) + 1, 6), kernel);
 
     // Still working, just no longer writing entries it could not honestly key.
     CHECK(fileCount(directory) == before);
@@ -426,7 +426,7 @@ TEST_CASE("a raw eval switches persistence off for that kernel") {
     // And no longer reading them either: asking again for something already on
     // disk goes to Maxima rather than to a key that no longer describes this
     // session.
-    mx::expand(pow(Expr(x) + 1, 5), kernel);
+    proxima::expand(pow(Expr(x) + 1, 5), kernel);
     CHECK(kernel.cacheStats().persistentHits == 0);
 
     SUBCASE("until a restart discards the unrecorded change") {
@@ -440,7 +440,7 @@ TEST_CASE("a raw eval switches persistence off for that kernel") {
         // turn — so restart once more before reading from disk.
         CHECK_FALSE(kernel.persistenceActive());
         kernel.restart();
-        mx::expand(pow(Expr(x) + 1, 5), kernel);
+        proxima::expand(pow(Expr(x) + 1, 5), kernel);
         CHECK(kernel.cacheStats().persistentHits == 1);
     }
 }
@@ -450,25 +450,25 @@ TEST_CASE("a kernel restarted after dying resumes persistence") {
     // unrecorded change just as restart() does. Persistence used to stay off
     // regardless.
     const auto directory = scratch("recovered");
-    mx::Config config;
+    proxima::Config config;
     config.cacheDirectory = directory;
 
-    mx::Kernel kernel(config);
+    proxima::Kernel kernel(config);
     kernel.eval("recovered_probe: 7");
     REQUIRE_FALSE(kernel.persistenceActive());
 
-    CHECK_THROWS_AS(kernel.eval("quit()"), mx::KernelError);
+    CHECK_THROWS_AS(kernel.eval("quit()"), proxima::KernelError);
     CHECK(kernel.persistenceActive());
 }
 
 TEST_CASE("persistence is off unless a directory is asked for") {
     // A library should not start writing files somewhere on its own.
-    mx::Config config;
+    proxima::Config config;
     CHECK(config.cacheDirectory.empty());
 
-    mx::Kernel kernel(config);
+    proxima::Kernel kernel(config);
     const Symbol x("x");
-    CHECK_NOTHROW(mx::expand(pow(Expr(x) + 1, 3), kernel));
+    CHECK_NOTHROW(proxima::expand(pow(Expr(x) + 1, 3), kernel));
 }
 
 } // TEST_SUITE("maxima")

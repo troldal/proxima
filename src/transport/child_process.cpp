@@ -3,7 +3,7 @@
 #include "transport/process_env.hpp"
 #include "util/utf8.hpp"
 
-#include <mx/errors.hpp>
+#include <proxima/errors.hpp>
 
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/connect_pipe.hpp>
@@ -37,7 +37,7 @@
 // overlapped on Windows, so a read waits on the completion port and returns
 // the moment bytes arrive.
 
-namespace mx::detail {
+namespace proxima::detail {
 namespace {
 
 namespace asio = boost::asio;
@@ -288,4 +288,4 @@ void ChildProcessTransport::stop(std::chrono::milliseconds grace) {
     impl_->closed = true;
 }
 
-} // namespace mx::detail
+} // namespace proxima::detail

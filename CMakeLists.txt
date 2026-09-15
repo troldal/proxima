@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(maxima_cpp VERSION 0.1.0 LANGUAGES CXX)
+project(proxima VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -7,12 +7,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # All symbolic work is delegated to a Maxima child process, so nothing here
 # links against a computer algebra library. Two parts of Boost are used:
 #
-#   Boost.Multiprecision  backs mx::Integer. Header-only, but it appears in a
+#   Boost.Multiprecision  backs proxima::Integer. Header-only, but it appears in a
 #                         public header, so it must reach consumers too -- see
 #                         the install rules below.
 #   Boost.Process (v2)    starts and talks to the Maxima child, over Boost.Asio.
 #                         A compiled library, and private: nothing about it
-#                         appears in include/mx.
+#                         appears in include/proxima.
 
 # Boost is a large download, and a copy per build directory would be several
 # gigabytes across the presets in CMakePresets.json. CPM keeps one shared source
@@ -24,15 +24,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # never fires, which is how 732 MB of Boost ends up in _deps.
 if (NOT CPM_SOURCE_CACHE AND NOT DEFINED ENV{CPM_SOURCE_CACHE})
     if (DEFINED ENV{USERPROFILE})
-        set(_mx_cpm_cache "$ENV{USERPROFILE}/.cache/CPM")
+        set(_proxima_cpm_cache "$ENV{USERPROFILE}/.cache/CPM")
     elseif (DEFINED ENV{HOME})
-        set(_mx_cpm_cache "$ENV{HOME}/.cache/CPM")
+        set(_proxima_cpm_cache "$ENV{HOME}/.cache/CPM")
     endif ()
-    if (_mx_cpm_cache)
-        set(CPM_SOURCE_CACHE "${_mx_cpm_cache}" CACHE PATH
+    if (_proxima_cpm_cache)
+        set(CPM_SOURCE_CACHE "${_proxima_cpm_cache}" CACHE PATH
                 "Directory CPM unpacks dependency sources into, shared between build trees"
                 FORCE)
-        unset(_mx_cpm_cache)
+        unset(_proxima_cpm_cache)
     endif ()
 endif ()
 message(STATUS "CPM source cache: ${CPM_SOURCE_CACHE}")
@@ -50,8 +50,8 @@ include(cmake/CPM.cmake)
 # not also need Boost.Filesystem linked in.
 #
 # BOOST_SKIP_INSTALL_RULES is OFF deliberately, against the usual advice for a
-# fetched dependency. mx::Integer holds a cpp_int by value, so the type is in
-# <mx/integer.hpp> and every consumer needs those headers; skipping the install
+# fetched dependency. proxima::Integer holds a cpp_int by value, so the type is in
+# <proxima/integer.hpp> and every consumer needs those headers; skipping the install
 # rules would produce an installed library that cannot be included. This is the
 # opposite of the doctest case in tests/CMakeLists.txt, where a test framework
 # has no business in a consumer's prefix.
@@ -82,7 +82,7 @@ CPMAddPackage(
 )
 unset(BUILD_SHARED_LIBS)
 
-add_library(maxima_cpp
+add_library(proxima
         src/core/expr.cpp
         src/core/format.cpp
         src/core/integer.cpp
@@ -110,35 +110,35 @@ add_library(maxima_cpp
         src/wire/to_maxima.cpp
 )
 
-# PUBLIC: include/mx/integer.hpp includes <boost/multiprecision/cpp_int.hpp>,
-# so anything including <mx/expr.hpp> needs Boost's headers on its path.
+# PUBLIC: include/proxima/integer.hpp includes <boost/multiprecision/cpp_int.hpp>,
+# so anything including <proxima/expr.hpp> needs Boost's headers on its path.
 # Boost::multiprecision rather than Boost::headers, so the dependency says which
 # part of Boost is actually used.
-target_link_libraries(maxima_cpp PUBLIC Boost::multiprecision)
+target_link_libraries(proxima PUBLIC Boost::multiprecision)
 
 # PRIVATE: only src/transport/child_process.cpp includes it. The library is
 # static, though, so consumers still link it; the installed package config
 # finds it for them.
-target_link_libraries(maxima_cpp PRIVATE Boost::process)
+target_link_libraries(proxima PRIVATE Boost::process)
 
 if (WIN32)
     # Asio names its pipes using BCryptGenRandom, and Boost::process does not
     # carry bcrypt in its link interface; the MinGW linker does not find it
     # by itself.
-    target_link_libraries(maxima_cpp PRIVATE bcrypt)
+    target_link_libraries(proxima PRIVATE bcrypt)
 endif ()
 
 if (NOT WIN32)
     find_package(Threads REQUIRED)
-    target_link_libraries(maxima_cpp PRIVATE Threads::Threads)
+    target_link_libraries(proxima PRIVATE Threads::Threads)
 endif ()
-add_library(mx::maxima_cpp ALIAS maxima_cpp)
+add_library(proxima::proxima ALIAS proxima)
 
 # Generated so the version cannot drift from the one declared above.
 configure_file(cmake/version.hpp.in
-        "${CMAKE_CURRENT_BINARY_DIR}/generated/mx/version.hpp" @ONLY)
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/proxima/version.hpp" @ONLY)
 
-target_include_directories(maxima_cpp
+target_include_directories(proxima
         PUBLIC
         # Two paths for the same headers: the source tree when built as part of
         # a larger project, the install prefix when consumed through
@@ -147,11 +147,11 @@ target_include_directories(maxima_cpp
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated>
         $<INSTALL_INTERFACE:include>
         # src/ is private: the transport pulls in Boost.Asio and, through it,
-        # <windows.h>, neither of which may reach a consumer of include/mx.
+        # <windows.h>, neither of which may reach a consumer of include/proxima.
         PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_compile_features(maxima_cpp PUBLIC cxx_std_23)
+target_compile_features(proxima PUBLIC cxx_std_23)
 
 # Every source file here is UTF-8 without a byte-order mark. MSVC reads such a
 # file in the ANSI code page unless told otherwise, so a non-ASCII character in
@@ -159,83 +159,83 @@ target_compile_features(maxima_cpp PUBLIC cxx_std_23)
 # clang-cl included, assume UTF-8 already. PRIVATE, and on each target that
 # compiles these sources, because it describes this project's files and not a
 # consumer's.
-set(MX_MSVC_UTF8 $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
+set(PROXIMA_MSVC_UTF8 $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 
 # Warnings, for this project's own code. The sources compile cleanly under all
 # of these, with GCC, Clang, clang-cl and MSVC; turning them on keeps it so.
 # Boost and doctest are SYSTEM includes, so their headers are exempt. PRIVATE
-# on each target, like MX_MSVC_UTF8: they describe this project's code, not a
-# consumer's. With MAXIMA_CPP_WARNINGS_AS_ERRORS, a warning fails the build.
-option(MAXIMA_CPP_WARNINGS_AS_ERRORS
-        "Treat warnings in maxima_cpp's own code as errors" OFF)
+# on each target, like PROXIMA_MSVC_UTF8: they describe this project's code, not a
+# consumer's. With PROXIMA_WARNINGS_AS_ERRORS, a warning fails the build.
+option(PROXIMA_WARNINGS_AS_ERRORS
+        "Treat warnings in Proxima's own code as errors" OFF)
 if (MSVC)
     # /W4 for MSVC and for clang-cl, which maps it to -Wall -Wextra.
-    set(MX_WARNINGS /W4)
-    if (MAXIMA_CPP_WARNINGS_AS_ERRORS)
-        list(APPEND MX_WARNINGS /WX)
+    set(PROXIMA_WARNINGS /W4)
+    if (PROXIMA_WARNINGS_AS_ERRORS)
+        list(APPEND PROXIMA_WARNINGS /WX)
     endif ()
 else ()
-    set(MX_WARNINGS -Wall -Wextra -Wpedantic -Wshadow -Wconversion
+    set(PROXIMA_WARNINGS -Wall -Wextra -Wpedantic -Wshadow -Wconversion
             -Wsign-conversion -Wold-style-cast)
-    if (MAXIMA_CPP_WARNINGS_AS_ERRORS)
-        list(APPEND MX_WARNINGS -Werror)
+    if (PROXIMA_WARNINGS_AS_ERRORS)
+        list(APPEND PROXIMA_WARNINGS -Werror)
     endif ()
 endif ()
 
-target_compile_options(maxima_cpp PRIVATE ${MX_MSVC_UTF8} ${MX_WARNINGS})
+target_compile_options(proxima PRIVATE ${PROXIMA_MSVC_UTF8} ${PROXIMA_WARNINGS})
 
 add_executable(demo examples/demo.cpp)
-target_link_libraries(demo PRIVATE mx::maxima_cpp)
-target_compile_options(demo PRIVATE ${MX_MSVC_UTF8} ${MX_WARNINGS})
+target_link_libraries(demo PRIVATE proxima::proxima)
+target_compile_options(demo PRIVATE ${PROXIMA_MSVC_UTF8} ${PROXIMA_WARNINGS})
 
 # A longer, heavily commented walk through every public feature.
 add_executable(tour examples/tour.cpp)
-target_link_libraries(tour PRIVATE mx::maxima_cpp)
-target_compile_options(tour PRIVATE ${MX_MSVC_UTF8} ${MX_WARNINGS})
+target_link_libraries(tour PRIVATE proxima::proxima)
+target_compile_options(tour PRIVATE ${PROXIMA_MSVC_UTF8} ${PROXIMA_WARNINGS})
 
 # --- Installation ---------------------------------------------------------
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-install(TARGETS maxima_cpp
-        EXPORT maxima_cppTargets
+install(TARGETS proxima
+        EXPORT proximaTargets
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-install(DIRECTORY include/mx DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/generated/mx/version.hpp"
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mx)
+install(DIRECTORY include/proxima DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/generated/proxima/version.hpp"
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/proxima)
 
-install(EXPORT maxima_cppTargets
-        FILE maxima_cppTargets.cmake
-        NAMESPACE mx::
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/maxima_cpp
+install(EXPORT proximaTargets
+        FILE proximaTargets.cmake
+        NAMESPACE proxima::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/proxima
 )
 
 configure_package_config_file(
-        cmake/maxima_cppConfig.cmake.in
-        "${CMAKE_CURRENT_BINARY_DIR}/maxima_cppConfig.cmake"
-        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/maxima_cpp
+        cmake/proximaConfig.cmake.in
+        "${CMAKE_CURRENT_BINARY_DIR}/proximaConfig.cmake"
+        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/proxima
 )
 write_basic_package_version_file(
-        "${CMAKE_CURRENT_BINARY_DIR}/maxima_cppConfigVersion.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/proximaConfigVersion.cmake"
         COMPATIBILITY SameMajorVersion
 )
 install(FILES
-        "${CMAKE_CURRENT_BINARY_DIR}/maxima_cppConfig.cmake"
-        "${CMAKE_CURRENT_BINARY_DIR}/maxima_cppConfigVersion.cmake"
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/maxima_cpp
+        "${CMAKE_CURRENT_BINARY_DIR}/proximaConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/proximaConfigVersion.cmake"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/proxima
 )
 
 # --- Tests ----------------------------------------------------------------
 
-option(MAXIMA_CPP_BUILD_TESTS "Build the maxima_cpp test suite"
+option(PROXIMA_BUILD_TESTS "Build the Proxima test suite"
         ${PROJECT_IS_TOP_LEVEL})
 
-if (MAXIMA_CPP_BUILD_TESTS)
+if (PROXIMA_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif ()
@@ -244,8 +244,8 @@ endif ()
 
 # Fuzz targets for the two hand-written parsers; see fuzz/README.md. Off by
 # default: with a Clang that has libFuzzer they instrument the whole library.
-option(MAXIMA_CPP_BUILD_FUZZERS "Build fuzz targets for the maxima_cpp parsers" OFF)
+option(PROXIMA_BUILD_FUZZERS "Build fuzz targets for Proxima's parsers" OFF)
 
-if (MAXIMA_CPP_BUILD_FUZZERS)
+if (PROXIMA_BUILD_FUZZERS)
     add_subdirectory(fuzz)
 endif ()

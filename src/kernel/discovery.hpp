@@ -1,6 +1,6 @@
 #pragma once
 
-#include <mx/config.hpp>
+#include <proxima/config.hpp>
 
 #include <filesystem>
 #include <functional>
@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-namespace mx::detail {
+namespace proxima::detail {
 
 /// A validated Maxima installation: everything needed to launch it.
 struct MaximaInstall {
@@ -86,4 +86,4 @@ std::filesystem::path sbclReadablePath(const std::filesystem::path &path);
 /// path surfaces as an error instead of silently running a different Maxima.
 MaximaInstall discoverMaxima(const Config &config, const EnvLookup &env);
 
-} // namespace mx::detail
+} // namespace proxima::detail

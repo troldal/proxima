@@ -2,14 +2,14 @@
 
 #include "core/normalize.hpp"
 
-#include <mx/errors.hpp>
+#include <proxima/errors.hpp>
 
 #include <cmath>
 #include <limits>
 #include <numeric>
 #include <utility>
 
-namespace mx {
+namespace proxima {
 
 namespace detail {
 Expr makeExpr(std::shared_ptr<const Node> node) {
@@ -100,7 +100,7 @@ Expr Expr::rational(Integer numerator, Integer denominator) {
         throw Error("rational with zero denominator");
     }
 
-    // No overflow cases to guard: mx::Integer is unbounded, so reduction is
+    // No overflow cases to guard: proxima::Integer is unbounded, so reduction is
     // simply reduction. This used to need three special cases for the extreme
     // negative value alone.
     const Integer divisor = gcd(numerator, denominator);
@@ -495,4 +495,4 @@ std::string_view symbolFor(RelOp op) {
     return "=";
 }
 
-} // namespace mx
+} // namespace proxima

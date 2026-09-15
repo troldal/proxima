@@ -13,13 +13,13 @@
 #include "wire/sexpr.hpp"
 #include "wire/to_maxima.hpp"
 
-#include <mx/context.hpp>
-#include <mx/errors.hpp>
-#include <mx/expr.hpp>
-#include <mx/functions.hpp>
-#include <mx/kernel.hpp>
-#include <mx/ops.hpp>
-#include <mx/symbol.hpp>
+#include <proxima/context.hpp>
+#include <proxima/errors.hpp>
+#include <proxima/expr.hpp>
+#include <proxima/functions.hpp>
+#include <proxima/kernel.hpp>
+#include <proxima/ops.hpp>
+#include <proxima/symbol.hpp>
 
 #include <chrono>
 #include <cmath>
@@ -28,15 +28,15 @@
 #include <sstream>
 #include <string>
 
-using mx::Expr;
-using mx::Kind;
-using mx::Symbol;
-using mx::detail::encodeMaximaName;
-using mx::detail::fromMaxima;
-using mx::detail::parseSExpr;
-using mx::detail::Payload;
-using mx::detail::stringLiteral;
-using mx::detail::toMaxima;
+using proxima::Expr;
+using proxima::Kind;
+using proxima::Symbol;
+using proxima::detail::encodeMaximaName;
+using proxima::detail::fromMaxima;
+using proxima::detail::parseSExpr;
+using proxima::detail::Payload;
+using proxima::detail::stringLiteral;
+using proxima::detail::toMaxima;
 
 TEST_CASE("symbol names are encoded as Maxima stores them") {
     // The exact inverse of decodeMaximaName, which test_from_maxima covers.
@@ -74,7 +74,7 @@ TEST_CASE("string literals escape exactly what both readers need") {
 TEST_CASE("atoms") {
     CHECK(toMaxima(Expr(42)) == "42");
     CHECK(toMaxima(Expr(-7)) == "-7");
-    CHECK(toMaxima(Expr(mx::Integer("265252859812191058636308480000000")))
+    CHECK(toMaxima(Expr(proxima::Integer("265252859812191058636308480000000")))
           == "265252859812191058636308480000000");
     CHECK(toMaxima(Expr::symbol("x")) == "$X");
     CHECK(toMaxima(Expr::symbol("true")) == "T");
@@ -94,7 +94,7 @@ TEST_CASE("atoms") {
         CHECK(toMaxima(Expr(std::numeric_limits<double>::infinity())) == "$INF");
         CHECK(toMaxima(Expr(-std::numeric_limits<double>::infinity())) == "$MINF");
         // Refused before it gets this far: no Expr can hold a NaN.
-        CHECK_THROWS_AS(Expr(std::nan("")), mx::Error);
+        CHECK_THROWS_AS(Expr(std::nan("")), proxima::Error);
     }
 }
 
@@ -110,14 +110,14 @@ TEST_CASE("operators are emitted without simplification flags") {
 
 TEST_CASE("function heads take the sigil Maxima's own parser would give them") {
     const Symbol x("x");
-    CHECK(toMaxima(mx::sin(x)) == "(($SIN) $X)");
+    CHECK(toMaxima(proxima::sin(x)) == "(($SIN) $X)");
     CHECK(toMaxima(Expr::function("f", {x, Expr(1)})) == "(($F) $X 1)");
     CHECK(toMaxima(Expr::function("myFunc", {x})) == "((|$myFunc|) $X)");
 
     SUBCASE("except the heads Maxima spells differently") {
         CHECK(toMaxima(Expr::function("list", {Expr(1), Expr(2)}))
               == "((MLIST) 1 2)");
-        CHECK(toMaxima(mx::abs(x)) == "((MABS) $X)");
+        CHECK(toMaxima(proxima::abs(x)) == "((MABS) $X)");
         CHECK(toMaxima(Expr::function("factorial", {Expr(5)}))
               == "((MFACTORIAL) 5)");
         CHECK(toMaxima(Expr::function("'diff", {Expr::function("f", {x}), x, Expr(1)}))
@@ -173,7 +173,7 @@ TEST_CASE("everything Maxima has ever sent can be sent back as a form") {
     // Expr must render to a form the s-expression reader accepts. A structural
     // check with no kernel: it cannot prove Maxima will like the form, but it
     // catches an encoder that emits something unreadable.
-    std::ifstream golden(std::string(MX_GOLDEN_DIR) + "/internal_forms.tsv");
+    std::ifstream golden(std::string(PROXIMA_GOLDEN_DIR) + "/internal_forms.tsv");
     REQUIRE_MESSAGE(golden.is_open(), "cannot open the golden transcript file");
 
     int cases = 0;
@@ -204,8 +204,8 @@ TEST_CASE("everything Maxima has ever sent can be sent back as a form") {
 TEST_SUITE("maxima") {
 
 /// Sends `expr` as a form and maps the reply back.
-Expr roundTrip(mx::Kernel &kernel, const Expr &expr) {
-    const mx::Reply reply = kernel.evalPure(expr);
+Expr roundTrip(proxima::Kernel &kernel, const Expr &expr) {
+    const proxima::Reply reply = kernel.evalPure(expr);
     REQUIRE_MESSAGE(reply.ok, reply.reason);
     return fromMaxima(parseSExpr(reply.value));
 }
@@ -214,13 +214,13 @@ TEST_CASE("an expression survives the trip out and back unchanged") {
     // Structure out, structure back. Each of these is in a form Maxima's
     // simplifier leaves alone, so equality is exact rather than modulo
     // simplification.
-    mx::Kernel kernel;
+    proxima::Kernel kernel;
     const Symbol x("x");
     const Symbol y("y");
 
     const Expr corpus[] = {
         Expr(42),
-        Expr(mx::Integer("265252859812191058636308480000000")),
+        Expr(proxima::Integer("265252859812191058636308480000000")),
         Expr::rational(11, 15),
         Expr(2.5),
         Expr(x),
@@ -229,16 +229,16 @@ TEST_CASE("an expression survives the trip out and back unchanged") {
         2 * x,
         x / 3,
         pow(x, 2),
-        pow(x, mx::Expr::rational(1, 2)),
+        pow(x, proxima::Expr::rational(1, 2)),
         -x,
-        mx::sin(x),
-        mx::abs(x),
+        proxima::sin(x),
+        proxima::abs(x),
         Expr::function("f", {x, y}),
-        Expr::function("list", {Expr(1), x, mx::sin(y)}),
+        Expr::function("list", {Expr(1), x, proxima::sin(y)}),
         Expr::function("'diff", {Expr::function("f", {x}), x, Expr(1)}),
         eq(x, 1),
         gt(x, 0),
-        mx::pi(),
+        proxima::pi(),
         Expr::symbol("true"),
         Expr::symbol("false"),
         Expr::opaque("\"a string\""),
@@ -257,7 +257,7 @@ TEST_CASE("an expression survives the trip out and back unchanged") {
 
 TEST_CASE("Maxima simplifies what it is handed") {
     // The forms go out unflagged, and Maxima does its own arithmetic.
-    mx::Kernel kernel;
+    proxima::Kernel kernel;
     const Symbol x("x");
     CHECK(roundTrip(kernel, Expr::function("factorial", {Expr(5)})) == Expr(120));
     // Sent under its verb name, evaluated, and back as the noun it simplifies
@@ -266,17 +266,17 @@ TEST_CASE("Maxima simplifies what it is handed") {
           == Expr(15));
     CHECK(roundTrip(kernel, Expr::function("double_factorial", {Expr(x)}))
           == Expr::function("double_factorial", {Expr(x)}));
-    CHECK(roundTrip(kernel, mx::sin(Expr(0))) == Expr(0));
+    CHECK(roundTrip(kernel, proxima::sin(Expr(0))) == Expr(0));
     CHECK(roundTrip(kernel, Expr::rational(4, 6)) == Expr::rational(2, 3));
-    CHECK(mx::diff(pow(x, 3), x, 1, kernel) == 3 * pow(x, 2));
+    CHECK(proxima::diff(pow(x, 3), x, 1, kernel) == 3 * pow(x, 2));
 }
 
 TEST_CASE("a symbol with a space in its name is an ordinary unknown") {
     // Before: `diff(x y^2, x y)` — a Maxima syntax error in the reader, no
     // frame, a two-minute stall. Now the name travels bar-quoted.
-    mx::Kernel kernel;
+    proxima::Kernel kernel;
     const Symbol odd("x y");
-    CHECK(mx::diff(pow(odd, 2), odd, 1, kernel) == 2 * odd);
+    CHECK(proxima::diff(pow(odd, 2), odd, 1, kernel) == 2 * odd);
 }
 
 TEST_CASE("text Maxima cannot read is a failure, not a stall") {
@@ -284,7 +284,7 @@ TEST_CASE("text Maxima cannot read is a failure, not a stall") {
     // rather than Config::timeout plus a restart. The bound below is generous
     // beyond any real round trip and far below the two-minute default that a
     // regression would hit.
-    mx::Kernel kernel;
+    proxima::Kernel kernel;
     const auto within = [](auto &&call) {
         const auto start = std::chrono::steady_clock::now();
         call();
@@ -292,13 +292,13 @@ TEST_CASE("text Maxima cannot read is a failure, not a stall") {
     };
 
     SUBCASE("through the raw text entry point") {
-        mx::Reply reply;
+        proxima::Reply reply;
         CHECK(within([&] { reply = kernel.eval("(1"); }));
         CHECK_FALSE(reply.ok);
         CHECK_FALSE(reply.reason.empty());
     }
     SUBCASE("through a statement terminator that used to cut the wrapper") {
-        mx::Reply reply;
+        proxima::Reply reply;
         CHECK(within([&] { reply = kernel.eval("1$ 2"); }));
         // Contained either way: parsed up to the terminator, or refused.
         CHECK(within([&] { reply = kernel.evalPure("2+2"); }));
@@ -308,24 +308,24 @@ TEST_CASE("text Maxima cannot read is a failure, not a stall") {
     SUBCASE("through an Opaque node reaching a typed operation") {
         const Symbol x("x");
         CHECK(within([&] {
-            CHECK_THROWS_AS(mx::diff(Expr::opaque("(1"), x, 1, kernel),
-                            mx::MaximaError);
+            CHECK_THROWS_AS(proxima::diff(Expr::opaque("(1"), x, 1, kernel),
+                            proxima::MaximaError);
         }));
         // And the session is intact afterwards.
-        CHECK(mx::diff(pow(x, 2), x, 1, kernel) == 2 * x);
+        CHECK(proxima::diff(pow(x, 2), x, 1, kernel) == 2 * x);
     }
 }
 
 TEST_CASE("assumptions travel as forms too") {
     // Context sends the user's predicate as structure, so the guarantee
     // covers the one path that changes Maxima's state on the user's behalf.
-    mx::Kernel kernel;
+    proxima::Kernel kernel;
     const Symbol odd("n m");
-    mx::Context scope(kernel);
+    proxima::Context scope(kernel);
     CHECK_NOTHROW(scope.assume(gt(odd, 0)));
-    const auto result = mx::integrate(pow(Expr(Symbol("x")), odd), Symbol("x"), kernel);
+    const auto result = proxima::integrate(pow(Expr(Symbol("x")), odd), Symbol("x"), kernel);
     REQUIRE(result.has_value());
-    CHECK(mx::contains(*result, odd));
+    CHECK(proxima::contains(*result, odd));
 }
 
 } // TEST_SUITE("maxima")

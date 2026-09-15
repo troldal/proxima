@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-namespace mx::detail {
+namespace proxima::detail {
 
 /// A generic s-expression: the shape Maxima's internal representation arrives
 /// in, with none of its meaning attached.
@@ -107,4 +107,4 @@ SExpr parseSExpr(std::string_view text);
 /// when the resulting tree is destroyed. Far beyond any real expression.
 inline constexpr std::size_t kMaxSExprDepth = 1000;
 
-} // namespace mx::detail
+} // namespace proxima::detail

@@ -1,12 +1,12 @@
 #include "wire/sexpr.hpp"
 
-#include <mx/errors.hpp>
+#include <proxima/errors.hpp>
 
 #include <charconv>
 #include <cstdlib>
 #include <system_error>
 
-namespace mx::detail {
+namespace proxima::detail {
 namespace {
 
 bool isDelimiter(char c) {
@@ -416,4 +416,4 @@ SExpr parseSExpr(std::string_view text) {
     return std::move(*result);
 }
 
-} // namespace mx::detail
+} // namespace proxima::detail

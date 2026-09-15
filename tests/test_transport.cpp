@@ -7,7 +7,7 @@
 #include "kernel/session.hpp"
 #include "transport/fake_transport.hpp"
 
-#include <mx/errors.hpp>
+#include <proxima/errors.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -18,9 +18,9 @@
 #include <thread>
 #include <vector>
 
-using mx::detail::FakeTransport;
-using mx::detail::MaximaSession;
-using mx::detail::Payload;
+using proxima::detail::FakeTransport;
+using proxima::detail::MaximaSession;
+using proxima::detail::Payload;
 
 namespace {
 
@@ -57,7 +57,7 @@ struct ScriptedSession {
 
         auto owned = std::make_unique<FakeTransport>(std::move(script));
         transport = owned.get();
-        session = std::make_unique<MaximaSession>(std::move(owned), mx::Config{});
+        session = std::make_unique<MaximaSession>(std::move(owned), proxima::Config{});
     }
 
     FakeTransport *transport = nullptr;
@@ -96,7 +96,7 @@ TEST_CASE("a successful reply yields the internal s-expression") {
     ScriptedSession scripted(
         {frame(2, true, "((MTIMES SIMP) 2 $X ((%SIN SIMP) $X))")});
 
-    const mx::Reply reply = scripted.session->eval(Payload::text("2*x*sin(x)"));
+    const proxima::Reply reply = scripted.session->eval(Payload::text("2*x*sin(x)"));
     CHECK(reply.ok);
     CHECK(reply.value == "((MTIMES SIMP) 2 $X ((%SIN SIMP) $X))");
     CHECK(reply.reason.empty());
@@ -109,7 +109,7 @@ TEST_CASE("a Maxima error is a value, not an exception") {
         {frame(2, false, "NIL",
                "integrate: variable must not be a number; found: 5")});
 
-    const mx::Reply reply = scripted.session->eval(Payload::text("integrate(x, 5)"));
+    const proxima::Reply reply = scripted.session->eval(Payload::text("integrate(x, 5)"));
     CHECK_FALSE(reply.ok);
     CHECK(reply.reason == "integrate: variable must not be a number; found: 5");
     CHECK(reply.value.empty());
@@ -170,13 +170,13 @@ TEST_CASE("a value containing delimiter-like text is not truncated") {
 
 TEST_CASE("a closing delimiter with no opening one is a protocol error") {
     ScriptedSession scripted({MaximaSession::frameEnd(2) + "\n"});
-    CHECK_THROWS_AS(scripted.session->eval(Payload::text("x")), mx::KernelError);
+    CHECK_THROWS_AS(scripted.session->eval(Payload::text("x")), proxima::KernelError);
 }
 
 TEST_CASE("a frame missing its field separators is a protocol error") {
     ScriptedSession scripted({MaximaSession::frameBegin(2) + "T"
                               + MaximaSession::frameEnd(2)});
-    CHECK_THROWS_AS(scripted.session->eval(Payload::text("x")), mx::KernelError);
+    CHECK_THROWS_AS(scripted.session->eval(Payload::text("x")), proxima::KernelError);
 }
 
 TEST_CASE("a session whose child has died reports a KernelError") {
@@ -184,15 +184,15 @@ TEST_CASE("a session whose child has died reports a KernelError") {
     // signal a real transport gives when the child exits.
     ScriptedSession scripted({});
     REQUIRE(scripted.transport->scriptExhausted());
-    CHECK_THROWS_AS(scripted.session->eval(Payload::text("1+1")), mx::KernelError);
+    CHECK_THROWS_AS(scripted.session->eval(Payload::text("1+1")), proxima::KernelError);
 }
 
 TEST_CASE("a null transport is rejected rather than dereferenced") {
     CHECK_THROWS_AS(
-        MaximaSession(std::unique_ptr<mx::detail::ITransport>(), mx::Config{}),
-        mx::KernelError);
-    CHECK_THROWS_AS(MaximaSession(MaximaSession::TransportFactory{}, mx::Config{}),
-                    mx::KernelError);
+        MaximaSession(std::unique_ptr<proxima::detail::ITransport>(), proxima::Config{}),
+        proxima::KernelError);
+    CHECK_THROWS_AS(MaximaSession(MaximaSession::TransportFactory{}, proxima::Config{}),
+                    proxima::KernelError);
 }
 
 TEST_CASE("a session that cannot answer restarts and replays its state") {
@@ -206,7 +206,7 @@ TEST_CASE("a session that cannot answer restarts and replays its state") {
     int built = 0;
     std::vector<std::string> sentToSecond;
 
-    auto factory = [&]() -> std::unique_ptr<mx::detail::ITransport> {
+    auto factory = [&]() -> std::unique_ptr<proxima::detail::ITransport> {
         ++built;
         if (built == 1) {
             // Answers the handshake, then nothing: the child has gone.
@@ -219,7 +219,7 @@ TEST_CASE("a session that cannot answer restarts and replays its state") {
         return std::make_unique<FakeTransport>(std::move(script));
     };
 
-    MaximaSession session(factory, mx::Config{});
+    MaximaSession session(factory, proxima::Config{});
     REQUIRE(built == 1);
 
     const std::uint64_t handle = session.remember(Payload::text("assume(x > 0)"));
@@ -227,7 +227,7 @@ TEST_CASE("a session that cannot answer restarts and replays its state") {
 
     // The first transport's script is exhausted, so this call finds a dead
     // child and fails — but triggers recovery on the way out.
-    CHECK_THROWS_AS(session.eval(Payload::text("1+1")), mx::KernelError);
+    CHECK_THROWS_AS(session.eval(Payload::text("1+1")), proxima::KernelError);
     CHECK(built == 2);
 
     // And the session works again, with the remembered statement replayed.
@@ -236,7 +236,7 @@ TEST_CASE("a session that cannot answer restarts and replays its state") {
 
 /// Forwards to a FakeTransport the test owns, so the test can still inspect it
 /// after the session has discarded the transport.
-class Borrowed final : public mx::detail::ITransport {
+class Borrowed final : public proxima::detail::ITransport {
 public:
     explicit Borrowed(FakeTransport &inner) : inner_(inner) {}
     void send(std::string_view bytes) override { inner_.send(bytes); }
@@ -260,7 +260,7 @@ TEST_CASE("a timeout ends the busy child at once instead of waiting for it") {
     busy.staySilentWhenExhausted();
 
     int built = 0;
-    auto factory = [&]() -> std::unique_ptr<mx::detail::ITransport> {
+    auto factory = [&]() -> std::unique_ptr<proxima::detail::ITransport> {
         ++built;
         if (built == 1) {
             return std::make_unique<Borrowed>(busy);
@@ -270,12 +270,12 @@ TEST_CASE("a timeout ends the busy child at once instead of waiting for it") {
         return std::make_unique<FakeTransport>(std::move(script));
     };
 
-    mx::Config config;
+    proxima::Config config;
     config.timeout = std::chrono::milliseconds(100);
     MaximaSession session(factory, config);
 
     CHECK_THROWS_AS(session.eval(Payload::text("expand((x+y+z)^200)")),
-                    mx::TimeoutError);
+                    proxima::TimeoutError);
     CHECK(built == 2);
     CHECK(busy.terminated());
     CHECK_FALSE(busy.killedGracefully());
@@ -292,7 +292,7 @@ TEST_CASE("bookkeeping does not wait behind a call in progress") {
 
     auto owned = std::make_unique<FakeTransport>(handshakeScript());
     owned->staySilentWhenExhausted();
-    mx::Config config;
+    proxima::Config config;
     config.timeout = 30s;
     MaximaSession session(std::move(owned), config);
 
@@ -313,12 +313,12 @@ TEST_CASE("bookkeeping does not wait behind a call in progress") {
         // Let the call end so the test does not hang on the old behaviour.
         session.setTimeout(1ms);
     }
-    CHECK_THROWS_AS(running.get(), mx::TimeoutError);
+    CHECK_THROWS_AS(running.get(), proxima::TimeoutError);
 }
 
 /// A transport that answers the handshake at once, then holds back the next
 /// reply until the test releases it — a computation the test can pause.
-class GatedTransport final : public mx::detail::ITransport {
+class GatedTransport final : public proxima::detail::ITransport {
 public:
     GatedTransport(std::vector<std::string> script, std::string gatedReply)
         : script_(std::move(script)), gatedReply_(std::move(gatedReply)) {}
@@ -361,7 +361,7 @@ TEST_CASE("an answer computed across a change of state is not cached") {
     auto owned = std::make_unique<GatedTransport>(handshakeScript(),
                                                   frame(2, true, "$BEFORE"));
     GatedTransport *gate = owned.get();
-    MaximaSession session(std::move(owned), mx::Config{});
+    MaximaSession session(std::move(owned), proxima::Config{});
 
     auto asking = std::async(std::launch::async, [&session] {
         return session.evalPure(Payload::text("question"));
@@ -392,7 +392,7 @@ TEST_CASE("a statement and its record are one conversation") {
     ScriptedSession scripted({frame(2, true, "$DONE"), frame(3, true, "$ANSWER")});
     MaximaSession &session = *scripted.session;
 
-    std::future<mx::Reply> asking;
+    std::future<proxima::Reply> asking;
     session.converseAtomically([&](MaximaSession::Conversation &conversation) {
         conversation.evalTracked(Payload::text("assume(x > 0)"));
 
@@ -417,14 +417,14 @@ TEST_CASE("a statement and its record are one conversation") {
 TEST_CASE("a session with no way to build another transport does not restart") {
     ScriptedSession scripted({});
     REQUIRE(scripted.transport->scriptExhausted());
-    CHECK_THROWS_AS(scripted.session->eval(Payload::text("1+1")), mx::KernelError);
+    CHECK_THROWS_AS(scripted.session->eval(Payload::text("1+1")), proxima::KernelError);
     // Still dead, and honestly so, rather than pretending to recover.
-    CHECK_THROWS_AS(scripted.session->eval(Payload::text("1+1")), mx::KernelError);
+    CHECK_THROWS_AS(scripted.session->eval(Payload::text("1+1")), proxima::KernelError);
 }
 
 TEST_CASE("restart() replaces the process and replays the journal") {
     int built = 0;
-    auto factory = [&]() -> std::unique_ptr<mx::detail::ITransport> {
+    auto factory = [&]() -> std::unique_ptr<proxima::detail::ITransport> {
         ++built;
         std::vector<std::string> script = handshakeScript();
         if (built > 1) {
@@ -435,7 +435,7 @@ TEST_CASE("restart() replaces the process and replays the journal") {
         return std::make_unique<FakeTransport>(std::move(script));
     };
 
-    MaximaSession session(factory, mx::Config{});
+    MaximaSession session(factory, proxima::Config{});
     session.remember(Payload::text("assume(x > 0)"));
 
     session.restart();
@@ -444,13 +444,13 @@ TEST_CASE("restart() replaces the process and replays the journal") {
 
     SUBCASE("unless there is no way to start another") {
         ScriptedSession scripted({});
-        CHECK_THROWS_AS(scripted.session->restart(), mx::KernelError);
+        CHECK_THROWS_AS(scripted.session->restart(), proxima::KernelError);
     }
 }
 
 TEST_CASE("forgetting a statement stops it being replayed") {
     int built = 0;
-    auto factory = [&]() -> std::unique_ptr<mx::detail::ITransport> {
+    auto factory = [&]() -> std::unique_ptr<proxima::detail::ITransport> {
         ++built;
         std::vector<std::string> script = handshakeScript();
         if (built > 1) {
@@ -462,11 +462,11 @@ TEST_CASE("forgetting a statement stops it being replayed") {
         return std::make_unique<FakeTransport>(std::move(script));
     };
 
-    MaximaSession session(factory, mx::Config{});
+    MaximaSession session(factory, proxima::Config{});
     const std::uint64_t handle = session.remember(Payload::text("assume(x > 0)"));
     session.forget(handle);
 
-    CHECK_THROWS_AS(session.eval(Payload::text("1+1")), mx::KernelError);
+    CHECK_THROWS_AS(session.eval(Payload::text("1+1")), proxima::KernelError);
     CHECK(session.eval(Payload::text("again")).value == "$CLEAN");
 }
 
@@ -475,6 +475,6 @@ TEST_CASE("a failed handshake is reported at construction") {
     // the caller discover that one query later.
     auto transport = std::make_unique<FakeTransport>(
         std::vector<std::string>{frame(1, false, "NIL", "something went wrong")});
-    CHECK_THROWS_AS(MaximaSession(std::move(transport), mx::Config{}),
-                    mx::KernelError);
+    CHECK_THROWS_AS(MaximaSession(std::move(transport), proxima::Config{}),
+                    proxima::KernelError);
 }

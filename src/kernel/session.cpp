@@ -5,8 +5,8 @@
 #include "util/utf8.hpp"
 #include "wire/to_maxima.hpp"
 
-#include <mx/errors.hpp>
-#include <mx/version.hpp>
+#include <proxima/errors.hpp>
+#include <proxima/version.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -14,7 +14,7 @@
 #include <filesystem>
 #include <system_error>
 
-namespace mx::detail {
+namespace proxima::detail {
 namespace {
 
 // How long to wait for any single chunk of output before checking whether the
@@ -57,7 +57,7 @@ std::string toMaximaPath(const std::filesystem::path &p) {
 // Overriding `retrieve`, the single point all of that goes through, turns a
 // question into an ordinary Maxima error. errcatch then reports it as a Failure
 // carrying the question text, the session stays synchronised, and the caller is
-// told exactly which assumption to supply — see mx::Context.
+// told exactly which assumption to supply — see proxima::Context.
 //
 // `errcatch` hands `x` back as a Maxima list: empty on failure, one element on
 // success. On failure the message is rendered by calling errormsg() with
@@ -260,7 +260,7 @@ MaximaSession::launchEnvironment(const MaximaInstall &install,
         std::filesystem::path userDir = config.userDir;
         if (userDir.empty()) {
             std::error_code ec;
-            userDir = std::filesystem::temp_directory_path(ec) / "maxima_cpp"
+            userDir = std::filesystem::temp_directory_path(ec) / "proxima"
                       / "userdir";
         }
         std::error_code ec;
@@ -279,7 +279,7 @@ MaximaSession::MaximaSession(Config config)
     // inside a conversation, holding only the pipe lock, while another thread
     // may be reading the version to form a persistent key.
     factory_ = [this] {
-        // Not `version`, which would hide mx::version (MSVC's C4459).
+        // Not `version`, which would hide proxima::version (MSVC's C4459).
         std::string launchedVersion;
         auto transport = launchMaxima(config_, launchedVersion);
         const std::lock_guard<std::mutex> state(stateMutex_);
@@ -688,4 +688,4 @@ Reply MaximaSession::readFrame(std::uint64_t id, Deadline deadlineKind) {
     return reply;
 }
 
-} // namespace mx::detail
+} // namespace proxima::detail

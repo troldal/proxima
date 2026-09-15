@@ -2,9 +2,9 @@
 
 #include <doctest/doctest.h>
 
-#include <mx/errors.hpp>
-#include <mx/expr.hpp>
-#include <mx/symbol.hpp>
+#include <proxima/errors.hpp>
+#include <proxima/expr.hpp>
+#include <proxima/symbol.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -16,9 +16,9 @@
 #include <unordered_set>
 #include <vector>
 
-using mx::Expr;
-using mx::Kind;
-using mx::Symbol;
+using proxima::Expr;
+using proxima::Kind;
+using proxima::Symbol;
 
 // --- what an expression can be built from ------------------------------------
 //
@@ -49,7 +49,7 @@ static_assert(std::is_convertible_v<std::uint8_t, Expr>);
 static_assert(std::is_convertible_v<float, Expr>);
 static_assert(std::is_convertible_v<double, Expr>);
 static_assert(std::is_convertible_v<long double, Expr>);
-static_assert(std::is_convertible_v<mx::Integer, Expr>);
+static_assert(std::is_convertible_v<proxima::Integer, Expr>);
 
 TEST_CASE("small fixed-width integers are numbers, not characters") {
     // std::int8_t is signed char, which is why only plain char is excluded.
@@ -96,17 +96,17 @@ TEST_CASE("numeric leaves") {
         CHECK(Expr::rational(-2, -4) == Expr::rational(1, 2));
     }
     SUBCASE("a zero denominator is rejected") {
-        CHECK_THROWS_AS(Expr::rational(1, 0), mx::Error);
+        CHECK_THROWS_AS(Expr::rational(1, 0), proxima::Error);
     }
 }
 
 TEST_CASE("large integers are numbers, not text") {
-    // mx::Integer is unbounded, so 30! is an Integer node that arithmetic
+    // proxima::Integer is unbounded, so 30! is an Integer node that arithmetic
     // works on — it used to become Opaque text that could only be printed.
-    const Expr bignum = Expr(mx::Integer("265252859812191058636308480000000"));
+    const Expr bignum = Expr(proxima::Integer("265252859812191058636308480000000"));
     CHECK(bignum.kind() == Kind::Integer);
     CHECK(bignum.str() == "265252859812191058636308480000000");
-    CHECK(bignum == Expr(mx::Integer("265252859812191058636308480000000")));
+    CHECK(bignum == Expr(proxima::Integer("265252859812191058636308480000000")));
 
     SUBCASE("and can be computed with") {
         CHECK((bignum + Expr(1)).str() == "265252859812191058636308480000001");
@@ -117,8 +117,8 @@ TEST_CASE("large integers are numbers, not text") {
 TEST_CASE("the extreme 64-bit value is no longer a special case") {
     // This used to become Opaque, because negating it overflowed. Nothing
     // overflows now.
-    const Expr value = Expr::rational(mx::Integer("-9223372036854775808"),
-                                      mx::Integer(-1));
+    const Expr value = Expr::rational(proxima::Integer("-9223372036854775808"),
+                                      proxima::Integer(-1));
     CHECK(value.kind() == Kind::Integer);
     CHECK(value.str() == "9223372036854775808");
 }
@@ -132,7 +132,7 @@ TEST_CASE("symbols") {
 }
 
 TEST_CASE("a symbol converts implicitly, so expressions read naturally") {
-    using namespace mx::literals;
+    using namespace proxima::literals;
     const Symbol x("x");
 
     const Expr f = x * x + 3 * x + 2;
@@ -215,7 +215,7 @@ TEST_CASE("relations are built by name, not by operator") {
     const Expr equation = eq(Expr(x), Expr(1));
 
     CHECK(equation.kind() == Kind::Relation);
-    CHECK(equation.relationOp() == mx::RelOp::Equal);
+    CHECK(equation.relationOp() == proxima::RelOp::Equal);
     CHECK(equation.str() == "x = 1");
     CHECK(gt(Expr(x), Expr(0)).str() == "x > 0");
     // Maxima spells inequality '#', not '!='.
@@ -266,9 +266,9 @@ TEST_CASE("a Real is never NaN or infinite") {
     const double nan = std::numeric_limits<double>::quiet_NaN();
     const double inf = std::numeric_limits<double>::infinity();
 
-    CHECK_THROWS_AS(Expr::real(nan), mx::Error);
+    CHECK_THROWS_AS(Expr::real(nan), proxima::Error);
     // Braces: `Expr(nan);` as a statement declares a variable named nan.
-    CHECK_THROWS_AS(Expr{nan}, mx::Error);
+    CHECK_THROWS_AS(Expr{nan}, proxima::Error);
 
     SUBCASE("an infinity is Maxima's symbol, which reads back as itself") {
         // Found by fuzzing: a Real infinity printed as inf, which reads back
@@ -288,12 +288,12 @@ TEST_CASE("a Real is never NaN or infinite") {
     SUBCASE("and arithmetic that would overflow to one is refused") {
         // As Maxima refuses it, with FLOATING-POINT-OVERFLOW. It used to fold
         // silently to infinity, from finite numbers.
-        CHECK_THROWS_AS(static_cast<void>(Expr(1e308) * Expr(10.0)), mx::Error);
-        CHECK_THROWS_AS(static_cast<void>(Expr(1e308) + Expr(1e308)), mx::Error);
-        const Expr huge(mx::Integer("1" + std::string(400, '0')));
-        CHECK_THROWS_AS(static_cast<void>(huge * Expr(1.0)), mx::Error);
+        CHECK_THROWS_AS(static_cast<void>(Expr(1e308) * Expr(10.0)), proxima::Error);
+        CHECK_THROWS_AS(static_cast<void>(Expr(1e308) + Expr(1e308)), proxima::Error);
+        const Expr huge(proxima::Integer("1" + std::string(400, '0')));
+        CHECK_THROWS_AS(static_cast<void>(huge * Expr(1.0)), proxima::Error);
         CHECK_THROWS_AS(static_cast<void>(Expr::parse("1" + std::string(400, '0') + "/5.0")),
-                        mx::Error);
+                        proxima::Error);
 
         // Dividing by a tiny real would overflow its reciprocal: it stays a
         // negative power instead.
@@ -369,12 +369,12 @@ TEST_CASE("rationals and reals print recognisably") {
 
 TEST_CASE("accessors reject the wrong kind instead of returning nonsense") {
     const Symbol x("x");
-    CHECK_THROWS_AS(Expr(x).integerValue(), mx::Error);
-    CHECK_THROWS_AS(Expr(1).realValue(), mx::Error);
-    CHECK_THROWS_AS(Expr(1).name(), mx::Error);
-    CHECK_THROWS_AS(Expr(1).relationOp(), mx::Error);
-    CHECK_THROWS_AS(Expr(1).opaqueText(), mx::Error);
-    CHECK_THROWS_AS(Expr(1).arg(0), mx::Error);
+    CHECK_THROWS_AS(Expr(x).integerValue(), proxima::Error);
+    CHECK_THROWS_AS(Expr(1).realValue(), proxima::Error);
+    CHECK_THROWS_AS(Expr(1).name(), proxima::Error);
+    CHECK_THROWS_AS(Expr(1).relationOp(), proxima::Error);
+    CHECK_THROWS_AS(Expr(1).opaqueText(), proxima::Error);
+    CHECK_THROWS_AS(Expr(1).arg(0), proxima::Error);
 }
 
 TEST_CASE("an integer is a rational with denominator one") {

@@ -1,12 +1,12 @@
-#include <mx/context.hpp>
+#include <proxima/context.hpp>
 
 #include "kernel/session.hpp"
 #include "wire/from_maxima.hpp"
 #include "wire/sexpr.hpp"
 #include "wire/to_maxima.hpp"
 
-#include <mx/errors.hpp>
-#include <mx/traverse.hpp>
+#include <proxima/errors.hpp>
+#include <proxima/traverse.hpp>
 
 #include <atomic>
 #include <memory>
@@ -16,7 +16,7 @@
 #include <utility>
 #include <vector>
 
-namespace mx {
+namespace proxima {
 namespace {
 
 using Conversation = detail::MaximaSession::Conversation;
@@ -25,7 +25,7 @@ using Conversation = detail::MaximaSession::Conversation;
 /// created in any order or nesting, so they are simply counted.
 std::string nextContextName() {
     static std::atomic<unsigned long long> counter{0};
-    return "mx_ctx_" + std::to_string(++counter);
+    return "proxima_ctx_" + std::to_string(++counter);
 }
 
 /// What this library knows about one Maxima context it opened.
@@ -357,4 +357,4 @@ std::vector<Expr> Context::facts() const {
     return all;
 }
 
-} // namespace mx
+} // namespace proxima

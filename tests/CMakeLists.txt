@@ -14,7 +14,7 @@ CPMAddPackage(
         "DOCTEST_NO_INSTALL ON"
 )
 
-add_executable(mx_tests
+add_executable(proxima_tests
         test_main.cpp
         test_basics.cpp
         test_cache.cpp
@@ -38,19 +38,19 @@ add_executable(mx_tests
         test_transport.cpp
         test_traverse.cpp
 )
-target_link_libraries(mx_tests PRIVATE mx::maxima_cpp doctest::doctest)
+target_link_libraries(proxima_tests PRIVATE proxima::proxima doctest::doctest)
 
 # The sources are UTF-8, and held to the same warnings as the library; see
-# MX_MSVC_UTF8 and MX_WARNINGS in the top-level CMakeLists.txt.
-target_compile_options(mx_tests PRIVATE ${MX_MSVC_UTF8} ${MX_WARNINGS})
+# PROXIMA_MSVC_UTF8 and PROXIMA_WARNINGS in the top-level CMakeLists.txt.
+target_compile_options(proxima_tests PRIVATE ${PROXIMA_MSVC_UTF8} ${PROXIMA_WARNINGS})
 
 # White-box access: the transport and session layers are internal, but they are
 # exactly what the Maxima-free tests exercise.
-target_include_directories(mx_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(proxima_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 # The recorded Maxima replies the reader and mapping layers are tested against.
-target_compile_definitions(mx_tests PRIVATE
-        MX_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden")
+target_compile_definitions(proxima_tests PRIVATE
+        PROXIMA_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden")
 
 # Two CTest entries over one binary, split by doctest test suite. Tests that
 # need a working Maxima installation are labelled so they can be excluded:
@@ -59,9 +59,9 @@ target_compile_definitions(mx_tests PRIVATE
 #
 # The Maxima-free half covers the protocol, reader and term layers through
 # FakeTransport, so this split is what keeps most of the suite runnable in CI.
-add_test(NAME unit COMMAND mx_tests --test-suite-exclude=maxima)
+add_test(NAME unit COMMAND proxima_tests --test-suite-exclude=maxima)
 
-add_test(NAME integration COMMAND mx_tests --test-suite=maxima)
+add_test(NAME integration COMMAND proxima_tests --test-suite=maxima)
 set_tests_properties(integration PROPERTIES
         LABELS "maxima"
         TIMEOUT 120

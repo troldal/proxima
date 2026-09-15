@@ -1,6 +1,6 @@
 #include "wire/from_maxima.hpp"
 
-#include <mx/errors.hpp>
+#include <proxima/errors.hpp>
 
 #include <bit>
 #include <cctype>
@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace mx::detail {
+namespace proxima::detail {
 namespace {
 
 bool isUpper(unsigned char c) {
@@ -87,7 +87,7 @@ std::string decodeHead(std::string_view raw) {
     return decodeMaximaName(raw);
 }
 
-/// The value of an Integer atom, of any size: mx::Integer is unbounded, so a
+/// The value of an Integer atom, of any size: proxima::Integer is unbounded, so a
 /// factorial arrives as a number rather than as a blob of text.
 Integer integerOf(const SExpr &form) {
     // The reader makes an Integer only of an optional sign and digits, so this
@@ -297,4 +297,4 @@ Expr fromMaxima(const SExpr &form) {
     return Expr::function(decodeHead(raw), mapArguments(form));
 }
 
-} // namespace mx::detail
+} // namespace proxima::detail

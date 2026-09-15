@@ -1,6 +1,6 @@
 #pragma once
 
-#include <mx/reply.hpp>
+#include <proxima/reply.hpp>
 
 #include <cstddef>
 #include <list>
@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <utility>
 
-namespace mx::detail {
+namespace proxima::detail {
 
 /// A least-recently-used cache of replies, keyed on the Maxima source that
 /// produced them.
@@ -55,4 +55,4 @@ private:
     std::size_t misses_ = 0;
 };
 
-} // namespace mx::detail
+} // namespace proxima::detail
