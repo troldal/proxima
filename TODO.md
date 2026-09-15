@@ -22,7 +22,7 @@ Items are ordered by how much they matter, not by file.
 
 ## Status since the review
 
-Updated after `7fbed5a`. Resolved findings are ticked where they stand, with
+Updated after `5f8d086`. Resolved findings are ticked where they stand, with
 an *Outcome* note; everything unticked is still open. The review's own text
 is left as written, so its measurements stay comparable.
 
@@ -138,11 +138,15 @@ Work since, and what it turned up that the review had not found:
 - **§8** (`dc0f03b`, `7fbed5a`). Two of the four open items already had tests,
   written with their §2 fixes. The other two are new tests, and both passed on
   their first run: the behaviour was right, only unpinned.
+- **§7, all but CI** (`91df296` … `5f8d086`); CI is left for later. Turning
+  the warning flags on found three warnings the earlier GCC sweep had missed;
+  clang-tidy's first run found 47 findings, the
+  real ones fixed and the rest either excused in the file or left out of it.
 
 Suite: 322 cases / 4734 assertions on Windows (GCC and clang-cl), 323 / 4732 on
 Linux (222 when the review was written).
 
-§1 to §6 and §8 are closed. What remains is §7 (build and process).
+Every section is closed except §7's CI item, which is left for later.
 
 ---
 
@@ -989,19 +993,37 @@ candidates, most valuable first.
 
 ## 7. Build, repo, process
 
-- [ ] **No `LICENSE` file.** README has a "Licence" section about
+- [x] **No `LICENSE` file.** README has a "Licence" section about
   Maxima's GPL and the process boundary, but this library's own licence
   is never stated anywhere. That is the first thing a consumer looks for.
 
-- [ ] **`.idea/` is tracked** (7 files). The `.gitignore` only excludes a
+  *Outcome:* done in `91df296`: MIT, Copyright (c) 2026 Kenneth Balslev, and the
+  README's licence section now says so before explaining Maxima's GPL.
+
+- [x] **`.idea/` is tracked** (7 files). The `.gitignore` only excludes a
   subset. Either commit the whole project config deliberately or ignore
   the directory.
 
-- [ ] **Warnings are clean but nothing enforces it.** Add
+  *Outcome:* ignored, in `2dba191`. The files record one machine's toolchains
+  and paths, and CLion regenerates them from `CMakeLists.txt`; they are
+  untracked, and local copies are untouched.
+
+- [x] **Warnings are clean but nothing enforces it.** Add
   `-Wall -Wextra -Wpedantic -Wshadow -Wconversion` (`/W4` for MSVC) to the
   library target, and `-Werror` in CI. The sweep for this review found
   zero, so it costs nothing to turn on now and it will catch the first
   regression.
+
+  *Outcome:* done in `980947c`, on every target of this project's own:
+  `-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion
+  -Wold-style-cast` for GCC and Clang, `/W4` for MSVC and clang-cl, and
+  `-Werror` or `/WX` behind `MAXIMA_CPP_WARNINGS_AS_ERRORS`, off by default for
+  a CI to turn on. It was not quite free: it found three warnings the earlier
+  GCC sweep had missed. MSVC's C4459, a local `version` hiding `mx::version`;
+  GCC's `-Wcomment`, a `//` line of ASCII art ending in a backslash, in a test
+  the sweep had not compiled; and a sign conversion that only Linux's
+  `uint64_t`, `unsigned long` there, raises. All four compilers now build it
+  with no warning in this project's code.
 
 - [ ] **No CI.** Three toolchains were verified by hand for the Boost
   change (GCC/Windows, clang-cl/Windows, GCC/Linux). A GitHub Actions
@@ -1010,18 +1032,39 @@ candidates, most valuable first.
   that automatic. The LP64 `long long` ambiguity that only Linux caught is
   the argument.
 
-- [ ] **No `.clang-format` / `.clang-tidy`.** The code is consistently
+- [x] **No `.clang-format` / `.clang-tidy`.** The code is consistently
   styled, which means a format file already exists in someone's head;
   commit it.
 
-- [ ] **`std::getenv` triggers MSVC's deprecation warning** under
+  *Outcome:* both committed. `.clang-format` (`e1473e7`) is the best of 24
+  variants measured against the tree: LLVM, 4-space indentation, breaks before
+  binary operators, 85 columns. It still differs on about one line in eight,
+  mostly hand-placed breaks, so it is not applied wholesale; the file says to
+  format changed lines with `git clang-format`. `.clang-tidy` (`5f8d086`) holds
+  the code to bugprone, performance and a few other checks, and it passes them.
+  The first run found 47 findings. The real ones are fixed: four `std::move`s
+  into const references, seven one-character string appends, four discarded
+  asio return values, two `int` products widened to sizes, two parameters taken
+  by value for no reason, and a decrement inside a loop condition. Two intended
+  designs carry a `NOLINT` saying why, and five checks whose every finding was
+  intended are left out, each named with its reason in the file.
+
+- [x] **`std::getenv` triggers MSVC's deprecation warning** under
   clang-cl (seen in the build log). `_CRT_SECURE_NO_WARNINGS` on the
   target, or `_dupenv_s` under `_WIN32`.
 
-- [ ] **`BUILD_SHARED_LIBS OFF` is passed to Boost through CPM
+  *Outcome:* already gone. `39dad91`, which made non-ASCII paths work, reads the
+  environment through the wide API on Windows, and no `std::getenv` call is left.
+  Neither clang-cl's nor MSVC's build shows the warning.
+
+- [x] **`BUILD_SHARED_LIBS OFF` is passed to Boost through CPM
   `OPTIONS`.** CPM sets those as cache variables, so it also pins *this*
   project's default. Harmless today (the library is static regardless),
   but it will surprise whoever adds a shared-library option.
+
+  *Outcome:* fixed in `b3010ea`: a normal variable set around `CPMAddPackage` and
+  unset after, so Boost still builds static and a user's value is back in force
+  afterwards. A fresh configure no longer caches `BUILD_SHARED_LIBS`.
 
 ## 8. Tests — what is missing
 
