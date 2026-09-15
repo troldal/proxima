@@ -14,13 +14,16 @@
 #include "wire/from_maxima.hpp"
 #include "wire/sexpr.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -501,6 +504,58 @@ TEST_CASE("evalExpr answers an unwrapped function with an expression") {
         // Unparseable text too: read inside the error trap, so no stall.
         CHECK_FALSE(kernel.evalExpr("(1").has_value());
     }
+}
+
+TEST_CASE("one Kernel shared between threads gives every caller its own answer") {
+    // The README promises a Kernel is safe to share: calls take turns rather
+    // than interleave on the pipe. The session's locking is tested over
+    // FakeTransport; this is the promise itself, against Maxima. Every question
+    // is distinct, so an answer handed to the wrong caller cannot pass.
+    mx::Kernel kernel;
+    constexpr int threads = 4;
+    constexpr int calls = 25;
+
+    std::atomic<int> wrong{0};
+    std::mutex firstFailureMutex;
+    std::string firstFailure;
+    const auto fail = [&](const std::string &what) {
+        ++wrong;
+        const std::lock_guard<std::mutex> lock(firstFailureMutex);
+        if (firstFailure.empty()) {
+            firstFailure = what;
+        }
+    };
+
+    std::vector<std::thread> workers;
+    for (int t = 0; t < threads; ++t) {
+        workers.emplace_back([&, t] {
+            try {
+                for (int i = 0; i < calls; ++i) {
+                    const int n = t * 1000 + i;
+                    // A cached question and a raw eval, which clears the cache:
+                    // both paths through the session's state, interleaved.
+                    const mx::Reply pure = kernel.evalPure(std::to_string(n) + " + 1");
+                    if (!pure.ok || pure.value != std::to_string(n + 1)) {
+                        fail("evalPure " + std::to_string(n) + " + 1 gave " + pure.value);
+                    }
+                    const mx::Reply raw = kernel.eval(std::to_string(n) + " * 2");
+                    if (!raw.ok || raw.value != std::to_string(2 * n)) {
+                        fail("eval " + std::to_string(n) + " * 2 gave " + raw.value);
+                    }
+                }
+            } catch (const std::exception &error) {
+                fail(std::string("threw: ") + error.what());
+            }
+        });
+    }
+    for (std::thread &worker : workers) {
+        worker.join();
+    }
+
+    INFO("first failure: ", firstFailure);
+    CHECK(wrong.load() == 0);
+    // And the kernel is still one working session afterwards.
+    CHECK(kernel.eval("1 + 1").value == "2");
 }
 
 } // TEST_SUITE("maxima")
