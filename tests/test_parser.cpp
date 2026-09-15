@@ -298,6 +298,27 @@ TEST_CASE("statements are not expressions, and are refused") {
     CHECK_THROWS_AS(Expr::parse("'diff(f(x), x)"), mx::ParseError);
 }
 
+TEST_CASE("every Maxima operator outside the subset is refused") {
+    // The subset is arithmetic, comparisons, application, lists and strings,
+    // with !, !! and ** read as Maxima reads them. Each of these is Maxima
+    // syntax it does not take — mx::parse hands such text to Maxima — and each
+    // must be refused, not read as something else.
+    for (const char *source : {
+             "a: 7", "a :: 7", "f(x) := x^2", "f(x) ::= x",  // assignment, definitions
+             "'x", "''x",                                    // quoting
+             "a . b", "a ^^ 2",                              // non-commutative product, power
+             "a[1]",                                         // subscripts
+             "a and b", "a or b", "not a",                   // logic
+             "if a then b else c", "for i thru 3 do x",      // control flow
+             "x;", "x$",                                     // statement terminators
+             "?print(x)",                                    // a Lisp escape
+             "a ~ b", "a -> b", "a | b",                     // operators Maxima does not have
+         }) {
+        CAPTURE(std::string(source));
+        CHECK_THROWS_AS(static_cast<void>(Expr::parse(source)), mx::ParseError);
+    }
+}
+
 TEST_CASE("what is parsed prints back to the same thing") {
     // Not textual equality — canonical order and spacing differ — but parsing
     // the printed form must give the same expression.
