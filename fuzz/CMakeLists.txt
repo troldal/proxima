@@ -42,7 +42,7 @@ foreach (target IN ITEMS fuzz_sexpr fuzz_parser)
     target_link_libraries(${target} PRIVATE mx::maxima_cpp)
     # White-box, as the tests are: parseSExpr and fromMaxima are internal.
     target_include_directories(${target} PRIVATE ${PROJECT_SOURCE_DIR}/src)
-    target_compile_options(${target} PRIVATE ${MX_MSVC_UTF8})
+    target_compile_options(${target} PRIVATE ${MX_MSVC_UTF8} ${MX_WARNINGS})
 endforeach ()
 
 if (MAXIMA_CPP_BUILD_TESTS)

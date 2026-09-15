@@ -32,7 +32,7 @@ const std::string &processToken() {
             // No entropy source. The id and the clock still separate writers.
         }
         bits ^= static_cast<std::uint64_t>(boost::process::v2::current_pid())
-                * 0x9e3779b97f4a7c15ULL;
+                * std::uint64_t{0x9e3779b97f4a7c15ULL};
         bits ^= static_cast<std::uint64_t>(
             std::chrono::steady_clock::now().time_since_epoch().count());
         bits ^= static_cast<std::uint64_t>(

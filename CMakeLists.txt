@@ -160,16 +160,38 @@ target_compile_features(maxima_cpp PUBLIC cxx_std_23)
 # compiles these sources, because it describes this project's files and not a
 # consumer's.
 set(MX_MSVC_UTF8 $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
-target_compile_options(maxima_cpp PRIVATE ${MX_MSVC_UTF8})
+
+# Warnings, for this project's own code. The sources compile cleanly under all
+# of these, with GCC, Clang, clang-cl and MSVC; turning them on keeps it so.
+# Boost and doctest are SYSTEM includes, so their headers are exempt. PRIVATE
+# on each target, like MX_MSVC_UTF8: they describe this project's code, not a
+# consumer's. With MAXIMA_CPP_WARNINGS_AS_ERRORS, a warning fails the build.
+option(MAXIMA_CPP_WARNINGS_AS_ERRORS
+        "Treat warnings in maxima_cpp's own code as errors" OFF)
+if (MSVC)
+    # /W4 for MSVC and for clang-cl, which maps it to -Wall -Wextra.
+    set(MX_WARNINGS /W4)
+    if (MAXIMA_CPP_WARNINGS_AS_ERRORS)
+        list(APPEND MX_WARNINGS /WX)
+    endif ()
+else ()
+    set(MX_WARNINGS -Wall -Wextra -Wpedantic -Wshadow -Wconversion
+            -Wsign-conversion -Wold-style-cast)
+    if (MAXIMA_CPP_WARNINGS_AS_ERRORS)
+        list(APPEND MX_WARNINGS -Werror)
+    endif ()
+endif ()
+
+target_compile_options(maxima_cpp PRIVATE ${MX_MSVC_UTF8} ${MX_WARNINGS})
 
 add_executable(demo examples/demo.cpp)
 target_link_libraries(demo PRIVATE mx::maxima_cpp)
-target_compile_options(demo PRIVATE ${MX_MSVC_UTF8})
+target_compile_options(demo PRIVATE ${MX_MSVC_UTF8} ${MX_WARNINGS})
 
 # A longer, heavily commented walk through every public feature.
 add_executable(tour examples/tour.cpp)
 target_link_libraries(tour PRIVATE mx::maxima_cpp)
-target_compile_options(tour PRIVATE ${MX_MSVC_UTF8})
+target_compile_options(tour PRIVATE ${MX_MSVC_UTF8} ${MX_WARNINGS})
 
 # --- Installation ---------------------------------------------------------
 

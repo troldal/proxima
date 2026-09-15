@@ -390,11 +390,14 @@ TEST_CASE("a renderer whose output is not a string") {
     }
     SUBCASE("brackets grow with what they contain") {
         // A multi-line sum used as a factor has to be bracketed, and the
-        // renderer draws the bracket at the height of what it holds:
-        //
-        //        /    1\
-        //  sin(x)|1 + -|
-        //        \    y/
+        // renderer draws the bracket at the height of what it holds. (A block
+        // comment: a // line ending in the backslash below would continue onto
+        // the next line.)
+        /*
+                  /    1\
+            sin(x)|1 + -|
+                  \    y/
+        */
         const std::string picture
             = drawn(mx::sin(Expr(x)) * (Expr(1) / Expr(y) + 1));
         CHECK(picture.find('/') != std::string::npos);

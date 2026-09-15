@@ -40,8 +40,9 @@ add_executable(mx_tests
 )
 target_link_libraries(mx_tests PRIVATE mx::maxima_cpp doctest::doctest)
 
-# The sources are UTF-8; see MX_MSVC_UTF8 in the top-level CMakeLists.txt.
-target_compile_options(mx_tests PRIVATE ${MX_MSVC_UTF8})
+# The sources are UTF-8, and held to the same warnings as the library; see
+# MX_MSVC_UTF8 and MX_WARNINGS in the top-level CMakeLists.txt.
+target_compile_options(mx_tests PRIVATE ${MX_MSVC_UTF8} ${MX_WARNINGS})
 
 # White-box access: the transport and session layers are internal, but they are
 # exactly what the Maxima-free tests exercise.

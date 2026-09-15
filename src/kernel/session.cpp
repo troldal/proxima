@@ -279,10 +279,11 @@ MaximaSession::MaximaSession(Config config)
     // inside a conversation, holding only the pipe lock, while another thread
     // may be reading the version to form a persistent key.
     factory_ = [this] {
-        std::string version;
-        auto transport = launchMaxima(config_, version);
+        // Not `version`, which would hide mx::version (MSVC's C4459).
+        std::string launchedVersion;
+        auto transport = launchMaxima(config_, launchedVersion);
         const std::lock_guard<std::mutex> state(stateMutex_);
-        maximaVersion_ = std::move(version);
+        maximaVersion_ = std::move(launchedVersion);
         return transport;
     };
     transport_ = factory_();
