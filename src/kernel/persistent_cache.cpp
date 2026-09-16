@@ -239,10 +239,20 @@ std::optional<Reply> PersistentCache::find(std::string_view source) const {
 
     // A read is a use: it keeps the entry from eviction. After the stream has
     // closed, since Windows may refuse to change the time of a file held open.
+    //
+    // Only when the recorded use is at least an hour old, though. Eviction
+    // needs to know roughly which entries are cold, not the exact order of the
+    // last minute's reads, and a metadata write on every hit is a write to
+    // disk on what should be a read — for a directory shared by many
+    // processes, many writes.
     if (byteLimit_ != 0) {
+        constexpr auto kRefreshAge = std::chrono::hours{1};
         std::error_code ec;
-        std::filesystem::last_write_time(
-            path, std::filesystem::file_time_type::clock::now(), ec);
+        const auto now = std::filesystem::file_time_type::clock::now();
+        const auto used = std::filesystem::last_write_time(path, ec);
+        if (ec || now - used >= kRefreshAge) {
+            std::filesystem::last_write_time(path, now, ec);
+        }
     }
     return reply;
 }

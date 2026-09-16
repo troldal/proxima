@@ -46,6 +46,14 @@ struct Config {
     /// caching entirely.
     std::size_t cacheEntries = 4096;
 
+    /// The most memory the remembered replies may occupy, counting their text.
+    ///
+    /// A limit on entries alone does not bound memory: one reply can be close
+    /// to a megabyte (`expand((x+y+z)^120)`), and 4096 of those is gigabytes.
+    /// The least recently used replies go first once either limit is reached,
+    /// and a reply larger than this on its own is not remembered at all.
+    std::size_t cacheBytes = std::size_t{64} * 1024 * 1024;
+
     /// Where to keep replies between runs. Empty means do not.
     ///
     /// Off by default: writing files somewhere is not a thing a library should

@@ -75,6 +75,52 @@ TEST_CASE("a capacity of zero disables caching without misbehaving") {
     CHECK(cache.find("a") == nullptr);
 }
 
+TEST_CASE("the byte limit evicts as well as the entry limit") {
+    // Room for many entries but few bytes: large replies must push out old
+    // ones long before the count would.
+    const std::string large(1000, 'x');
+    const std::size_t each = ReplyCache::footprint("a", valued(large));
+    ReplyCache cache(4096, 2 * each + each / 2);
+
+    cache.insert("a", valued(large));
+    cache.insert("b", valued(large));
+    CHECK(cache.size() == 2);
+    CHECK(cache.bytes() == 2 * each);
+
+    cache.insert("c", valued(large));
+    CHECK(cache.size() == 2);
+    CHECK(cache.bytes() <= cache.byteLimit());
+    CHECK(cache.find("a") == nullptr);
+    CHECK(cache.find("b") != nullptr);
+    CHECK(cache.find("c") != nullptr);
+}
+
+TEST_CASE("a reply larger than the byte limit is not remembered") {
+    ReplyCache cache(16, 2048);
+    cache.insert("small", valued("1"));
+    cache.insert("big", valued(std::string(4096, 'x')));
+
+    CHECK(cache.find("big") == nullptr);
+    // And it did not evict what was there to make room it could never use.
+    CHECK(cache.find("small") != nullptr);
+
+    // A newer answer too large to keep takes the older one with it, so a
+    // stale reply is never served in place of the one that replaced it.
+    cache.insert("small", valued(std::string(4096, 'y')));
+    CHECK(cache.find("small") == nullptr);
+    CHECK(cache.bytes() == 0);
+}
+
+TEST_CASE("replacing an entry recharges its footprint") {
+    ReplyCache cache(4);
+    cache.insert("a", valued(std::string(100, 'x')));
+    cache.insert("a", valued("1"));
+    CHECK(cache.bytes() == ReplyCache::footprint("a", valued("1")));
+
+    cache.clear();
+    CHECK(cache.bytes() == 0);
+}
+
 TEST_CASE("clearing forgets everything but keeps the counters") {
     ReplyCache cache(4);
     cache.insert("a", valued("1"));

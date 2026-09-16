@@ -280,6 +280,19 @@ TEST_CASE("the cache directory is held under its limit, oldest entries first") {
     CHECK_FALSE(cache.find("q20").has_value());
 }
 
+TEST_CASE("reading a recently used entry does not write to it") {
+    // A hit used to rewrite the file's modification time every time: a write
+    // to disk on every read. Within the hour it is left alone.
+    const auto directory = scratch("quiet-read");
+    const PersistentCache cache(directory, "stamp", 1'000'000);
+    cache.insert("q", valued("42"));
+    age(cache, "q", 5);
+    const auto before = std::filesystem::last_write_time(cache.entryPath("q"));
+
+    REQUIRE(cache.find("q").has_value());
+    CHECK(std::filesystem::last_write_time(cache.entryPath("q")) == before);
+}
+
 TEST_CASE("reading an entry back keeps it from eviction") {
     // Four entries of about 1 KB under a 4.5 KB limit; a fifth goes over it,
     // and the sweep keeps three quarters of the limit, about three entries.
@@ -290,7 +303,9 @@ TEST_CASE("reading an entry back keeps it from eviction") {
     const std::vector<std::string> sources{"a", "b", "c", "d"};
     for (std::size_t i = 0; i < sources.size(); ++i) {
         cache.insert(sources[i], valued(payload));
-        age(cache, sources[i], 10 - static_cast<int>(i)); // a oldest, d newest.
+        // Hours rather than minutes: a read only refreshes an entry whose
+        // last use is an hour old or more. a oldest, d newest.
+        age(cache, sources[i], 60 * (10 - static_cast<int>(i)));
     }
     REQUIRE(fileCount(directory) == 4);
 

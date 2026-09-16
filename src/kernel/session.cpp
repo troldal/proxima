@@ -356,7 +356,7 @@ std::filesystem::path defaultUserDir() {
 }
 
 MaximaSession::MaximaSession(Config config)
-    : config_(std::move(config)), cache_(config_.cacheEntries) {
+    : config_(std::move(config)), cache_(config_.cacheEntries, config_.cacheBytes) {
     // A factory rather than one transport, so a dead kernel can be replaced.
     //
     // The version is recorded under the state lock: a restart relaunches from
@@ -385,7 +385,7 @@ MaximaSession::MaximaSession(Config config)
 MaximaSession::MaximaSession(TransportFactory factory, Config config,
                              std::string frameKey)
     : config_(std::move(config)), factory_(std::move(factory)),
-      frameKey_(std::move(frameKey)), cache_(config_.cacheEntries) {
+      frameKey_(std::move(frameKey)), cache_(config_.cacheEntries, config_.cacheBytes) {
     if (!factory_) {
         throw KernelError("MaximaSession was given a null transport factory");
     }
@@ -399,7 +399,7 @@ MaximaSession::MaximaSession(TransportFactory factory, Config config,
 MaximaSession::MaximaSession(std::unique_ptr<ITransport> transport, Config config,
                              std::string frameKey)
     : config_(std::move(config)), transport_(std::move(transport)),
-      frameKey_(std::move(frameKey)), cache_(config_.cacheEntries) {
+      frameKey_(std::move(frameKey)), cache_(config_.cacheEntries, config_.cacheBytes) {
     // No factory, so this session cannot be restarted; a death is final.
     if (!transport_) {
         throw KernelError("MaximaSession was given a null transport");

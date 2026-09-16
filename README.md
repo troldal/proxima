@@ -235,10 +235,13 @@ properties (`Increasing`, `OddFun`, …) and the operator ones (`Commutative`,
   and a message. `Kernel::eval`, `evalPure` and `evalTracked` take an `Expr`
   as well as text. `Kernel::evalExpr` evaluates and reads the reply back into
   an `Expr` — `kernel.evalExpr("gcd(12, 18)")` is 6 — for a Maxima function
-  this library does not wrap.
+  this library does not wrap. Like `eval` it assumes the text changed
+  something, so it empties the cache and stops persistence; for a pure
+  question, `proxima::toExpr(kernel.evalPure("gcd(12, 18)"))` keeps both.
 - **Remembers answers.** An LRU keyed on the request, discarded whenever
   anything might have changed it — any raw `eval`, any assumption added or
-  dropped. Sized by `Config::cacheEntries`; zero disables it.
+  dropped. Bounded by `Config::cacheEntries` and `Config::cacheBytes` (64 MB);
+  zero entries disables it.
 - **Optionally between runs.** Set `Config::cacheDirectory` and answers survive
   process exit and are shared with other processes using the same directory.
   Every key carries the Maxima version, this library's version *and* the
@@ -254,7 +257,7 @@ properties (`Increasing`, `OddFun`, …) and the operator ones (`Commutative`,
   Maxima needs a fact it has not been told*.
 
 `Config` covers `maximaRoot`, `timeout`, `startupTimeout`, `cacheEntries`,
-`cacheDirectory`, `cacheDirectoryLimit` (256 MB by default, evicting the least
+`cacheBytes`, `cacheDirectory`, `cacheDirectoryLimit` (256 MB by default, evicting the least
 recently used answers), `loadUserInit` and `userDir`. The user's own `maxima-init.mac` is **not** loaded
 by default: a library should compute the same answer on every machine.
 
