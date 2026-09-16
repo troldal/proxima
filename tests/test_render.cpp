@@ -49,6 +49,16 @@ TEST_CASE("the presentation layer fixes what every renderer would get wrong") {
         CHECK((Expr(x) / Expr(3)).str() == "x/3");
         CHECK(proxima::toTeX(Expr(x) / Expr(3)) == "\\frac{x}{3}");
     }
+    SUBCASE("minus infinity as a term joins the sum's sign") {
+        const Symbol a("a");
+        CHECK(proxima::toTeX(Expr(a) + proxima::minf()) == "a - \\infty");
+        CHECK(proxima::toTeX(Expr(a) - proxima::minf()) == "a + \\infty");
+        CHECK(proxima::toTeX(proxima::minf()) == "-\\infty");
+        CHECK(proxima::toMathML(Expr(a) + proxima::minf()).find("<mo>+</mo>")
+              == std::string::npos);
+        // And the text form is untouched: minf is a name Maxima reads back.
+        CHECK((Expr(a) + proxima::minf()).str() == "a + minf");
+    }
     SUBCASE("negation is a sign, not a factor of -1") {
         CHECK((-(Expr(x) + 1)).str() == "-(1 + x)");
         CHECK(proxima::toTeX(-(Expr(x) + 1)) == "-\\left(1 + x\\right)");

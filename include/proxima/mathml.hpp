@@ -19,6 +19,9 @@ namespace proxima {
 /// Output is ASCII: symbols such as the minus sign, pi and infinity are
 /// written as numeric character references, so it survives any encoding.
 ///
+/// As in toTeX(), a plain symbol named after a Greek letter (`mu`, `gamma`)
+/// is set as that letter.
+///
 /// Written as an ordinary user of proxima/render.hpp, like toTeX(); see
 /// src/core/mathml.cpp.
 std::string toMathML(const Expr &expr);

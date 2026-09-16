@@ -161,12 +161,23 @@ struct MathMLRenderer {
     }
 
     std::string sum(std::span<const Term<std::string>> terms) {
+        // minf is the one leaf that carries a sign of its own. As a term, the
+        // sign joins the sum's operator: `a - infinity`, not `a + -infinity`.
+        const std::string minusInfinity = symbol("minf");
+        const std::string infinity = element("mi", kInfinity);
+
         std::string content;
         for (std::size_t i = 0; i < terms.size(); ++i) {
-            if (i != 0 || terms[i].negated) {
-                content += mo(terms[i].negated ? kMinus : "+");
+            bool negated = terms[i].negated;
+            std::string_view value = terms[i].value;
+            if (value == minusInfinity) {
+                negated = !negated;
+                value = infinity;
             }
-            content += terms[i].value;
+            if (i != 0 || negated) {
+                content += mo(negated ? kMinus : "+");
+            }
+            content += value;
         }
         return mrow(content);
     }

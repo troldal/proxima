@@ -109,10 +109,13 @@ public:
     /// function this library has not wrapped without reading s-expressions.
     /// `kernel.evalExpr("gcd(12, 18)")` is 6.
     ///
-    /// A Maxima error is the Failure, carrying Maxima's message. Everything
-    /// eval's notes say about the reply cache and Config::cacheDirectory holds
-    /// here too; for a question known to change nothing, read an evalPure
-    /// reply with proxima::toExpr instead, which keeps both.
+    /// A Maxima error is the Failure, carrying Maxima's message.
+    ///
+    /// **This is a statement, not a query.** Like eval, every call discards the
+    /// reply cache and switches Config::cacheDirectory off for this kernel
+    /// until restart(), because the text might have changed anything. For a
+    /// question known to change nothing — `gcd(12, 18)` is one — read an
+    /// evalPure reply with proxima::toExpr instead, which keeps both.
     std::expected<Expr, Failure> evalExpr(std::string_view expression);
     std::expected<Expr, Failure> evalExpr(const Expr &form);
 

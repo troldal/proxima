@@ -163,14 +163,25 @@ struct TeXRenderer {
     std::string sum(std::span<const Term<std::string>> terms) {
         std::string out;
         for (std::size_t i = 0; i < terms.size(); ++i) {
+            // The presentation layer hands over magnitudes, so a term that
+            // still begins with a minus got it from a leaf that carries its
+            // own: minf, set as -\infty. Folded into the term's sign, so
+            // `a + minf` reads `a - \infty` rather than `a + -\infty`, and
+            // `a - minf` reads `a + \infty`.
+            std::string_view value = terms[i].value;
+            bool negated = terms[i].negated;
+            if (value.starts_with('-')) {
+                value.remove_prefix(1);
+                negated = !negated;
+            }
             if (i == 0) {
-                if (terms[i].negated) {
+                if (negated) {
                     out += '-';
                 }
             } else {
-                out += terms[i].negated ? " - " : " + ";
+                out += negated ? " - " : " + ";
             }
-            out += terms[i].value;
+            out += value;
         }
         return out;
     }
