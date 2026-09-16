@@ -17,7 +17,13 @@ namespace proxima {
 /// Maxima's `declare`. Distinct from an assumption: an assumption is a relation
 /// that happens to hold (`x > 0`), a declaration is a standing property of the
 /// symbol itself (`n` is an integer).
+///
+/// Exactly the entries of Maxima's `features` list, and no others: anything
+/// else is refused by Maxima ("declare: unknown property"). There is no
+/// `Prime`, because Maxima has no such feature — `primep` tests a number, it
+/// is not something a symbol can be declared to be.
 enum class Feature {
+    // Of a value.
     Integer,
     NonInteger,
     Even,
@@ -28,9 +34,20 @@ enum class Feature {
     Imaginary,
     Complex,
     Constant,
-    Prime,
+    // Of a function.
+    Analytic,
     Increasing,
     Decreasing,
+    OddFun,
+    EvenFun,
+    PosFun,
+    IntegerValued,
+    // Of an operator.
+    Commutative,
+    LAssociative,
+    RAssociative,
+    Symmetric,
+    AntiSymmetric, // keep last: the tests walk every enumerator up to this one
 };
 
 /// Maxima's spelling of `feature`.

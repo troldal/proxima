@@ -47,6 +47,23 @@ TEST_CASE("a declaration is undone too, which forget would not manage") {
     CHECK(proxima::sharedKernel().eval("featurep(n, integer)").value == "NIL");
 }
 
+TEST_CASE("Maxima accepts every Feature") {
+    // Feature::Prime existed, was documented, and made declare throw: Maxima
+    // has no such feature. Declaring each on a symbol of its own keeps
+    // opposites (even and odd) from contradicting one another.
+    const auto last = static_cast<int>(Feature::AntiSymmetric);
+    Context ctx;
+    for (int i = 0; i <= last; ++i) {
+        const auto feature = static_cast<Feature>(i);
+        const std::string name(proxima::nameOf(feature));
+        CAPTURE(name);
+        const Symbol s("feature_probe_" + name);
+        CHECK_NOTHROW(ctx.declare(s, feature));
+        CHECK(proxima::sharedKernel().eval("featurep(" + s.name() + ", " + name + ")").value
+              == "T");
+    }
+}
+
 TEST_CASE("contexts nest, inheriting the enclosing scope's facts") {
     const Symbol a("ctx_a");
     const Symbol b("ctx_b");

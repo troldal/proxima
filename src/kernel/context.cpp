@@ -178,12 +178,30 @@ std::string_view nameOf(Feature feature) {
         return "complex";
     case Feature::Constant:
         return "constant";
-    case Feature::Prime:
-        return "prime";
+    case Feature::Analytic:
+        return "analytic";
     case Feature::Increasing:
         return "increasing";
     case Feature::Decreasing:
         return "decreasing";
+    case Feature::OddFun:
+        return "oddfun";
+    case Feature::EvenFun:
+        return "evenfun";
+    case Feature::PosFun:
+        return "posfun";
+    case Feature::IntegerValued:
+        return "integervalued";
+    case Feature::Commutative:
+        return "commutative";
+    case Feature::LAssociative:
+        return "lassociative";
+    case Feature::RAssociative:
+        return "rassociative";
+    case Feature::Symmetric:
+        return "symmetric";
+    case Feature::AntiSymmetric:
+        return "antisymmetric";
     }
     return "real";
 }

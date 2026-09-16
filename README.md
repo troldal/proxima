@@ -212,8 +212,10 @@ function is an error rather than a guess.
 `proxima::Context` opens a Maxima context and discards it on destruction —
 assumptions *and* declarations, which forgetting each assumption individually
 would not achieve. Contexts nest and inherit. A contradictory assumption is
-refused. `declare` covers `Integer`, `Even`, `Odd`, `Rational`, `Real`,
-`Complex`, `Prime`, `Constant` and the rest of Maxima's features.
+refused. `declare` covers every entry of Maxima's `features` list: `Integer`,
+`Even`, `Odd`, `Rational`, `Real`, `Complex`, `Constant`, the function
+properties (`Increasing`, `OddFun`, …) and the operator ones (`Commutative`,
+`Symmetric`, …).
 
 ### The kernel
 
