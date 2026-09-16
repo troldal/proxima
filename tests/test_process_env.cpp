@@ -25,7 +25,7 @@
 #include <vector>
 
 using proxima::detail::ChildProcessTransport;
-using proxima::detail::mergeEnvironment;
+using proxima::detail::merge_environment;
 using namespace std::chrono_literals;
 
 namespace {
@@ -34,7 +34,7 @@ bool contains(const std::vector<std::string> &entries, const std::string &wanted
     return std::find(entries.begin(), entries.end(), wanted) != entries.end();
 }
 
-size_t countWithName(const std::vector<std::string> &entries,
+size_t count_with_name(const std::vector<std::string> &entries,
                      const std::string &name) {
     const std::string prefix = name + "=";
     return static_cast<size_t>(
@@ -46,7 +46,7 @@ size_t countWithName(const std::vector<std::string> &entries,
 
 /// Reads until `token` has arrived, the child has gone, or `limit` passes, and
 /// returns everything read.
-std::string readUntil(ChildProcessTransport &child, std::string_view token,
+std::string read_until(ChildProcessTransport &child, std::string_view token,
                       std::chrono::milliseconds limit = 10s) {
     std::string seen;
     const auto deadline = std::chrono::steady_clock::now() + limit;
@@ -63,11 +63,11 @@ std::string readUntil(ChildProcessTransport &child, std::string_view token,
 
 #ifdef _WIN32
 /// cmd.exe, in UTF-8 like every string the transport takes. SystemRoot is read
-/// through mergeEnvironment rather than std::getenv, which on Windows gives the
+/// through merge_environment rather than std::getenv, which on Windows gives the
 /// ANSI code page's copy of the environment.
-std::string commandShell() {
+std::string command_shell() {
     std::string root = "C:\\Windows";
-    for (const std::string &entry : mergeEnvironment({})) {
+    for (const std::string &entry : merge_environment({})) {
         const std::string name = entry.substr(0, entry.find('='));
         if (name.size() == 10
             && std::equal(name.begin(), name.end(), "SYSTEMROOT",
@@ -88,38 +88,38 @@ std::string commandShell() {
 // --- environment merging ------------------------------------------------------
 
 TEST_CASE("an override that matches nothing is appended") {
-    const auto entries = mergeEnvironment({{"PROXIMA_TEST_NEW_VAR", "hello"}});
+    const auto entries = merge_environment({{"PROXIMA_TEST_NEW_VAR", "hello"}});
     CHECK(contains(entries, "PROXIMA_TEST_NEW_VAR=hello"));
-    CHECK(countWithName(entries, "PROXIMA_TEST_NEW_VAR") == 1);
+    CHECK(count_with_name(entries, "PROXIMA_TEST_NEW_VAR") == 1);
 }
 
 TEST_CASE("the inherited environment is kept") {
     // A child that loses PATH cannot resolve its own shared libraries, so this
     // has to be a merge rather than a replacement.
-    const auto entries = mergeEnvironment({{"PROXIMA_TEST_X", "1"}});
+    const auto entries = merge_environment({{"PROXIMA_TEST_X", "1"}});
     CHECK(entries.size() > 1);
-    const bool keptPath
+    const bool kept_path
         = std::any_of(entries.begin(), entries.end(), [](const std::string &e) {
               return e.rfind("PATH=", 0) == 0 || e.rfind("Path=", 0) == 0;
           });
-    CHECK(keptPath);
+    CHECK(kept_path);
 }
 
 TEST_CASE("merging with no overrides reproduces the environment") {
-    const auto plain = mergeEnvironment({});
-    const auto withOne = mergeEnvironment({{"PROXIMA_TEST_ONLY", "1"}});
-    CHECK(withOne.size() == plain.size() + 1);
+    const auto plain = merge_environment({});
+    const auto with_one = merge_environment({{"PROXIMA_TEST_ONLY", "1"}});
+    CHECK(with_one.size() == plain.size() + 1);
 }
 
 TEST_CASE("name matching follows the platform's own rules") {
     // Windows compares variable names case-insensitively, so an override
     // spelled differently from the inherited entry must replace it. POSIX
     // treats the two spellings as different variables, so it must not.
-    const auto entries = mergeEnvironment({{"path", "/only"}});
+    const auto entries = merge_environment({{"path", "/only"}});
 
 #ifdef _WIN32
     // Exactly one PATH-ish entry survives, and it is ours.
-    const auto isPath = [](const std::string &entry) {
+    const auto is_path = [](const std::string &entry) {
         const std::string lowered = [&entry] {
             std::string copy = entry.substr(0, entry.find('='));
             std::transform(copy.begin(), copy.end(), copy.begin(),
@@ -128,12 +128,12 @@ TEST_CASE("name matching follows the platform's own rules") {
         }();
         return lowered == "path";
     };
-    CHECK(std::count_if(entries.begin(), entries.end(), isPath) == 1);
+    CHECK(std::count_if(entries.begin(), entries.end(), is_path) == 1);
     CHECK(contains(entries, "path=/only"));
 #else
     // Lowercase "path" is a new variable; the real PATH is untouched.
     CHECK(contains(entries, "path=/only"));
-    CHECK(countWithName(entries, "PATH") == 1);
+    CHECK(count_with_name(entries, "PATH") == 1);
 #endif
 }
 
@@ -152,13 +152,13 @@ TEST_CASE("what a real child writes comes back") {
     // command actually ran: cmd.exe drops the caret and the shell the quotes,
     // so an echo of the input itself would not match.
 #ifdef _WIN32
-    ChildProcessTransport child({commandShell(), "/q"});
+    ChildProcessTransport child({command_shell(), "/q"});
     child.send("echo mx_transport^_ok\r\n");
 #else
     ChildProcessTransport child({"/bin/sh"});
     child.send("echo mx_transport'_'ok\n");
 #endif
-    CHECK(readUntil(child, "mx_transport_ok").find("mx_transport_ok")
+    CHECK(read_until(child, "mx_transport_ok").find("mx_transport_ok")
           != std::string::npos);
     CHECK(child.alive());
 
@@ -173,7 +173,7 @@ TEST_CASE("a silent child makes receive wait out its timeout") {
     // and not a dead child.
 #ifdef _WIN32
     ChildProcessTransport child(
-        {commandShell(), "/c", "ping -n 30 127.0.0.1 >nul"});
+        {command_shell(), "/c", "ping -n 30 127.0.0.1 >nul"});
 #else
     ChildProcessTransport child({"/bin/sh", "-c", "sleep 30"});
 #endif
@@ -189,9 +189,9 @@ TEST_CASE("a silent child makes receive wait out its timeout") {
     SUBCASE("and a child that ignores end of input is still ended") {
         // Neither ping nor sleep reads stdin, so closing it does not make them
         // leave: kill() has to terminate them after its grace period.
-        const auto killStart = std::chrono::steady_clock::now();
+        const auto kill_start = std::chrono::steady_clock::now();
         child.kill();
-        const auto took = std::chrono::steady_clock::now() - killStart;
+        const auto took = std::chrono::steady_clock::now() - kill_start;
         CHECK(took >= 1s); // The grace period was given.
         CHECK(took < 10s);
         CHECK_FALSE(child.alive());
@@ -200,9 +200,9 @@ TEST_CASE("a silent child makes receive wait out its timeout") {
     SUBCASE("while terminate() ends it without the grace period") {
         // What recovery after a timeout wants: the child was never asked to
         // leave, so there is nothing to wait for.
-        const auto terminateStart = std::chrono::steady_clock::now();
+        const auto terminate_start = std::chrono::steady_clock::now();
         child.terminate();
-        CHECK(std::chrono::steady_clock::now() - terminateStart < 1s);
+        CHECK(std::chrono::steady_clock::now() - terminate_start < 1s);
         CHECK_FALSE(child.alive());
     }
 }
@@ -210,7 +210,7 @@ TEST_CASE("a silent child makes receive wait out its timeout") {
 TEST_CASE("a slow child: many empty reads, then more than one read's worth") {
     // What a Maxima session looks like at startup: nothing for a while, which
     // the session waits out in short reads, then a burst larger than a single
-    // read. Accumulated the way MaximaSession::readFrame accumulates, into a
+    // read. Accumulated the way MaximaSession::read_frame accumulates, into a
     // string that lives across every call.
     //
     // It cannot catch everything that goes wrong at that point. cmd.exe and sh
@@ -222,7 +222,7 @@ TEST_CASE("a slow child: many empty reads, then more than one read's worth") {
     // is reliably larger than one read now that a read is 64 KB: about 240 KB.
 #ifdef _WIN32
     ChildProcessTransport child(
-        {commandShell(), "/c",
+        {command_shell(), "/c",
          "ping -n 2 127.0.0.1 >nul & for /l %i in (1,1,4000) do "
          "@echo mx_filler_line_0123456789_abcdefghijklmnopqrstuvwxyz"});
 #else
@@ -233,7 +233,7 @@ TEST_CASE("a slow child: many empty reads, then more than one read's worth") {
 #endif
 
     std::string output;
-    int emptyReads = 0;
+    int empty_reads = 0;
     const auto deadline = std::chrono::steady_clock::now() + 30s;
     while (std::chrono::steady_clock::now() < deadline) {
         const std::string chunk = child.receive(50ms);
@@ -241,27 +241,27 @@ TEST_CASE("a slow child: many empty reads, then more than one read's worth") {
             if (!child.alive()) {
                 break;
             }
-            ++emptyReads;
+            ++empty_reads;
             continue;
         }
         output += chunk;
     }
 
-    CHECK(emptyReads >= 5);
+    CHECK(empty_reads >= 5);
     // More than one read's worth, with the transport's 64 KB reads.
     CHECK(output.size() > 64 * 1024);
 }
 
 TEST_CASE("an environment override reaches the child") {
 #ifdef _WIN32
-    ChildProcessTransport child({commandShell(), "/c", "echo %PROXIMA_TRANSPORT_TEST%"},
+    ChildProcessTransport child({command_shell(), "/c", "echo %PROXIMA_TRANSPORT_TEST%"},
                                 {{"PROXIMA_TRANSPORT_TEST", "value42"}});
 #else
     ChildProcessTransport child({"/bin/sh", "-c", "echo \"$PROXIMA_TRANSPORT_TEST\""},
                                 {{"PROXIMA_TRANSPORT_TEST", "value42"}});
 #endif
     // Without the override the output would be the unexpanded name, or empty.
-    CHECK(readUntil(child, "value42").find("value42") != std::string::npos);
+    CHECK(read_until(child, "value42").find("value42") != std::string::npos);
 }
 
 // --- non-ASCII ------------------------------------------------------------------
@@ -281,14 +281,14 @@ TEST_CASE("an executable under a non-ASCII directory starts") {
     // would not be found and the constructor would throw.
     const std::filesystem::path dir
         = std::filesystem::temp_directory_path()
-          / proxima::detail::pathFromUtf8(std::string("mx_transport_") + kUnicodeBytes);
+          / proxima::detail::path_from_utf8(std::string("mx_transport_") + kUnicodeBytes);
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     REQUIRE_FALSE(ec);
 
 #ifdef _WIN32
     const std::filesystem::path shell = dir / "cmd.exe";
-    std::filesystem::copy_file(commandShell(), shell,
+    std::filesystem::copy_file(command_shell(), shell,
                                std::filesystem::copy_options::overwrite_existing,
                                ec);
 #else
@@ -303,13 +303,13 @@ TEST_CASE("an executable under a non-ASCII directory starts") {
 
     {
 #ifdef _WIN32
-        ChildProcessTransport child({proxima::detail::toUtf8(shell), "/c",
+        ChildProcessTransport child({proxima::detail::to_utf8(shell), "/c",
                                      "echo mx_unicode^_ok"});
 #else
-        ChildProcessTransport child({proxima::detail::toUtf8(shell), "-c",
+        ChildProcessTransport child({proxima::detail::to_utf8(shell), "-c",
                                      "echo mx_unicode'_'ok"});
 #endif
-        CHECK(readUntil(child, "mx_unicode_ok").find("mx_unicode_ok")
+        CHECK(read_until(child, "mx_unicode_ok").find("mx_unicode_ok")
               != std::string::npos);
     }
 
@@ -322,11 +322,11 @@ TEST_CASE("non-ASCII arguments and environment values arrive intact") {
     // the console code page its output would be written in. Both have to be
     // the same characters — and the variable expanded at all — to match.
     ChildProcessTransport child(
-        {commandShell(), "/c",
+        {command_shell(), "/c",
          std::string("if \"%PROXIMA_TRANSPORT_TEST%\"==\"") + kUnicodeBytes
              + "\" (echo mx_same) else (echo mx_different)"},
         {{"PROXIMA_TRANSPORT_TEST", kUnicodeBytes}});
-    const std::string output = readUntil(child, "mx_");
+    const std::string output = read_until(child, "mx_");
     CHECK(output.find("mx_same") != std::string::npos);
 #else
     // POSIX passes bytes through untouched, so they can be compared directly.
@@ -336,7 +336,7 @@ TEST_CASE("non-ASCII arguments and environment values arrive intact") {
         {{"PROXIMA_TRANSPORT_TEST", kUnicodeBytes}});
     const std::string expected
         = std::string("[") + kUnicodeBytes + "][" + kUnicodeBytes + "]";
-    CHECK(readUntil(child, expected).find(expected) != std::string::npos);
+    CHECK(read_until(child, expected).find(expected) != std::string::npos);
 #endif
 }
 
@@ -353,7 +353,7 @@ TEST_CASE("arguments reach the child exactly as given") {
     // argument it received in brackets.
     ChildProcessTransport child({"/bin/sh", "-c", "printf '[%s]' \"$@\"", "sh",
                                  "a b", "q\"x", "line\nbreak"});
-    CHECK(readUntil(child, "[line\nbreak]").find("[a b][q\"x][line\nbreak]")
+    CHECK(read_until(child, "[line\nbreak]").find("[a b][q\"x][line\nbreak]")
           != std::string::npos);
 }
 #endif

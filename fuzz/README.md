@@ -4,7 +4,7 @@ Two targets, one for each parser written by hand:
 
 | Target | Parser | Checks |
 |---|---|---|
-| `fuzz_sexpr` | `parseSExpr` and `fromMaxima`, which read every reply from Maxima | any text is read or refused with `proxima::Error`; nothing crashes |
+| `fuzz_sexpr` | `parse_sexpr` and `from_maxima`, which read every reply from Maxima | any text is read or refused with `proxima::Error`; nothing crashes |
 | `fuzz_parser` | `Expr::parse` | the same, and what parses prints back to text that parses to the same expression |
 
 They are off by default. Configure with `-DMAXIMA_CPP_BUILD_FUZZERS=ON`.

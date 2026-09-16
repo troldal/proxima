@@ -31,68 +31,68 @@
 using proxima::Expr;
 using proxima::Kind;
 using proxima::Symbol;
-using proxima::detail::encodeMaximaName;
-using proxima::detail::fromMaxima;
-using proxima::detail::parseSExpr;
+using proxima::detail::encode_maxima_name;
+using proxima::detail::from_maxima;
+using proxima::detail::parse_sexpr;
 using proxima::detail::Payload;
-using proxima::detail::stringLiteral;
-using proxima::detail::toMaxima;
+using proxima::detail::string_literal;
+using proxima::detail::to_maxima;
 
 TEST_CASE("symbol names are encoded as Maxima stores them") {
-    // The exact inverse of decodeMaximaName, which test_from_maxima covers.
-    CHECK(encodeMaximaName("x") == "$X");
-    CHECK(encodeMaximaName("x_1") == "$X_1");
-    CHECK(encodeMaximaName("%pi") == "$%PI");
-    CHECK(encodeMaximaName("alpha") == "$ALPHA");
+    // The exact inverse of decode_maxima_name, which test_from_maxima covers.
+    CHECK(encode_maxima_name("x") == "$X");
+    CHECK(encode_maxima_name("x_1") == "$X_1");
+    CHECK(encode_maxima_name("%pi") == "$%PI");
+    CHECK(encode_maxima_name("alpha") == "$ALPHA");
 
     SUBCASE("a name the Lisp reader would alter is bar-quoted") {
         // Upper case in the user's name is lower case in Maxima's, and the
         // reader upcases anything unquoted.
-        CHECK(encodeMaximaName("X") == "|$x|");
-        CHECK(encodeMaximaName("xY") == "|$xY|");
+        CHECK(encode_maxima_name("X") == "|$x|");
+        CHECK(encode_maxima_name("xY") == "|$xY|");
         // Spaces and punctuation are syntax to the reader; quoted, they are
         // just characters, which is what makes such a symbol safe to send.
-        CHECK(encodeMaximaName("x y") == "|$X Y|");
-        CHECK(encodeMaximaName("a(b") == "|$A(B|");
+        CHECK(encode_maxima_name("x y") == "|$X Y|");
+        CHECK(encode_maxima_name("a(b") == "|$A(B|");
         // An empty name is the bare sigil, which is a valid symbol and
         // decodes back to the empty name.
-        CHECK(encodeMaximaName("") == "$");
+        CHECK(encode_maxima_name("") == "$");
     }
     SUBCASE("the quoting characters themselves are escaped") {
-        CHECK(encodeMaximaName("a|b") == "|$A\\|B|");
-        CHECK(encodeMaximaName("a\\b") == "|$A\\\\B|");
+        CHECK(encode_maxima_name("a|b") == "|$A\\|B|");
+        CHECK(encode_maxima_name("a\\b") == "|$A\\\\B|");
     }
 }
 
 TEST_CASE("string literals escape exactly what both readers need") {
-    CHECK(stringLiteral("plain") == "\"plain\"");
-    CHECK(stringLiteral("say \"hi\"") == "\"say \\\"hi\\\"\"");
-    CHECK(stringLiteral("back\\slash") == "\"back\\\\slash\"");
-    CHECK(stringLiteral("") == "\"\"");
+    CHECK(string_literal("plain") == "\"plain\"");
+    CHECK(string_literal("say \"hi\"") == "\"say \\\"hi\\\"\"");
+    CHECK(string_literal("back\\slash") == "\"back\\\\slash\"");
+    CHECK(string_literal("") == "\"\"");
 }
 
 TEST_CASE("atoms") {
-    CHECK(toMaxima(Expr(42)) == "42");
-    CHECK(toMaxima(Expr(-7)) == "-7");
-    CHECK(toMaxima(Expr(proxima::Integer("265252859812191058636308480000000")))
+    CHECK(to_maxima(Expr(42)) == "42");
+    CHECK(to_maxima(Expr(-7)) == "-7");
+    CHECK(to_maxima(Expr(proxima::Integer("265252859812191058636308480000000")))
           == "265252859812191058636308480000000");
-    CHECK(toMaxima(Expr::symbol("x")) == "$X");
-    CHECK(toMaxima(Expr::symbol("true")) == "T");
-    CHECK(toMaxima(Expr::symbol("false")) == "NIL");
+    CHECK(to_maxima(Expr::symbol("x")) == "$X");
+    CHECK(to_maxima(Expr::symbol("true")) == "T");
+    CHECK(to_maxima(Expr::symbol("false")) == "NIL");
 
     SUBCASE("a rational is a quotient, for Maxima to canonicalise itself") {
-        CHECK(toMaxima(Expr::rational(11, 15)) == "((MQUOTIENT) 11 15)");
-        CHECK(toMaxima(Expr::rational(-1, 3)) == "((MQUOTIENT) -1 3)");
+        CHECK(to_maxima(Expr::rational(11, 15)) == "((MQUOTIENT) 11 15)");
+        CHECK(to_maxima(Expr::rational(-1, 3)) == "((MQUOTIENT) -1 3)");
     }
     SUBCASE("a real always reads as a double") {
-        CHECK(toMaxima(Expr(1.5)) == "1.5d0");
-        CHECK(toMaxima(Expr(2.0)) == "2.0d0");
-        CHECK(toMaxima(Expr(1e300)) == "1d+300");
-        CHECK(toMaxima(Expr(-0.0)) == "-0.0d0");
+        CHECK(to_maxima(Expr(1.5)) == "1.5d0");
+        CHECK(to_maxima(Expr(2.0)) == "2.0d0");
+        CHECK(to_maxima(Expr(1e300)) == "1d+300");
+        CHECK(to_maxima(Expr(-0.0)) == "-0.0d0");
     }
     SUBCASE("infinities have Maxima's names, and NaN has none") {
-        CHECK(toMaxima(Expr(std::numeric_limits<double>::infinity())) == "$INF");
-        CHECK(toMaxima(Expr(-std::numeric_limits<double>::infinity())) == "$MINF");
+        CHECK(to_maxima(Expr(std::numeric_limits<double>::infinity())) == "$INF");
+        CHECK(to_maxima(Expr(-std::numeric_limits<double>::infinity())) == "$MINF");
         // Refused before it gets this far: no Expr can hold a NaN.
         CHECK_THROWS_AS(Expr(std::nan("")), proxima::Error);
     }
@@ -102,58 +102,58 @@ TEST_CASE("operators are emitted without simplification flags") {
     // (MPLUS), not (MPLUS SIMP): Maxima simplifies what it is handed rather
     // than being told it already has been.
     const Symbol x("x");
-    CHECK(toMaxima(x + 1) == "((MPLUS) 1 $X)");
-    CHECK(toMaxima(2 * x) == "((MTIMES) 2 $X)");
-    CHECK(toMaxima(pow(x, 2)) == "((MEXPT) $X 2)");
-    CHECK(toMaxima(x / 3) == "((MTIMES) ((MQUOTIENT) 1 3) $X)");
+    CHECK(to_maxima(x + 1) == "((MPLUS) 1 $X)");
+    CHECK(to_maxima(2 * x) == "((MTIMES) 2 $X)");
+    CHECK(to_maxima(pow(x, 2)) == "((MEXPT) $X 2)");
+    CHECK(to_maxima(x / 3) == "((MTIMES) ((MQUOTIENT) 1 3) $X)");
 }
 
 TEST_CASE("function heads take the sigil Maxima's own parser would give them") {
     const Symbol x("x");
-    CHECK(toMaxima(proxima::sin(x)) == "(($SIN) $X)");
-    CHECK(toMaxima(Expr::function("f", {x, Expr(1)})) == "(($F) $X 1)");
-    CHECK(toMaxima(Expr::function("myFunc", {x})) == "((|$myFunc|) $X)");
+    CHECK(to_maxima(proxima::sin(x)) == "(($SIN) $X)");
+    CHECK(to_maxima(Expr::function("f", {x, Expr(1)})) == "(($F) $X 1)");
+    CHECK(to_maxima(Expr::function("myFunc", {x})) == "((|$myFunc|) $X)");
 
     SUBCASE("except the heads Maxima spells differently") {
-        CHECK(toMaxima(Expr::function("list", {Expr(1), Expr(2)}))
+        CHECK(to_maxima(Expr::function("list", {Expr(1), Expr(2)}))
               == "((MLIST) 1 2)");
-        CHECK(toMaxima(proxima::abs(x)) == "((MABS) $X)");
-        CHECK(toMaxima(Expr::function("factorial", {Expr(5)}))
+        CHECK(to_maxima(proxima::abs(x)) == "((MABS) $X)");
+        CHECK(to_maxima(Expr::function("factorial", {Expr(5)}))
               == "((MFACTORIAL) 5)");
-        CHECK(toMaxima(Expr::function("'diff", {Expr::function("f", {x}), x, Expr(1)}))
+        CHECK(to_maxima(Expr::function("'diff", {Expr::function("f", {x}), x, Expr(1)}))
               == "((%DERIVATIVE) (($F) $X) $X 1)");
     }
     SUBCASE("a quoted head is a noun") {
-        CHECK(toMaxima(Expr::function("'integrate", {x, x}))
+        CHECK(to_maxima(Expr::function("'integrate", {x, x}))
               == "((%INTEGRATE) $X $X)");
     }
 }
 
 TEST_CASE("relations") {
     const Symbol x("x");
-    CHECK(toMaxima(eq(x, 1)) == "((MEQUAL) $X 1)");
-    CHECK(toMaxima(ne(x, 0)) == "((MNOTEQUAL) $X 0)");
-    CHECK(toMaxima(lt(x, 0)) == "((MLESSP) $X 0)");
-    CHECK(toMaxima(le(x, 0)) == "((MLEQP) $X 0)");
-    CHECK(toMaxima(gt(x, 0)) == "((MGREATERP) $X 0)");
-    CHECK(toMaxima(ge(x, 0)) == "((MGEQP) $X 0)");
+    CHECK(to_maxima(eq(x, 1)) == "((MEQUAL) $X 1)");
+    CHECK(to_maxima(ne(x, 0)) == "((MNOTEQUAL) $X 0)");
+    CHECK(to_maxima(lt(x, 0)) == "((MLESSP) $X 0)");
+    CHECK(to_maxima(le(x, 0)) == "((MLEQP) $X 0)");
+    CHECK(to_maxima(gt(x, 0)) == "((MGREATERP) $X 0)");
+    CHECK(to_maxima(ge(x, 0)) == "((MGEQP) $X 0)");
 }
 
 TEST_CASE("opaque text is parsed by Maxima, inside the error trap") {
     // The escape hatch keeps working, but the text now arrives as a string
     // for Maxima to read — so a malformed one is a failure, not a stall.
-    CHECK(toMaxima(Expr::opaque("x$ 0")) == "(($EVAL_STRING) \"x$ 0\")");
-    CHECK(toMaxima(Expr::opaque("say \"hi\""))
+    CHECK(to_maxima(Expr::opaque("x$ 0")) == "(($EVAL_STRING) \"x$ 0\")");
+    CHECK(to_maxima(Expr::opaque("say \"hi\""))
           == "(($EVAL_STRING) \"say \\\"hi\\\"\")");
 
     SUBCASE("except that a string is simply a string") {
-        // fromMaxima wraps Maxima strings as quoted Opaque text; sending them
+        // from_maxima wraps Maxima strings as quoted Opaque text; sending them
         // back as Lisp strings keeps a string a string rather than something
         // to be parsed.
-        CHECK(toMaxima(Expr::opaque("\"hello\"")) == "\"hello\"");
-        CHECK(toMaxima(Expr::opaque("\"a \\\"b\\\" c\"")) == "\"a \\\"b\\\" c\"");
+        CHECK(to_maxima(Expr::opaque("\"hello\"")) == "\"hello\"");
+        CHECK(to_maxima(Expr::opaque("\"a \\\"b\\\" c\"")) == "\"a \\\"b\\\" c\"");
         // Two literals side by side are not one literal.
-        CHECK(toMaxima(Expr::opaque("\"a\" \"b\""))
+        CHECK(to_maxima(Expr::opaque("\"a\" \"b\""))
               == "(($EVAL_STRING) \"\\\"a\\\" \\\"b\\\"\")");
     }
 }
@@ -191,11 +191,11 @@ TEST_CASE("everything Maxima has ever sent can be sent back as a form") {
             continue;
         }
         CAPTURE(expression);
-        const Expr mapped = fromMaxima(parseSExpr(form));
+        const Expr mapped = from_maxima(parse_sexpr(form));
         std::string outbound;
-        REQUIRE_NOTHROW(outbound = toMaxima(mapped));
+        REQUIRE_NOTHROW(outbound = to_maxima(mapped));
         CAPTURE(outbound);
-        CHECK_NOTHROW(parseSExpr(outbound));
+        CHECK_NOTHROW(parse_sexpr(outbound));
         ++cases;
     }
     CHECK(cases >= 35);
@@ -204,10 +204,10 @@ TEST_CASE("everything Maxima has ever sent can be sent back as a form") {
 TEST_SUITE("maxima") {
 
 /// Sends `expr` as a form and maps the reply back.
-Expr roundTrip(proxima::Kernel &kernel, const Expr &expr) {
-    const proxima::Reply reply = kernel.evalPure(expr);
+Expr round_trip(proxima::Kernel &kernel, const Expr &expr) {
+    const proxima::Reply reply = kernel.eval_pure(expr);
     REQUIRE_MESSAGE(reply.ok, reply.reason);
-    return fromMaxima(parseSExpr(reply.value));
+    return from_maxima(parse_sexpr(reply.value));
 }
 
 TEST_CASE("an expression survives the trip out and back unchanged") {
@@ -250,8 +250,8 @@ TEST_CASE("an expression survives the trip out and back unchanged") {
     };
     for (const Expr &expr : corpus) {
         CAPTURE(expr.str());
-        CAPTURE(toMaxima(expr));
-        CHECK(roundTrip(kernel, expr) == expr);
+        CAPTURE(to_maxima(expr));
+        CHECK(round_trip(kernel, expr) == expr);
     }
 }
 
@@ -259,15 +259,15 @@ TEST_CASE("Maxima simplifies what it is handed") {
     // The forms go out unflagged, and Maxima does its own arithmetic.
     proxima::Kernel kernel;
     const Symbol x("x");
-    CHECK(roundTrip(kernel, Expr::function("factorial", {Expr(5)})) == Expr(120));
+    CHECK(round_trip(kernel, Expr::function("factorial", {Expr(5)})) == Expr(120));
     // Sent under its verb name, evaluated, and back as the noun it simplifies
     // to — which maps to the same name, so a symbolic one is unchanged.
-    CHECK(roundTrip(kernel, Expr::function("double_factorial", {Expr(5)}))
+    CHECK(round_trip(kernel, Expr::function("double_factorial", {Expr(5)}))
           == Expr(15));
-    CHECK(roundTrip(kernel, Expr::function("double_factorial", {Expr(x)}))
+    CHECK(round_trip(kernel, Expr::function("double_factorial", {Expr(x)}))
           == Expr::function("double_factorial", {Expr(x)}));
-    CHECK(roundTrip(kernel, proxima::sin(Expr(0))) == Expr(0));
-    CHECK(roundTrip(kernel, Expr::rational(4, 6)) == Expr::rational(2, 3));
+    CHECK(round_trip(kernel, proxima::sin(Expr(0))) == Expr(0));
+    CHECK(round_trip(kernel, Expr::rational(4, 6)) == Expr::rational(2, 3));
     CHECK(proxima::diff(pow(x, 3), x, 1, kernel) == 3 * pow(x, 2));
 }
 
@@ -301,7 +301,7 @@ TEST_CASE("text Maxima cannot read is a failure, not a stall") {
         proxima::Reply reply;
         CHECK(within([&] { reply = kernel.eval("1$ 2"); }));
         // Contained either way: parsed up to the terminator, or refused.
-        CHECK(within([&] { reply = kernel.evalPure("2+2"); }));
+        CHECK(within([&] { reply = kernel.eval_pure("2+2"); }));
         CHECK(reply.ok);
         CHECK(reply.value == "4");
     }

@@ -54,11 +54,11 @@ std::optional<Integer> Integer::parse(std::string_view text) {
     // of more than eighteen digits starting with 0 was read in base 8, so
     // "0052...8..." threw an exception that escaped the reader of Maxima's
     // replies, and one with no 8 or 9 in it silently had the wrong value.
-    const std::size_t firstSignificant = text.find_first_not_of('0');
-    if (firstSignificant == std::string_view::npos) {
+    const std::size_t first_significant = text.find_first_not_of('0');
+    if (first_significant == std::string_view::npos) {
         return Integer(0);
     }
-    text.remove_prefix(firstSignificant);
+    text.remove_prefix(first_significant);
     if (text.size() <= 18) {
         return parse(negative ? "-" + std::string(text) : std::string(text));
     }
@@ -80,34 +80,34 @@ Integer::Integer(std::string_view text) {
 
 int Integer::sign() const { return value_.sign(); }
 
-bool Integer::isSmall() const {
+bool Integer::is_small() const {
     return value_ >= kMinInt64 && value_ <= kMaxInt64;
 }
 
-std::optional<std::int64_t> Integer::toInt64() const {
-    if (!isSmall()) {
+std::optional<std::int64_t> Integer::to_int64() const {
+    if (!is_small()) {
         return std::nullopt;
     }
     return value_.convert_to<std::int64_t>();
 }
 
-std::string Integer::toString() const {
+std::string Integer::to_string() const {
     // Worth the branch: std::to_string on an int64 is several times quicker
     // than cpp_int's general formatter, and most values printed are small.
-    if (const auto small = toInt64()) {
+    if (const auto small = to_int64()) {
         return std::to_string(*small);
     }
     return value_.str();
 }
 
-double Integer::toDouble() const { return value_.convert_to<double>(); }
+double Integer::to_double() const { return value_.convert_to<double>(); }
 
 std::size_t Integer::hash() const {
     // A value that fits in 64 bits can never equal one that does not, so the
     // two may be hashed by entirely separate routes -- which lets the common
     // case skip cpp_int's limb-walking hash. Every expression node is hashed
     // once when it is built, so this is not a rare path.
-    if (const auto small = toInt64()) {
+    if (const auto small = to_int64()) {
         return std::hash<std::int64_t>{}(*small);
     }
     return std::hash<Backend>{}(value_);
@@ -163,11 +163,11 @@ std::strong_ordering Integer::operator<=>(const Integer &other) const {
 
 // --- free functions -------------------------------------------------------
 
-Integer detail::absOf(const Integer &value) {
+Integer detail::abs_of(const Integer &value) {
     return Integer(Integer::Backend(boost::multiprecision::abs(value.value_)));
 }
 
-Integer detail::gcdOf(const Integer &a, const Integer &b) {
+Integer detail::gcd_of(const Integer &a, const Integer &b) {
     // Boost's gcd is already non-negative and already gives gcd(0, 0) == 0,
     // which are this function's two documented edge cases.
     return Integer(

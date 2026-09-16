@@ -42,9 +42,9 @@ TEST_CASE("a declaration is undone too, which forget would not manage") {
     {
         Context ctx;
         ctx.declare(n, Feature::Integer);
-        CHECK(proxima::sharedKernel().eval("featurep(n, integer)").value == "T");
+        CHECK(proxima::shared_kernel().eval("featurep(n, integer)").value == "T");
     }
-    CHECK(proxima::sharedKernel().eval("featurep(n, integer)").value == "NIL");
+    CHECK(proxima::shared_kernel().eval("featurep(n, integer)").value == "NIL");
 }
 
 TEST_CASE("Maxima accepts every Feature") {
@@ -55,11 +55,11 @@ TEST_CASE("Maxima accepts every Feature") {
     Context ctx;
     for (int i = 0; i <= last; ++i) {
         const auto feature = static_cast<Feature>(i);
-        const std::string name(proxima::nameOf(feature));
+        const std::string name(proxima::name_of(feature));
         CAPTURE(name);
         const Symbol s("feature_probe_" + name);
         CHECK_NOTHROW(ctx.declare(s, feature));
-        CHECK(proxima::sharedKernel().eval("featurep(" + s.name() + ", " + name + ")").value
+        CHECK(proxima::shared_kernel().eval("featurep(" + s.name() + ", " + name + ")").value
               == "T");
     }
 }
@@ -76,13 +76,13 @@ TEST_CASE("contexts nest, inheriting the enclosing scope's facts") {
         inner.assume(gt(Expr(b), Expr(0)));
         // The inner scope can see both, which is what supcontext buys over
         // newcontext.
-        CHECK(proxima::sharedKernel().eval("is(ctx_a > 0)").value == "T");
-        CHECK(proxima::sharedKernel().eval("is(ctx_b > 0)").value == "T");
+        CHECK(proxima::shared_kernel().eval("is(ctx_a > 0)").value == "T");
+        CHECK(proxima::shared_kernel().eval("is(ctx_b > 0)").value == "T");
     }
 
     // Leaving the inner scope discards only its own assumption.
-    CHECK(proxima::sharedKernel().eval("is(ctx_a > 0)").value == "T");
-    CHECK(proxima::sharedKernel().eval("is(ctx_b > 0)").value != "T");
+    CHECK(proxima::shared_kernel().eval("is(ctx_a > 0)").value == "T");
+    CHECK(proxima::shared_kernel().eval("is(ctx_b > 0)").value != "T");
 }
 
 TEST_CASE("facts reports what is in force") {
@@ -107,8 +107,8 @@ TEST_CASE("facts lists this scope's facts and every enclosing scope's") {
     const Symbol a("lineage_a");
     const Symbol b("lineage_b");
     const Symbol k("lineage_k");
-    const Expr outerFact = gt(Expr(a), Expr(0));
-    const Expr innerFact = gt(Expr(b), Expr(0));
+    const Expr outer_fact = gt(Expr(a), Expr(0));
+    const Expr inner_fact = gt(Expr(b), Expr(0));
     const Expr declaration = Expr::function("kind", {Expr(k), Expr::symbol("integer")});
 
     const auto position = [](const std::vector<Expr> &facts, const Expr &fact) {
@@ -121,31 +121,31 @@ TEST_CASE("facts lists this scope's facts and every enclosing scope's") {
     };
 
     Context outer;
-    outer.assume(outerFact);
+    outer.assume(outer_fact);
     {
         Context inner;
-        inner.assume(innerFact);
+        inner.assume(inner_fact);
         inner.declare(k, Feature::Integer);
 
-        const std::vector<Expr> innerFacts = inner.facts();
-        CHECK(position(innerFacts, innerFact) >= 0);
-        CHECK(position(innerFacts, declaration) >= 0);
-        CHECK(position(innerFacts, outerFact) >= 0);
+        const std::vector<Expr> inner_facts = inner.facts();
+        CHECK(position(inner_facts, inner_fact) >= 0);
+        CHECK(position(inner_facts, declaration) >= 0);
+        CHECK(position(inner_facts, outer_fact) >= 0);
         // Innermost first.
-        CHECK(position(innerFacts, innerFact) < position(innerFacts, outerFact));
+        CHECK(position(inner_facts, inner_fact) < position(inner_facts, outer_fact));
 
         // The outer scope, asked while the inner one is current, describes
         // itself.
-        const std::vector<Expr> outerFacts = outer.facts();
-        CHECK(position(outerFacts, outerFact) >= 0);
-        CHECK(position(outerFacts, innerFact) < 0);
-        CHECK(position(outerFacts, declaration) < 0);
+        const std::vector<Expr> outer_facts = outer.facts();
+        CHECK(position(outer_facts, outer_fact) >= 0);
+        CHECK(position(outer_facts, inner_fact) < 0);
+        CHECK(position(outer_facts, declaration) < 0);
     }
 
     // Maxima's own type facts, from its `global` context, are not assumptions.
-    const Expr builtIn
+    const Expr built_in
         = Expr::function("kind", {Expr::symbol("%e"), Expr::symbol("irrational")});
-    CHECK(position(outer.facts(), builtIn) < 0);
+    CHECK(position(outer.facts(), built_in) < 0);
 }
 
 TEST_CASE("contexts ended out of order leave the survivors intact") {
@@ -201,7 +201,7 @@ TEST_CASE("a restart after an out-of-order end rebuilds the surviving scope") {
 
 TEST_CASE("a Context that outlives its Kernel reports it instead of calling into it") {
     // The situation a Context with static storage duration is in at exit,
-    // once sharedKernel() has been destroyed. It used to call into the
+    // once shared_kernel() has been destroyed. It used to call into the
     // destroyed Kernel — a use after free, and so a crash rather than a
     // failing check, which is why this test could not be run first.
     const Symbol x("outlived_probe");
@@ -280,9 +280,9 @@ TEST_CASE("the session stays synchronised after a suppressed question") {
 
     REQUIRE_FALSE(proxima::integrate(pow(Expr(x), Expr(n)), x).has_value());
 
-    CHECK(proxima::sharedKernel().eval("2 + 2").value == "4");
+    CHECK(proxima::shared_kernel().eval("2 + 2").value == "4");
     CHECK(proxima::diff(pow(Expr(x), 2), x) == 2 * Expr(x));
-    CHECK(proxima::sharedKernel().eval("6*7").value == "42");
+    CHECK(proxima::shared_kernel().eval("6*7").value == "42");
 }
 
 TEST_CASE("supplying the assumption lets the computation through") {
@@ -350,9 +350,9 @@ TEST_CASE("a timeout loses the call, not the session") {
 
     // Tightened after startup, not before: a one-millisecond deadline would
     // otherwise time out launching Maxima, which is not a computation. That is
-    // also why recovery runs on Config::startupTimeout — the deadline that was
+    // also why recovery runs on Config::startup_timeout — the deadline that was
     // just exceeded must not govern the restart that answers it.
-    kernel.setTimeout(std::chrono::milliseconds(1));
+    kernel.set_timeout(std::chrono::milliseconds(1));
     // Deliberately something that takes hundreds of milliseconds. An ordinary
     // integral finishes inside a single poll, so it would race the deadline
     // rather than reliably exceed it.
@@ -362,7 +362,7 @@ TEST_CASE("a timeout loses the call, not the session") {
     // Maxima to quit, which it never does; this call took about 2.5 s then.
     CHECK(std::chrono::steady_clock::now() - start < std::chrono::milliseconds(1500));
 
-    kernel.setTimeout(std::chrono::seconds(30));
+    kernel.set_timeout(std::chrono::seconds(30));
     // The restart means the next caller is not left holding a wedged kernel.
     CHECK(kernel.eval("2 + 2").value == "4");
 }

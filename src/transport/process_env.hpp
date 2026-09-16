@@ -19,6 +19,6 @@ using EnvOverride = std::pair<std::string, std::string>;
 /// first. POSIX treats PATH and Path as genuinely different variables, so the
 /// same merge there must be case-sensitive.
 std::vector<std::string>
-mergeEnvironment(const std::vector<EnvOverride> &overrides);
+merge_environment(const std::vector<EnvOverride> &overrides);
 
 } // namespace proxima::detail

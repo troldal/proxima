@@ -53,19 +53,19 @@ struct Exact {
     }
 
     double approx() const {
-        return numerator.toDouble() / denominator.toDouble();
+        return numerator.to_double() / denominator.to_double();
     }
 };
 
-bool isExactZero(const Expr &expr) {
-    return expr.is(Kind::Integer) && expr.integerValue().isZero();
+bool is_exact_zero(const Expr &expr) {
+    return expr.is(Kind::Integer) && expr.integer_value().is_zero();
 }
 
-bool isExactOne(const Expr &expr) {
-    return expr.is(Kind::Integer) && expr.integerValue() == Integer(1);
+bool is_exact_one(const Expr &expr) {
+    return expr.is(Kind::Integer) && expr.integer_value() == Integer(1);
 }
 
-int rankOf(Kind kind) {
+int rank_of(Kind kind) {
     switch (kind) {
     case Kind::Integer:
     case Kind::Rational:
@@ -89,36 +89,36 @@ int rankOf(Kind kind) {
     return 8;
 }
 
-int compareText(const std::string &a, const std::string &b) {
+int compare_text(const std::string &a, const std::string &b) {
     const int order = a.compare(b);
     return order < 0 ? -1 : (order > 0 ? 1 : 0);
 }
 
-int compareArgs(const Expr &lhs, const Expr &rhs) {
+int compare_args(const Expr &lhs, const Expr &rhs) {
     if (lhs.arity() != rhs.arity()) {
         return lhs.arity() < rhs.arity() ? -1 : 1;
     }
     for (std::size_t i = 0; i < lhs.arity(); ++i) {
-        if (const int order = compareExpr(lhs.arg(i), rhs.arg(i)); order != 0) {
+        if (const int order = compare_expr(lhs.arg(i), rhs.arg(i)); order != 0) {
             return order;
         }
     }
     return 0;
 }
 
-double approxValue(const Expr &number) {
+double approx_value(const Expr &number) {
     switch (number.kind()) {
     case Kind::Integer:
-        return number.integerValue().toDouble();
+        return number.integer_value().to_double();
     case Kind::Rational:
-        return number.numerator().toDouble() / number.denominator().toDouble();
+        return number.numerator().to_double() / number.denominator().to_double();
     default:
-        return number.realValue();
+        return number.real_value();
     }
 }
 
 /// Splices the operands of any nested `kind` node into `flat`.
-void flattenInto(const Expr &expr, Kind kind, std::vector<Expr> &flat) {
+void flatten_into(const Expr &expr, Kind kind, std::vector<Expr> &flat) {
     if (expr.is(kind)) {
         // Children are normalised already, so one level of splicing is enough.
         for (const Expr &operand : expr.args()) {
@@ -129,46 +129,46 @@ void flattenInto(const Expr &expr, Kind kind, std::vector<Expr> &flat) {
     }
 }
 
-bool canonicallyBefore(const Expr &a, const Expr &b) {
-    return compareExpr(a, b) < 0;
+bool canonically_before(const Expr &a, const Expr &b) {
+    return compare_expr(a, b) < 0;
 }
 
 /// Folds sorted numeric operands into one. Always succeeds: exact arithmetic
 /// cannot fail now that proxima::Integer is unbounded.
-Expr fold(std::span<const Expr> numbers, bool isProduct) {
+Expr fold(std::span<const Expr> numbers, bool is_product) {
     // One number is already its own fold, and rebuilding an equal node for it
     // was an allocation on every `x + 1`. The one exception is a lone -0.0 in a
     // sum: the arithmetic below computes 0.0 + -0.0, which is +0.0, and that
     // result is kept.
     if (numbers.size() == 1) {
         const Expr &only = numbers.front();
-        const bool negativeZeroInSum = !isProduct && only.is(Kind::Real)
-                                       && only.realValue() == 0.0
-                                       && std::signbit(only.realValue());
-        if (!negativeZeroInSum) {
+        const bool negative_zero_in_sum = !is_product && only.is(Kind::Real)
+                                       && only.real_value() == 0.0
+                                       && std::signbit(only.real_value());
+        if (!negative_zero_in_sum) {
             return only;
         }
     }
 
     Exact exact;
-    if (isProduct) {
+    if (is_product) {
         exact.numerator = Integer(1);
     }
 
-    bool sawReal = false;
-    double inexact = isProduct ? 1.0 : 0.0;
+    bool saw_real = false;
+    double inexact = is_product ? 1.0 : 0.0;
 
     for (const Expr &number : numbers) {
         if (number.is(Kind::Real)) {
-            sawReal = true;
-            if (isProduct) {
-                inexact *= number.realValue();
+            saw_real = true;
+            if (is_product) {
+                inexact *= number.real_value();
             } else {
-                inexact += number.realValue();
+                inexact += number.real_value();
             }
             continue;
         }
-        if (isProduct) {
+        if (is_product) {
             exact.multiply(number.numerator(), number.denominator());
         } else {
             exact.add(number.numerator(), number.denominator());
@@ -177,15 +177,15 @@ Expr fold(std::span<const Expr> numbers, bool isProduct) {
 
     // Inexactness is contagious, as it is in Maxima: one float makes the whole
     // constant a float.
-    if (sawReal) {
-        const double folded = isProduct ? inexact * exact.approx()
+    if (saw_real) {
+        const double folded = is_product ? inexact * exact.approx()
                                         : inexact + exact.approx();
         // No Real operand is infinite, so a result that is not finite is an
         // overflow: 1e308 * 10.0, or an integer of a few hundred digits made a
         // double. It used to become infinity silently; Maxima refuses it too.
         if (!std::isfinite(folded)) {
             throw Error("floating-point overflow: the numbers in this "
-                        + std::string(isProduct ? "product" : "sum")
+                        + std::string(is_product ? "product" : "sum")
                         + " do not fit in a double");
         }
         return Expr::real(folded);
@@ -194,7 +194,7 @@ Expr fold(std::span<const Expr> numbers, bool isProduct) {
 }
 
 std::vector<Expr> normalize(std::vector<Expr> operands, Kind kind) {
-    const bool isProduct = kind == Kind::Mul;
+    const bool is_product = kind == Kind::Mul;
 
     // Flattened into a new vector only when some operand needs it. Otherwise
     // the caller's vector is already flat, so it is worked on in place and
@@ -205,7 +205,7 @@ std::vector<Expr> normalize(std::vector<Expr> operands, Kind kind) {
         std::vector<Expr> flat;
         flat.reserve(operands.size());
         for (const Expr &operand : operands) {
-            flattenInto(operand, kind, flat);
+            flatten_into(operand, kind, flat);
         }
         operands = std::move(flat);
     }
@@ -215,44 +215,44 @@ std::vector<Expr> normalize(std::vector<Expr> operands, Kind kind) {
     // bits. std::partition rather than std::stable_partition, which may
     // allocate; no order that matters is lost, since the numbers are sorted
     // here and everything else at the end.
-    const auto numbersEnd
+    const auto numbers_end
         = std::partition(operands.begin(), operands.end(),
-                         [](const Expr &operand) { return operand.isNumber(); });
-    if (numbersEnd != operands.begin()) {
-        std::sort(operands.begin(), numbersEnd, canonicallyBefore);
-        const auto count = static_cast<std::size_t>(numbersEnd - operands.begin());
-        Expr constant = fold(std::span<const Expr>(operands.data(), count), isProduct);
-        operands.erase(operands.begin(), numbersEnd);
+                         [](const Expr &operand) { return operand.is_number(); });
+    if (numbers_end != operands.begin()) {
+        std::sort(operands.begin(), numbers_end, canonically_before);
+        const auto count = static_cast<std::size_t>(numbers_end - operands.begin());
+        Expr constant = fold(std::span<const Expr>(operands.data(), count), is_product);
+        operands.erase(operands.begin(), numbers_end);
 
-        if (isProduct && isExactZero(constant)) {
+        if (is_product && is_exact_zero(constant)) {
             // Absorbing, so nothing else matters.
             return {std::move(constant)};
         }
-        const bool isIdentity
-            = isProduct ? isExactOne(constant) : isExactZero(constant);
+        const bool is_identity
+            = is_product ? is_exact_one(constant) : is_exact_zero(constant);
         // The identity is dropped, unless it is all that is left — `0` has to
         // remain `0`.
-        if (!isIdentity || operands.empty()) {
+        if (!is_identity || operands.empty()) {
             operands.push_back(std::move(constant));
         }
     }
 
-    std::sort(operands.begin(), operands.end(), canonicallyBefore);
+    std::sort(operands.begin(), operands.end(), canonically_before);
     return operands;
 }
 
 } // namespace
 
-int compareExpr(const Expr &lhs, const Expr &rhs) {
-    const int leftRank = rankOf(lhs.kind());
-    const int rightRank = rankOf(rhs.kind());
+int compare_expr(const Expr &lhs, const Expr &rhs) {
+    const int left_rank = rank_of(lhs.kind());
+    const int right_rank = rank_of(rhs.kind());
 
-    if (lhs.isNumber() && rhs.isNumber()) {
+    if (lhs.is_number() && rhs.is_number()) {
         // Doubles first, since they are cheap and nearly always decisive.
         // Rounding never reverses an order, so unequal doubles mean the numbers
         // themselves compare the same way.
-        const double a = approxValue(lhs);
-        const double b = approxValue(rhs);
+        const double a = approx_value(lhs);
+        const double b = approx_value(rhs);
         if (a < b) {
             return -1;
         }
@@ -288,54 +288,54 @@ int compareExpr(const Expr &lhs, const Expr &rhs) {
         return 0;
     }
 
-    if (leftRank != rightRank) {
-        return leftRank < rightRank ? -1 : 1;
+    if (left_rank != right_rank) {
+        return left_rank < right_rank ? -1 : 1;
     }
 
     switch (lhs.kind()) {
     case Kind::Symbol:
-        return compareText(lhs.name(), rhs.name());
+        return compare_text(lhs.name(), rhs.name());
     case Kind::Opaque:
-        return compareText(lhs.opaqueText(), rhs.opaqueText());
+        return compare_text(lhs.opaque_text(), rhs.opaque_text());
     case Kind::Function:
-        if (const int order = compareText(lhs.name(), rhs.name()); order != 0) {
+        if (const int order = compare_text(lhs.name(), rhs.name()); order != 0) {
             return order;
         }
-        return compareArgs(lhs, rhs);
+        return compare_args(lhs, rhs);
     case Kind::Relation:
-        if (lhs.relationOp() != rhs.relationOp()) {
-            return static_cast<int>(lhs.relationOp())
-                           < static_cast<int>(rhs.relationOp())
+        if (lhs.relation_op() != rhs.relation_op()) {
+            return static_cast<int>(lhs.relation_op())
+                           < static_cast<int>(rhs.relation_op())
                        ? -1
                        : 1;
         }
-        return compareArgs(lhs, rhs);
+        return compare_args(lhs, rhs);
     default:
-        return compareArgs(lhs, rhs);
+        return compare_args(lhs, rhs);
     }
 }
 
-std::vector<Expr> normalizeSum(std::vector<Expr> terms) {
+std::vector<Expr> normalize_sum(std::vector<Expr> terms) {
     return normalize(std::move(terms), Kind::Add);
 }
 
-std::vector<Expr> normalizeProduct(std::vector<Expr> factors) {
+std::vector<Expr> normalize_product(std::vector<Expr> factors) {
     return normalize(std::move(factors), Kind::Mul);
 }
 
-std::optional<Expr> normalizePower(const Expr &base, const Expr &exponent) {
-    if (isExactOne(exponent)) {
+std::optional<Expr> normalize_power(const Expr &base, const Expr &exponent) {
+    if (is_exact_one(exponent)) {
         return base;
     }
-    if (isExactZero(exponent)) {
+    if (is_exact_zero(exponent)) {
         // 0^0 is left alone: Maxima has its own opinion and this is not the
         // place to pre-empt it.
-        if (!isExactZero(base)) {
+        if (!is_exact_zero(base)) {
             return Expr::integer(1);
         }
         return std::nullopt;
     }
-    if (isExactOne(base)) {
+    if (is_exact_one(base)) {
         return Expr::integer(1);
     }
     // A reciprocal is kept in one form, the one division produces and the
@@ -344,9 +344,9 @@ std::optional<Expr> normalizePower(const Expr &base, const Expr &exponent) {
     // s*(n*f)^-1. So an exact number's reciprocal is the Rational — as 2/4 is
     // already 1/2, though 2^3 is still not 8 — and a product's reciprocal is
     // the product of its factors' reciprocals, as Maxima keeps a quotient.
-    if (exponent.is(Kind::Integer) && exponent.integerValue() == Integer(-1)) {
-        if (base.is(Kind::Integer) && !base.integerValue().isZero()) {
-            return Expr::rational(Integer(1), base.integerValue());
+    if (exponent.is(Kind::Integer) && exponent.integer_value() == Integer(-1)) {
+        if (base.is(Kind::Integer) && !base.integer_value().is_zero()) {
+            return Expr::rational(Integer(1), base.integer_value());
         }
         if (base.is(Kind::Rational)) {
             return Expr::rational(base.denominator(), base.numerator());

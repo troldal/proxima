@@ -46,7 +46,7 @@ struct Node {
     Kind kind = Kind::Integer;
 
     /// Meaningful for a Relation only.
-    RelOp relOp = RelOp::Equal;
+    RelOp rel_op = RelOp::Equal;
 
     /// Computed once at construction. Consistent with Expr::operator==.
     std::size_t hash = 0;

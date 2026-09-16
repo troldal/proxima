@@ -13,7 +13,7 @@ namespace proxima {
 
 // Local operations on the expression tree: no kernel, no round trip.
 //
-// The three generic walks come first — visit, anyOf, transform — so a caller
+// The three generic walks come first — visit, any_of, transform — so a caller
 // never needs to write the recursion over args() again. contains and replace
 // are those walks with a symbol in mind.
 
@@ -21,7 +21,7 @@ namespace detail {
 /// `expr` rebuilt with new operands, as many as it had, through the builder
 /// for its kind — so normalised exactly as a freshly built expression is.
 /// A leaf, having no operands, comes back as it is.
-Expr withOperands(const Expr &expr, std::vector<Expr> operands);
+Expr with_operands(const Expr &expr, std::vector<Expr> operands);
 } // namespace detail
 
 /// Calls `f` on every node of `expr`, a node before its operands, operands in
@@ -40,12 +40,12 @@ void visit(const Expr &expr, F &&f) {
 /// visit goes, and stops at the first yes.
 template <typename P>
     requires std::predicate<P &, const Expr &>
-bool anyOf(const Expr &expr, P &&predicate) {
+bool any_of(const Expr &expr, P &&predicate) {
     if (std::invoke(predicate, expr)) {
         return true;
     }
     for (const Expr &operand : expr.args()) {
-        if (anyOf(operand, predicate)) {
+        if (any_of(operand, predicate)) {
             return true;
         }
     }
@@ -72,12 +72,12 @@ Expr transform(const Expr &expr, F &&f) {
     bool changed = false;
     for (const Expr &operand : operands) {
         rewritten.push_back(transform(operand, f));
-        changed = changed || !detail::sameRepresentation(rewritten.back(), operand);
+        changed = changed || !detail::same_representation(rewritten.back(), operand);
     }
     if (!changed) {
         return std::invoke(f, expr);
     }
-    return std::invoke(f, detail::withOperands(expr, std::move(rewritten)));
+    return std::invoke(f, detail::with_operands(expr, std::move(rewritten)));
 }
 
 /// True when `symbol` occurs anywhere in `expr`.
@@ -96,7 +96,7 @@ bool contains(const Expr &expr, const Symbol &symbol);
 /// numbers fold (`3*x + 2` with x = 2 is 8) and identities go (`x*y` with
 /// y = 1 is x) — but it is not evaluated: `sin(x)` with x = 0 is `sin(0)`, and
 /// a power of numbers such as `2^2` stands as written. Evaluating is Maxima's
-/// work, or evalNumeric's and Compiled's, which take the result as it is.
+/// work, or eval_numeric's and Compiled's, which take the result as it is.
 /// Parts of the tree that do not mention `symbol` are shared, not copied.
 ///
 /// A function whose head has the symbol's name is left alone: a head is a

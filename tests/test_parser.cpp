@@ -424,15 +424,15 @@ TEST_CASE("the offline parser agrees with Maxima's own") {
          }) {
         const std::string text = source;
         CAPTURE(text);
-        const auto viaMaxima = proxima::parse(source);
-        REQUIRE(viaMaxima.has_value());
+        const auto via_maxima = proxima::parse(source);
+        REQUIRE(via_maxima.has_value());
 
         const Expr offline = Expr::parse(source);
-        const auto offlineViaMaxima = proxima::parse(offline.str());
-        REQUIRE(offlineViaMaxima.has_value());
+        const auto offline_via_maxima = proxima::parse(offline.str());
+        REQUIRE(offline_via_maxima.has_value());
 
-        INFO("offline: ", offline.str(), "   maxima: ", viaMaxima->str());
-        CHECK(*offlineViaMaxima == *viaMaxima);
+        INFO("offline: ", offline.str(), "   maxima: ", via_maxima->str());
+        CHECK(*offline_via_maxima == *via_maxima);
     }
 }
 

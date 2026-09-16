@@ -29,7 +29,7 @@ void ReplyCache::insert(std::string key, Reply reply) {
     // Too large to hold at all. Remembering it would only evict everything
     // else and then itself. Any older answer under the same key goes too,
     // rather than being left behind a newer one that was not kept.
-    if (cost > byteLimit_) {
+    if (cost > byte_limit_) {
         if (found != index_.end()) {
             bytes_ -= footprint(key, found->second->second);
             entries_.erase(found->second);
@@ -51,7 +51,7 @@ void ReplyCache::insert(std::string key, Reply reply) {
 }
 
 void ReplyCache::evict() {
-    while (entries_.size() > capacity_ || bytes_ > byteLimit_) {
+    while (entries_.size() > capacity_ || bytes_ > byte_limit_) {
         const Entry &oldest = entries_.back();
         bytes_ -= footprint(oldest.first, oldest.second);
         index_.erase(oldest.first);

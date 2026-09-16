@@ -21,15 +21,15 @@ namespace {
 /// holding a `$`, a question Maxima can answer (or refuse, with a message)
 /// rather than a stall.
 std::expected<Expr, Failure> evaluate(Kernel &kernel, const Expr &form) {
-    // evalPure, not eval: every operation here is a question rather than an
+    // eval_pure, not eval: every operation here is a question rather than an
     // instruction, so the answer can be remembered. The promise that goes with
-    // evalPure is exactly what these functions are — nothing below assigns,
+    // eval_pure is exactly what these functions are — nothing below assigns,
     // assumes or defines anything.
-    return toExpr(kernel.evalPure(form));
+    return to_expr(kernel.eval_pure(form));
 }
 
 /// For the operations with no ordinary failure mode.
-Expr evaluateOrThrow(Kernel &kernel, const Expr &form) {
+Expr evaluate_or_throw(Kernel &kernel, const Expr &form) {
     auto result = evaluate(kernel, form);
     if (!result) {
         throw MaximaError(result.error().message);
@@ -45,15 +45,15 @@ Expr call(std::string head, std::vector<Expr> args) {
 
 /// True when `expr` is `head(...)` left unevaluated by Maxima — its way of
 /// saying it could not do the job.
-bool isUnevaluated(const Expr &expr, std::string_view head) {
+bool is_unevaluated(const Expr &expr, std::string_view head) {
     return expr.is(Kind::Function) && expr.name() == head;
 }
 
-bool isList(const Expr &expr) {
-    return isUnevaluated(expr, "list");
+bool is_list(const Expr &expr) {
+    return is_unevaluated(expr, "list");
 }
 
-std::string_view sideKeyword(Side side) {
+std::string_view side_keyword(Side side) {
     switch (side) {
     case Side::FromAbove:
         return "plus";
@@ -67,7 +67,7 @@ std::string_view sideKeyword(Side side) {
 
 } // namespace
 
-Kernel &sharedKernel() {
+Kernel &shared_kernel() {
     // Started on first use. If construction throws — no Maxima installed — the
     // next call retries, which is the behaviour a function-local static gives
     // and the one that makes sense here.
@@ -79,23 +79,23 @@ std::expected<Expr, Failure> parse(std::string_view source, Kernel &kernel) {
     // The source travels as a string literal, which an Opaque of that shape
     // becomes, for parse_string to read on the far side.
     return evaluate(kernel, call("parse_string",
-                                 {Expr::opaque(detail::stringLiteral(source))}));
+                                 {Expr::opaque(detail::string_literal(source))}));
 }
 
 Expr diff(const Expr &expr, const Symbol &wrt, unsigned order, Kernel &kernel) {
-    return evaluateOrThrow(kernel, call("diff", {expr, wrt, Expr(order)}));
+    return evaluate_or_throw(kernel, call("diff", {expr, wrt, Expr(order)}));
 }
 
 Expr expand(const Expr &expr, Kernel &kernel) {
-    return evaluateOrThrow(kernel, call("expand", {expr}));
+    return evaluate_or_throw(kernel, call("expand", {expr}));
 }
 
 Expr factor(const Expr &expr, Kernel &kernel) {
-    return evaluateOrThrow(kernel, call("factor", {expr}));
+    return evaluate_or_throw(kernel, call("factor", {expr}));
 }
 
 Expr ratsimp(const Expr &expr, Kernel &kernel) {
-    return evaluateOrThrow(kernel, call("ratsimp", {expr}));
+    return evaluate_or_throw(kernel, call("ratsimp", {expr}));
 }
 
 Expr simplify(const Expr &expr, Kernel &kernel) {
@@ -105,7 +105,7 @@ Expr simplify(const Expr &expr, Kernel &kernel) {
 Expr subst(const Expr &expr, const Symbol &symbol, const Expr &value,
            Kernel &kernel) {
     // Maxima's argument order is (replacement, target, expression).
-    return evaluateOrThrow(kernel, call("subst", {value, symbol, expr}));
+    return evaluate_or_throw(kernel, call("subst", {value, symbol, expr}));
 }
 
 std::expected<Expr, Failure> integrate(const Expr &expr, const Symbol &wrt,
@@ -116,7 +116,7 @@ std::expected<Expr, Failure> integrate(const Expr &expr, const Symbol &wrt,
     }
     // Maxima does not treat "I cannot do this" as an error; it hands the
     // integral back unevaluated. That noun form is the failure signal.
-    if (isUnevaluated(*result, "integrate")) {
+    if (is_unevaluated(*result, "integrate")) {
         return std::unexpected(
             Failure{"no closed form for the integral of " + expr.str()
                     + " with respect to " + wrt.name()});
@@ -131,7 +131,7 @@ std::expected<Expr, Failure> integrate(const Expr &expr, const Symbol &wrt,
     if (!result) {
         return result;
     }
-    if (isUnevaluated(*result, "integrate")) {
+    if (is_unevaluated(*result, "integrate")) {
         return std::unexpected(
             Failure{"no closed form for the integral of " + expr.str()
                     + " over [" + from.str() + ", " + to.str() + "]"});
@@ -142,14 +142,14 @@ std::expected<Expr, Failure> integrate(const Expr &expr, const Symbol &wrt,
 std::expected<Expr, Failure> limit(const Expr &expr, const Symbol &wrt,
                                    const Expr &to, Side side, Kernel &kernel) {
     std::vector<Expr> args{expr, wrt, to};
-    if (const std::string_view keyword = sideKeyword(side); !keyword.empty()) {
+    if (const std::string_view keyword = side_keyword(side); !keyword.empty()) {
         args.push_back(Expr::symbol(std::string(keyword)));
     }
     auto result = evaluate(kernel, call("limit", std::move(args)));
     if (!result) {
         return result;
     }
-    if (isUnevaluated(*result, "limit")) {
+    if (is_unevaluated(*result, "limit")) {
         return std::unexpected(Failure{"Maxima could not determine the limit of "
                                        + expr.str() + " as " + wrt.name()
                                        + " approaches " + to.str()});
@@ -183,20 +183,20 @@ solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
         return std::unexpected(Failure{"solve was given no equations"});
     }
 
-    const Expr equationList
+    const Expr equation_list
         = call("list", std::vector<Expr>(equations.begin(), equations.end()));
-    std::vector<Expr> unknownExprs;
-    unknownExprs.reserve(unknowns.size());
+    std::vector<Expr> unknown_exprs;
+    unknown_exprs.reserve(unknowns.size());
     for (const Symbol &unknown : unknowns) {
-        unknownExprs.push_back(unknown);
+        unknown_exprs.push_back(unknown);
     }
-    const Expr unknownList = call("list", std::move(unknownExprs));
+    const Expr unknown_list = call("list", std::move(unknown_exprs));
 
-    auto result = evaluate(kernel, call("solve", {equationList, unknownList}));
+    auto result = evaluate(kernel, call("solve", {equation_list, unknown_list}));
     if (!result) {
         return std::unexpected(result.error());
     }
-    if (!isList(*result)) {
+    if (!is_list(*result)) {
         return std::unexpected(
             Failure{"solve did not return a list of solutions, but "
                     + result->str()});
@@ -211,8 +211,8 @@ solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
 
     const auto reject = [&](const std::string &why) {
         return std::unexpected(Failure{"Maxima did not solve "
-                                       + equationList.str() + " for "
-                                       + unknownList.str() + ": " + why});
+                                       + equation_list.str() + " for "
+                                       + unknown_list.str() + ": " + why});
     };
 
     std::vector<Solution> solutions;
@@ -224,7 +224,7 @@ solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
         std::vector<Expr> assignments;
         if (flattened) {
             assignments.push_back(candidate);
-        } else if (isList(candidate)) {
+        } else if (is_list(candidate)) {
             assignments.assign(candidate.args().begin(), candidate.args().end());
         } else {
             return reject("expected a list of assignments but found "
@@ -233,10 +233,10 @@ solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
 
         // Collected by name, so the caller's ordering is honoured whatever
         // order Maxima chose to answer in.
-        std::vector<std::pair<std::string, Expr>> byName;
+        std::vector<std::pair<std::string, Expr>> by_name;
         for (const Expr &assignment : assignments) {
             if (!assignment.is(Kind::Relation)
-                || assignment.relationOp() != RelOp::Equal
+                || assignment.relation_op() != RelOp::Equal
                 || !assignment.arg(0).is(Kind::Symbol)) {
                 return reject(assignment.str() + " is not an assignment");
             }
@@ -249,16 +249,16 @@ solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
                                   + " still depends on " + unknown.name());
                 }
             }
-            byName.emplace_back(assignment.arg(0).name(), assignment.arg(1));
+            by_name.emplace_back(assignment.arg(0).name(), assignment.arg(1));
         }
 
         Solution solution;
         solution.reserve(unknowns.size());
         for (const Symbol &unknown : unknowns) {
             const auto found = std::find_if(
-                byName.begin(), byName.end(),
+                by_name.begin(), by_name.end(),
                 [&](const auto &entry) { return entry.first == unknown.name(); });
-            if (found == byName.end()) {
+            if (found == by_name.end()) {
                 return reject("no value for " + unknown.name() + " in "
                               + candidate.str());
             }
@@ -306,9 +306,9 @@ std::expected<Expr, Failure> ode2(const Expr &equation, const Symbol &dependent,
 }
 
 Truth is(const Expr &predicate, Kernel &kernel) {
-    // evalPure is safe although the answer depends on the assumptions: the
+    // eval_pure is safe although the answer depends on the assumptions: the
     // reply cache is discarded whenever a Context changes them.
-    const Expr answer = evaluateOrThrow(kernel, call("is", {predicate}));
+    const Expr answer = evaluate_or_throw(kernel, call("is", {predicate}));
     if (answer.is(Kind::Symbol)) {
         if (answer.name() == "true") {
             return Truth::True;
@@ -328,37 +328,37 @@ Expr taylor(const Expr &expr, const Symbol &wrt, const Expr &at, unsigned order,
             Kernel &kernel) {
     // Maxima answers a taylor series in its own truncated-series form; the
     // protocol hands every reply through ratdisrep, which makes it a sum.
-    return evaluateOrThrow(kernel, call("taylor", {expr, wrt, at, Expr(order)}));
+    return evaluate_or_throw(kernel, call("taylor", {expr, wrt, at, Expr(order)}));
 }
 
 Expr trigsimp(const Expr &expr, Kernel &kernel) {
-    return evaluateOrThrow(kernel, call("trigsimp", {expr}));
+    return evaluate_or_throw(kernel, call("trigsimp", {expr}));
 }
 
 Expr trigexpand(const Expr &expr, Kernel &kernel) {
-    return evaluateOrThrow(kernel, call("trigexpand", {expr}));
+    return evaluate_or_throw(kernel, call("trigexpand", {expr}));
 }
 
 Expr radcan(const Expr &expr, Kernel &kernel) {
-    return evaluateOrThrow(kernel, call("radcan", {expr}));
+    return evaluate_or_throw(kernel, call("radcan", {expr}));
 }
 
 Expr partfrac(const Expr &expr, const Symbol &wrt, Kernel &kernel) {
-    return evaluateOrThrow(kernel, call("partfrac", {expr, wrt}));
+    return evaluate_or_throw(kernel, call("partfrac", {expr, wrt}));
 }
 
-Expr toFloat(const Expr &expr, Kernel &kernel) {
-    return evaluateOrThrow(kernel, call("float", {expr}));
+Expr to_float(const Expr &expr, Kernel &kernel) {
+    return evaluate_or_throw(kernel, call("float", {expr}));
 }
 
 Expr coeff(const Expr &expr, const Expr &term, int power, Kernel &kernel) {
-    return evaluateOrThrow(kernel, call("coeff", {expr, term, Expr(power)}));
+    return evaluate_or_throw(kernel, call("coeff", {expr, term, Expr(power)}));
 }
 
 namespace {
 
 /// sum or product, closed or a Failure.
-std::expected<Expr, Failure> closedForm(const std::string &head, const Expr &term,
+std::expected<Expr, Failure> closed_form(const std::string &head, const Expr &term,
                                         const Symbol &index, const Expr &from,
                                         const Expr &to, Kernel &kernel) {
     // `simpsum` is what has Maxima look for a closed form when a bound is
@@ -369,7 +369,7 @@ std::expected<Expr, Failure> closedForm(const std::string &head, const Expr &ter
     if (!result) {
         return result;
     }
-    if (isUnevaluated(*result, head)) {
+    if (is_unevaluated(*result, head)) {
         return std::unexpected(Failure{"no closed form for " + series.str()});
     }
     return result;
@@ -379,19 +379,19 @@ std::expected<Expr, Failure> closedForm(const std::string &head, const Expr &ter
 
 std::expected<Expr, Failure> sum(const Expr &term, const Symbol &index,
                                  const Expr &from, const Expr &to, Kernel &kernel) {
-    return closedForm("sum", term, index, from, to, kernel);
+    return closed_form("sum", term, index, from, to, kernel);
 }
 
 std::expected<Expr, Failure> product(const Expr &term, const Symbol &index,
                                      const Expr &from, const Expr &to, Kernel &kernel) {
-    return closedForm("product", term, index, from, to, kernel);
+    return closed_form("product", term, index, from, to, kernel);
 }
 
 std::size_t nroots(const Expr &polynomial, const Expr &low, const Expr &high,
                    Kernel &kernel) {
-    const Expr count = evaluateOrThrow(kernel, call("nroots", {polynomial, low, high}));
+    const Expr count = evaluate_or_throw(kernel, call("nroots", {polynomial, low, high}));
     if (count.is(Kind::Integer)) {
-        const auto value = count.integerValue().toInt64();
+        const auto value = count.integer_value().to_int64();
         if (value && *value >= 0) {
             return static_cast<std::size_t>(*value);
         }
@@ -400,27 +400,27 @@ std::size_t nroots(const Expr &polynomial, const Expr &low, const Expr &high,
 }
 
 std::vector<Expr> realroots(const Expr &polynomial, Kernel &kernel) {
-    const Expr roots = evaluateOrThrow(kernel, call("realroots", {polynomial}));
-    const auto notRoots = [&roots] {
+    const Expr roots = evaluate_or_throw(kernel, call("realroots", {polynomial}));
+    const auto not_roots = [&roots] {
         return MaximaError("realroots answered " + roots.str()
                            + ", which is not a list of roots");
     };
-    if (!isList(roots)) {
-        throw notRoots();
+    if (!is_list(roots)) {
+        throw not_roots();
     }
     // Each root arrives as `x = value`.
     std::vector<Expr> values;
     values.reserve(roots.arity());
     for (const Expr &root : roots.args()) {
-        if (!root.is(Kind::Relation) || root.relationOp() != RelOp::Equal) {
-            throw notRoots();
+        if (!root.is(Kind::Relation) || root.relation_op() != RelOp::Equal) {
+            throw not_roots();
         }
         values.push_back(root.arg(1));
     }
     return values;
 }
 
-std::expected<double, Failure> findRoot(const Expr &expr, const Symbol &wrt,
+std::expected<double, Failure> find_root(const Expr &expr, const Symbol &wrt,
                                         double low, double high, Kernel &kernel) {
     auto result
         = evaluate(kernel, call("find_root", {expr, wrt, Expr(low), Expr(high)}));
@@ -428,7 +428,7 @@ std::expected<double, Failure> findRoot(const Expr &expr, const Symbol &wrt,
         return std::unexpected(result.error());
     }
     if (result->is(Kind::Real)) {
-        return result->realValue();
+        return result->real_value();
     }
     // Handed back unevaluated: the expression was not a number at some point
     // of the interval, so there was nothing to bisect.

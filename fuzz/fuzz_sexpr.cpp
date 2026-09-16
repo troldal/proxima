@@ -17,9 +17,9 @@
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *data, std::size_t size) {
     const std::string_view text(reinterpret_cast<const char *>(data), size);
     try {
-        const proxima::detail::SExpr form = proxima::detail::parseSExpr(text);
-        static_cast<void>(form.toString());
-        const proxima::Expr expr = proxima::detail::fromMaxima(form);
+        const proxima::detail::SExpr form = proxima::detail::parse_sexpr(text);
+        static_cast<void>(form.to_string());
+        const proxima::Expr expr = proxima::detail::from_maxima(form);
         static_cast<void>(expr.str());
     } catch (const proxima::Error &) {
         // Refusing input that is not a Maxima term is the reader's job. Any

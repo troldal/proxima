@@ -182,14 +182,14 @@ TEST_CASE("every builder is spelled as Maxima spells the function") {
 TEST_SUITE("maxima") {
 
 TEST_CASE("the shared kernel is one process, reused") {
-    CHECK(&proxima::sharedKernel() == &proxima::sharedKernel());
+    CHECK(&proxima::shared_kernel() == &proxima::shared_kernel());
 
     // A binding made by one call is visible to the next, which is the
     // observable consequence of there being a single long-lived process.
     // Note this goes through Kernel::eval, not proxima::parse: parsing is only
     // parsing, and deliberately does not evaluate what it reads.
-    REQUIRE(proxima::sharedKernel().eval("shared_probe: 11").ok);
-    CHECK(proxima::sharedKernel().eval("shared_probe^2").value == "121");
+    REQUIRE(proxima::shared_kernel().eval("shared_probe: 11").ok);
+    CHECK(proxima::shared_kernel().eval("shared_probe^2").value == "121");
 }
 
 TEST_CASE("differentiation") {
@@ -315,9 +315,9 @@ TEST_CASE("limits") {
 
     SUBCASE("an infinite limit is still a value") {
         // From both sides 1/x grows without a sign: Maxima's complex infinity.
-        const auto unsignedInfinity = proxima::limit(Expr(1) / Expr(x), x, Expr(0));
-        REQUIRE(unsignedInfinity.has_value());
-        CHECK(unsignedInfinity->str() == "infinity");
+        const auto unsigned_infinity = proxima::limit(Expr(1) / Expr(x), x, Expr(0));
+        REQUIRE(unsigned_infinity.has_value());
+        CHECK(unsigned_infinity->str() == "infinity");
     }
 }
 
@@ -403,8 +403,8 @@ TEST_CASE("solving a system") {
     SUBCASE("no solution is an answer, not a failure") {
         const std::vector<Expr> contradictory{eq(Expr(x), Expr(1)),
                                               eq(Expr(x), Expr(2))};
-        const std::vector<Symbol> justX{x};
-        const auto none = proxima::solve(contradictory, justX);
+        const std::vector<Symbol> just_x{x};
+        const auto none = proxima::solve(contradictory, just_x);
         REQUIRE(none.has_value());
         CHECK(none->empty());
     }
@@ -539,8 +539,8 @@ TEST_CASE("series, trigonometric, radical and partial-fraction rearrangement") {
 TEST_CASE("float and coeff") {
     const Symbol x("x");
 
-    CHECK(proxima::toFloat(proxima::pi() + Expr(x)) == Expr(std::numbers::pi) + Expr(x));
-    CHECK(proxima::toFloat(Expr::rational(1, 3)).kind() == Kind::Real);
+    CHECK(proxima::to_float(proxima::pi() + Expr(x)) == Expr(std::numbers::pi) + Expr(x));
+    CHECK(proxima::to_float(Expr::rational(1, 3)).kind() == Kind::Real);
 
     const Expr p = 3 * pow(Expr(x), 2) + 2 * Expr(x) + 5;
     CHECK(proxima::coeff(p, Expr(x), 2) == Expr(3));
@@ -580,27 +580,27 @@ TEST_CASE("real roots: counted, isolated and found") {
 
     CHECK(proxima::realroots(pow(Expr(x), 2) - 1) == std::vector<Expr>{Expr(-1), Expr(1)});
     CHECK(proxima::realroots(pow(Expr(x), 2) + 1).empty());
-    const std::vector<Expr> cubeRoot = proxima::realroots(pow(Expr(x), 3) - 2);
-    REQUIRE(cubeRoot.size() == 1);
-    REQUIRE(cubeRoot[0].is(Kind::Rational));
-    CHECK(cubeRoot[0].numerator().toDouble() / cubeRoot[0].denominator().toDouble()
+    const std::vector<Expr> cube_root = proxima::realroots(pow(Expr(x), 3) - 2);
+    REQUIRE(cube_root.size() == 1);
+    REQUIRE(cube_root[0].is(Kind::Rational));
+    CHECK(cube_root[0].numerator().to_double() / cube_root[0].denominator().to_double()
           == doctest::Approx(std::cbrt(2.0)).epsilon(1e-6));
     CHECK_THROWS_AS(static_cast<void>(proxima::realroots(Expr(x) * y - 1)), proxima::MaximaError);
 
     SUBCASE("and found numerically") {
-        const auto root = proxima::findRoot(proxima::sin(Expr(x)), x, 3.0, 4.0);
+        const auto root = proxima::find_root(proxima::sin(Expr(x)), x, 3.0, 4.0);
         REQUIRE(root.has_value());
         CHECK(*root == doctest::Approx(std::numbers::pi));
 
-        const auto sameSign = proxima::findRoot(pow(Expr(x), 2) + 1, x, 0.0, 1.0);
-        REQUIRE_FALSE(sameSign.has_value());
-        CHECK(sameSign.error().message.find("same sign") != std::string::npos);
+        const auto same_sign = proxima::find_root(pow(Expr(x), 2) + 1, x, 0.0, 1.0);
+        REQUIRE_FALSE(same_sign.has_value());
+        CHECK(same_sign.error().message.find("same sign") != std::string::npos);
 
-        CHECK_FALSE(proxima::findRoot(Expr(x) * y, x, -1.0, 1.0).has_value());
+        CHECK_FALSE(proxima::find_root(Expr(x) * y, x, -1.0, 1.0).has_value());
 
         // The interval as written, not to six decimals: to_string made this
         // "between 0.000000 and 0.000000".
-        const auto tiny = proxima::findRoot(Expr(x) * y, x, 1e-9, 1e-8);
+        const auto tiny = proxima::find_root(Expr(x) * y, x, 1e-9, 1e-8);
         REQUIRE_FALSE(tiny.has_value());
         CHECK(tiny.error().message.find("between 1e-09 and 1e-08") != std::string::npos);
     }
@@ -644,7 +644,7 @@ TEST_CASE("every builder round-trips through Maxima unchanged") {
     };
     for (const Expr &expression : built) {
         CAPTURE(expression.str());
-        const auto back = proxima::toExpr(proxima::sharedKernel().evalPure(expression));
+        const auto back = proxima::to_expr(proxima::shared_kernel().eval_pure(expression));
         REQUIRE(back.has_value());
         CHECK(*back == expression);
     }

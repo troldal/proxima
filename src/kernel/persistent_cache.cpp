@@ -22,7 +22,7 @@ namespace {
 /// Random bits, mixed with the process id and the clock. The process id alone
 /// is not enough across machines, and std::random_device is allowed to be
 /// deterministic, or to throw, where no entropy source is available.
-const std::string &processToken() {
+const std::string &process_token() {
     static const std::string token = [] {
         std::uint64_t bits = 0;
         try {
@@ -37,18 +37,18 @@ const std::string &processToken() {
             std::chrono::steady_clock::now().time_since_epoch().count());
         bits ^= static_cast<std::uint64_t>(
             std::chrono::system_clock::now().time_since_epoch().count());
-        return stableHash(std::to_string(bits));
+        return stable_hash(std::to_string(bits));
     }();
     return token;
 }
 
 /// Entries are length-prefixed, so a value or reason containing newlines needs
 /// no escaping and a truncated file fails to parse rather than reading short.
-void writeField(std::ostream &out, std::string_view text) {
+void write_field(std::ostream &out, std::string_view text) {
     out << text.size() << '\n' << text;
 }
 
-bool readField(std::istream &in, std::string &text) {
+bool read_field(std::istream &in, std::string &text) {
     std::size_t length = 0;
     if (!(in >> length)) {
         return false;
@@ -60,7 +60,7 @@ bool readField(std::istream &in, std::string &text) {
     // A field cannot be longer than what is left of the file. The length used
     // to be trusted, so a corrupt or hostile entry claiming
     // 18446744073709551615 bytes made the resize below throw
-    // std::length_error, which escaped evalPure instead of reading as a miss.
+    // std::length_error, which escaped eval_pure instead of reading as a miss.
     const std::streampos here = in.tellg();
     in.seekg(0, std::ios::end);
     const std::streampos end = in.tellg();
@@ -83,7 +83,7 @@ constexpr const char *kFormat = "proxima-cache-1";
 /// writer takes anything like this long to write one entry.
 constexpr auto kOrphanAge = std::chrono::hours{1};
 
-bool isEntry(const std::filesystem::path &path) {
+bool is_entry(const std::filesystem::path &path) {
     return path.extension() == ".reply";
 }
 
@@ -91,7 +91,7 @@ bool isEntry(const std::filesystem::path &path) {
 /// writers. Compared in the path's native encoding, so that a file with a name
 /// outside the ANSI code page, which nothing here wrote, cannot make the
 /// conversion to a narrow string throw.
-bool isTemporary(const std::filesystem::path &path) {
+bool is_temporary(const std::filesystem::path &path) {
     static const std::filesystem::path marker(".reply.tmp");
     return path.filename().native().find(marker.native())
            != std::filesystem::path::string_type::npos;
@@ -99,7 +99,7 @@ bool isTemporary(const std::filesystem::path &path) {
 
 } // namespace
 
-std::string stableHash(std::string_view text) {
+std::string stable_hash(std::string_view text) {
     std::uint64_t hash = 0xcbf29ce484222325ULL;
     for (const char c : text) {
         hash ^= static_cast<unsigned char>(c);
@@ -115,9 +115,9 @@ std::string stableHash(std::string_view text) {
 }
 
 PersistentCache::PersistentCache(std::filesystem::path directory,
-                                 std::string stamp, std::uintmax_t byteLimit)
+                                 std::string stamp, std::uintmax_t byte_limit)
     : directory_(std::move(directory)), stamp_(std::move(stamp)),
-      byteLimit_(byteLimit) {
+      byte_limit_(byte_limit) {
     std::error_code ec;
     std::filesystem::create_directories(directory_, ec);
     usable_ = std::filesystem::is_directory(directory_, ec);
@@ -127,8 +127,8 @@ void PersistentCache::restamp(std::string stamp) {
     stamp_ = std::move(stamp);
 }
 
-std::filesystem::path PersistentCache::entryPath(std::string_view source) const {
-    return pathFor(keyFor(source));
+std::filesystem::path PersistentCache::entry_path(std::string_view source) const {
+    return path_for(key_for(source));
 }
 
 void PersistentCache::sweep() const {
@@ -147,41 +147,41 @@ void PersistentCache::sweep() const {
     std::error_code ec;
     for (std::filesystem::directory_iterator it(directory_, ec), end;
          !ec && it != end; it.increment(ec)) {
-        std::error_code fileEc;
-        if (!it->is_regular_file(fileEc)) {
+        std::error_code file_ec;
+        if (!it->is_regular_file(file_ec)) {
             continue;
         }
-        const auto modified = it->last_write_time(fileEc);
-        if (fileEc) {
+        const auto modified = it->last_write_time(file_ec);
+        if (file_ec) {
             continue;
         }
-        if (isTemporary(it->path())) {
+        if (is_temporary(it->path())) {
             if (now - modified > kOrphanAge) {
-                std::filesystem::remove(it->path(), fileEc);
+                std::filesystem::remove(it->path(), file_ec);
             }
             continue;
         }
-        if (!isEntry(it->path())) {
+        if (!is_entry(it->path())) {
             continue;
         }
-        const std::uintmax_t size = it->file_size(fileEc);
-        if (fileEc) {
+        const std::uintmax_t size = it->file_size(file_ec);
+        if (file_ec) {
             continue;
         }
         entries.push_back({it->path(), size, modified});
         total += size;
     }
 
-    if (byteLimit_ != 0 && total > byteLimit_) {
-        const std::uintmax_t target = byteLimit_ / 4 * 3;
+    if (byte_limit_ != 0 && total > byte_limit_) {
+        const std::uintmax_t target = byte_limit_ / 4 * 3;
         std::sort(entries.begin(), entries.end(),
                   [](const Entry &a, const Entry &b) { return a.used < b.used; });
         for (const Entry &entry : entries) {
             if (total <= target) {
                 break;
             }
-            std::error_code removeEc;
-            if (std::filesystem::remove(entry.path, removeEc)) {
+            std::error_code remove_ec;
+            if (std::filesystem::remove(entry.path, remove_ec)) {
                 total -= entry.size;
             }
         }
@@ -189,14 +189,14 @@ void PersistentCache::sweep() const {
     bytes_ = total;
 }
 
-std::string PersistentCache::keyFor(std::string_view source) const {
+std::string PersistentCache::key_for(std::string_view source) const {
     // The separator cannot occur in either part, so two different (stamp,
     // source) pairs cannot produce the same key material.
     return stamp_ + "\n\n" + std::string(source);
 }
 
-std::filesystem::path PersistentCache::pathFor(const std::string &key) const {
-    return directory_ / (stableHash(key) + ".reply");
+std::filesystem::path PersistentCache::path_for(const std::string &key) const {
+    return directory_ / (stable_hash(key) + ".reply");
 }
 
 std::optional<Reply> PersistentCache::find(std::string_view source) const {
@@ -204,8 +204,8 @@ std::optional<Reply> PersistentCache::find(std::string_view source) const {
         return std::nullopt;
     }
 
-    const std::string key = keyFor(source);
-    const std::filesystem::path path = pathFor(key);
+    const std::string key = key_for(source);
+    const std::filesystem::path path = path_for(key);
     Reply reply;
     {
         std::ifstream in(path, std::ios::binary);
@@ -218,8 +218,8 @@ std::optional<Reply> PersistentCache::find(std::string_view source) const {
             return std::nullopt;
         }
 
-        std::string storedKey;
-        if (!readField(in, storedKey) || storedKey != key) {
+        std::string stored_key;
+        if (!read_field(in, stored_key) || stored_key != key) {
             // Either a hash collision or a file from an incompatible writer.
             // Either way this is not the answer to the question being asked.
             return std::nullopt;
@@ -228,7 +228,7 @@ std::optional<Reply> PersistentCache::find(std::string_view source) const {
         std::string ok;
         std::string value;
         std::string reason;
-        if (!readField(in, ok) || !readField(in, value) || !readField(in, reason)) {
+        if (!read_field(in, ok) || !read_field(in, value) || !read_field(in, reason)) {
             return std::nullopt; // Truncated, most likely a partial write.
         }
 
@@ -245,7 +245,7 @@ std::optional<Reply> PersistentCache::find(std::string_view source) const {
     // last minute's reads, and a metadata write on every hit is a write to
     // disk on what should be a read — for a directory shared by many
     // processes, many writes.
-    if (byteLimit_ != 0) {
+    if (byte_limit_ != 0) {
         constexpr auto kRefreshAge = std::chrono::hours{1};
         std::error_code ec;
         const auto now = std::filesystem::file_time_type::clock::now();
@@ -257,7 +257,7 @@ std::optional<Reply> PersistentCache::find(std::string_view source) const {
     return reply;
 }
 
-std::filesystem::path temporaryPathFor(const std::filesystem::path &target) {
+std::filesystem::path temporary_path_for(const std::filesystem::path &target) {
     // Named by this counter alone, as it used to be, the first write in every
     // process was <entry>.tmp0. Two processes writing one entry at once opened
     // the same file, one truncated the other's half-written content, and a
@@ -269,7 +269,7 @@ std::filesystem::path temporaryPathFor(const std::filesystem::path &target) {
     // goes through the ANSI code page on Windows, and a cache directory with a
     // character outside it would come back as a different, or no, path.
     std::filesystem::path temporary = target;
-    temporary += ".tmp-" + processToken() + "-"
+    temporary += ".tmp-" + process_token() + "-"
                  + std::to_string(counter.fetch_add(1, std::memory_order_relaxed));
     return temporary;
 }
@@ -279,13 +279,13 @@ void PersistentCache::insert(std::string_view source, const Reply &reply) const 
         return;
     }
 
-    const std::string key = keyFor(source);
-    const std::filesystem::path target = pathFor(key);
+    const std::string key = key_for(source);
+    const std::filesystem::path target = path_for(key);
 
     // Written to a temporary of this writer's own and renamed into place, so a
     // reader never sees a half-written entry, and two writers of the same entry
     // race only over which identical copy is renamed last.
-    const std::filesystem::path temporary = temporaryPathFor(target);
+    const std::filesystem::path temporary = temporary_path_for(target);
 
     {
         std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
@@ -293,10 +293,10 @@ void PersistentCache::insert(std::string_view source, const Reply &reply) const 
             return;
         }
         out << kFormat << '\n';
-        writeField(out, key);
-        writeField(out, reply.ok ? "1" : "0");
-        writeField(out, reply.value);
-        writeField(out, reply.reason);
+        write_field(out, key);
+        write_field(out, reply.ok ? "1" : "0");
+        write_field(out, reply.value);
+        write_field(out, reply.reason);
         if (!out) {
             out.close();
             std::error_code ec;
@@ -314,7 +314,7 @@ void PersistentCache::insert(std::string_view source, const Reply &reply) const 
         return;
     }
 
-    if (byteLimit_ == 0) {
+    if (byte_limit_ == 0) {
         return;
     }
     if (!bytes_) {
@@ -327,7 +327,7 @@ void PersistentCache::insert(std::string_view source, const Reply &reply) const 
     // an overestimate, which the sweep it may bring forward corrects.
     const std::uintmax_t written = std::filesystem::file_size(target, ec);
     *bytes_ += ec ? 0 : written;
-    if (*bytes_ > byteLimit_) {
+    if (*bytes_ > byte_limit_) {
         sweep();
     }
 }

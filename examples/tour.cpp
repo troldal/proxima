@@ -23,12 +23,12 @@
 #include <proxima/functions.hpp> // sin, cos, exp, sqrt, pi, inf, ...
 #include <proxima/integer.hpp>   // proxima::Integer — exact, unbounded integers
 #include <proxima/kernel.hpp>    // proxima::Kernel — a Maxima session
-#include <proxima/mathml.hpp>    // proxima::toMathML
-#include <proxima/numeric.hpp>   // evalNumeric, Compiled, asFunction
+#include <proxima/mathml.hpp>    // proxima::to_mathml
+#include <proxima/numeric.hpp>   // eval_numeric, Compiled, as_function
 #include <proxima/ops.hpp>       // diff, integrate, solve, limit, ...
 #include <proxima/render.hpp>    // proxima::render — for renderers of your own
 #include <proxima/symbol.hpp>    // proxima::Symbol — a named unknown
-#include <proxima/tex.hpp>       // proxima::toTeX
+#include <proxima/tex.hpp>       // proxima::to_tex
 #include <proxima/version.hpp>   // proxima::version
 
 #include <chrono>
@@ -79,7 +79,7 @@ std::string joined(const std::vector<proxima::Expr> &items) {
 
 // --- 1. Symbols and expressions ---------------------------------------------
 
-void symbolsAndExpressions() {
+void symbols_and_expressions() {
     section("1. Symbols and expressions");
 
     // A Symbol is a named unknown. Operations that differentiate, integrate or
@@ -108,9 +108,9 @@ void symbolsAndExpressions() {
     // Numbers stay exact unless you ask otherwise. 1/3 is a Rational, not
     // 0.333...; 2 and 2.0 are different values, because one is exact.
     show("Expr(1) / 3", proxima::Expr(1) / 3);
-    show("  kind", kindName((proxima::Expr(1) / 3).kind()));
+    show("  kind", kind_name((proxima::Expr(1) / 3).kind()));
     show("Expr(1.0) / 3", proxima::Expr(1.0) / 3);
-    show("  kind", kindName((proxima::Expr(1.0) / 3).kind()));
+    show("  kind", kind_name((proxima::Expr(1.0) / 3).kind()));
     show("Expr::rational(2, 4)", proxima::Expr::rational(2, 4)); // Reduced on sight.
 
     // Expressions are *normalised* when built: nested sums are flattened,
@@ -138,9 +138,9 @@ void symbolsAndExpressions() {
     // Reading a tree: kind() says what a node is, args() gives its operands.
     // Every accessor checks the kind and throws proxima::Error if you ask the
     // wrong question, rather than returning something meaningless.
-    show("f.kind()", kindName(f.kind()));
+    show("f.kind()", kind_name(f.kind()));
     for (const proxima::Expr &term : f.args()) {
-        show("  term", term.str() + "   (" + std::string(kindName(term.kind()))
+        show("  term", term.str() + "   (" + std::string(kind_name(term.kind()))
                            + ")");
     }
 
@@ -162,7 +162,7 @@ void symbolsAndExpressions() {
 
 // --- 2. Exact integers ------------------------------------------------------
 
-void exactIntegers() {
+void exact_integers() {
     section("2. Exact integers");
 
     // proxima::Integer has no fixed width. Maxima produces large integers in
@@ -170,15 +170,15 @@ void exactIntegers() {
     // or refuse. Values that do fit in 64 bits are stored inline and never
     // allocate, which is almost all of them.
     const proxima::Integer factorial30("265252859812191058636308480000000");
-    show("30!", factorial30.toString());
-    show("30! * 30!", (factorial30 * factorial30).toString());
-    show("30! / 7", (factorial30 / 7).toString()); // Truncating, as C++ does.
-    show("gcd(30!, 1001)", gcd(factorial30, 1001).toString());
+    show("30!", factorial30.to_string());
+    show("30! * 30!", (factorial30 * factorial30).to_string());
+    show("30! / 7", (factorial30 / 7).to_string()); // Truncating, as C++ does.
+    show("gcd(30!, 1001)", gcd(factorial30, 1001).to_string());
 
-    // toInt64 tells you whether a value fits a built-in type.
-    show("30!.toInt64() has a value", factorial30.toInt64() ? "yes" : "no");
-    show("(30! / 30!).toInt64()",
-         std::to_string(*(factorial30 / factorial30).toInt64()));
+    // to_int64 tells you whether a value fits a built-in type.
+    show("30!.to_int64() has a value", factorial30.to_int64() ? "yes" : "no");
+    show("(30! / 30!).to_int64()",
+         std::to_string(*(factorial30 / factorial30).to_int64()));
 
     // An Integer becomes an Expr like any other number, and stays exact.
     show("Expr(30!) * 2", proxima::Expr(factorial30) * 2);
@@ -191,7 +191,7 @@ void exactIntegers() {
 
 // --- 3. Parsing text, without Maxima ----------------------------------------
 
-void parsingOffline() {
+void parsing_offline() {
     section("3. Parsing text, without Maxima");
 
     // Expr::parse reads infix text with no kernel involved. It accepts a
@@ -231,7 +231,7 @@ void parsingOffline() {
 
 // --- 4. Functions and constants ---------------------------------------------
 
-void functionsAndConstants() {
+void functions_and_constants() {
     section("4. Functions and constants");
 
     // <proxima/functions.hpp> has builders for the common functions. Nothing is
@@ -270,13 +270,13 @@ void functionsAndConstants() {
 /// chooses spellings.
 struct PrefixRenderer {
     /// A renderer may keep state. See std::ref below for reading it back.
-    int symbolsSeen = 0;
+    int symbols_seen = 0;
 
     // Leaves.
-    std::string integer(const proxima::Integer &value) { return value.toString(); }
+    std::string integer(const proxima::Integer &value) { return value.to_string(); }
     std::string real(double value) { return proxima::Expr(value).str(); }
     std::string symbol(std::string_view name) {
-        ++symbolsSeen;
+        ++symbols_seen;
         return std::string(name);
     }
     /// Maxima source text the library never interpreted. Every renderer has
@@ -308,7 +308,7 @@ struct PrefixRenderer {
     }
     std::string relation(proxima::RelOp op, const std::string &lhs,
                          const std::string &rhs) {
-        return "(" + std::string(proxima::symbolFor(op)) + " " + lhs + " " + rhs + ")";
+        return "(" + std::string(proxima::symbol_for(op)) + " " + lhs + " " + rhs + ")";
     }
 
     /// How to parenthesise. The library decides *when*; this decides *how*.
@@ -326,7 +326,7 @@ struct PrefixRenderer {
     /// Also optional: how tightly each construct binds. Saying that
     /// everything is an atom tells the library never to ask for brackets,
     /// which is right for a notation that brackets everything already.
-    proxima::Strength strengthOf(proxima::Construct) { return proxima::Strength::Atom; }
+    proxima::Strength strength_of(proxima::Construct) { return proxima::Strength::Atom; }
 
 private:
     static std::string prefix(std::string_view head,
@@ -347,11 +347,11 @@ void rendering() {
 
     // Three renderers come with the library. All are local — no kernel.
     //   str()       Maxima-compatible infix, which Expr::parse reads back.
-    //   toTeX()     LaTeX, for a maths environment.
-    //   toMathML()  Presentation MathML, which browsers display natively.
+    //   to_tex()     LaTeX, for a maths environment.
+    //   to_mathml()  Presentation MathML, which browsers display natively.
     show("str()", quotient);
-    show("toTeX()", proxima::toTeX(quotient));
-    show("toMathML()", proxima::toMathML(quotient));
+    show("to_tex()", proxima::to_tex(quotient));
+    show("to_mathml()", proxima::to_mathml(quotient));
 
     // The same machinery is open to you: pass any renderer to proxima::render.
     // The output type is deduced from the renderer — here std::string, but a
@@ -365,7 +365,7 @@ void rendering() {
     // once it returns. Wrap it in std::ref to keep your own object.
     PrefixRenderer counting;
     proxima::render(pow(x, 2) + x * proxima::pi(), std::ref(counting));
-    show("symbols counted, via std::ref", std::to_string(counting.symbolsSeen));
+    show("symbols counted, via std::ref", std::to_string(counting.symbols_seen));
 
     // proxima::Renderer<T> holds any renderer producing T, erased to one type:
     // choose one at run time, keep it in a member, pass it around. It is
@@ -376,7 +376,7 @@ void rendering() {
 
 // --- 6. Numbers from expressions ----------------------------------------------
 
-void numericEvaluation() {
+void numeric_evaluation() {
     section("6. Numbers from expressions");
 
     // Once you have a closed form, turning it into numbers is arithmetic, not
@@ -386,19 +386,19 @@ void numericEvaluation() {
     const proxima::Symbol a("a");
     const proxima::Expr f = a * proxima::sin(x) + pow(x, 2);
 
-    // evalNumeric: one evaluation, with symbols bound by name. Maxima's named
+    // eval_numeric: one evaluation, with symbols bound by name. Maxima's named
     // constants (%pi, %e, inf) need no binding.
-    show("evalNumeric(f, {x: 1, a: 2})",
-         std::to_string(proxima::evalNumeric(f, {{"x", 1.0}, {"a", 2.0}})));
-    show("evalNumeric(pi() / 2)", std::to_string(proxima::evalNumeric(proxima::pi() / 2)));
+    show("eval_numeric(f, {x: 1, a: 2})",
+         std::to_string(proxima::eval_numeric(f, {{"x", 1.0}, {"a", 2.0}})));
+    show("eval_numeric(pi() / 2)", std::to_string(proxima::eval_numeric(proxima::pi() / 2)));
 
-    // isEvaluable asks first, without throwing.
-    show("isEvaluable(f) with nothing bound", proxima::isEvaluable(f) ? "yes" : "no");
+    // is_evaluable asks first, without throwing.
+    show("is_evaluable(f) with nothing bound", proxima::is_evaluable(f) ? "yes" : "no");
 
     // Otherwise, anything that cannot become a number throws proxima::EvalError:
     // an unbound symbol, a function with no numeric meaning here, a relation.
     try {
-        proxima::evalNumeric(f, {{"x", 1.0}});
+        proxima::eval_numeric(f, {{"x", 1.0}});
     } catch (const proxima::EvalError &error) {
         show("with a left unbound", error.what());
     }
@@ -415,15 +415,15 @@ void numericEvaluation() {
 
     // Several variables, in the order you list them.
     const std::vector<proxima::Symbol> variables{x, a};
-    const proxima::Compiled twoVariables(f, variables);
+    const proxima::Compiled two_variables(f, variables);
     const double point[] = {1.0, 2.0}; // x = 1, a = 2
-    show("Compiled f(x, a) at (1, 2)", std::to_string(twoVariables(point)));
+    show("Compiled f(x, a) at (1, 2)", std::to_string(two_variables(point)));
 
-    // asFunction wraps a Compiled in a std::function<double(double)>, for
+    // as_function wraps a Compiled in a std::function<double(double)>, for
     // APIs that want a callable.
-    const std::function<double(double)> asCallable
-        = proxima::asFunction(f, x, {{"a", 2.0}});
-    show("asFunction(f, x, {a: 2})(1)", std::to_string(asCallable(1.0)));
+    const std::function<double(double)> as_callable
+        = proxima::as_function(f, x, {{"a", 2.0}});
+    show("as_function(f, x, {a: 2})(1)", std::to_string(as_callable(1.0)));
 
     // A Compiled can be shared between threads freely; its working space is
     // thread-local.
@@ -435,11 +435,11 @@ void numericEvaluation() {
 
 // --- 7. Calculus and algebra --------------------------------------------------
 
-void calculusAndAlgebra() {
+void calculus_and_algebra() {
     section("7. Calculus and algebra");
 
     // Every operation takes an optional Kernel as its last argument. Leave it
-    // out and the process-wide sharedKernel() is used, started on first use —
+    // out and the process-wide shared_kernel() is used, started on first use —
     // which is why the first call below takes a moment.
     const proxima::Symbol x("x");
     const proxima::Symbol y("y");
@@ -503,7 +503,7 @@ void calculusAndAlgebra() {
 
 // --- 8. When there is no answer ---------------------------------------------
 
-void whenThereIsNoAnswer() {
+void when_there_is_no_answer() {
     section("8. When there is no answer");
 
     const proxima::Symbol x("x");
@@ -531,9 +531,9 @@ void whenThereIsNoAnswer() {
     // An infinite answer is still an answer. From both sides at once, 1/x
     // grows without a sign, and Maxima says `infinity` — its complex
     // infinity, not the inf and minf of the one-sided limits in section 7.
-    const auto unsigned_ = proxima::limit(proxima::Expr(1) / x, x, 0);
+    const auto both_sides = proxima::limit(proxima::Expr(1) / x, x, 0);
     show("limit(1/x, x, 0), both sides",
-         unsigned_ ? unsigned_->str() : "Failure: " + unsigned_.error().message);
+         both_sides ? both_sides->str() : "Failure: " + both_sides.error().message);
 
     // A limit that does not exist is a Failure, however Maxima puts it.
     // abs(x)/x is -1 on one side of 0 and 1 on the other: Maxima answers `ind`,
@@ -543,9 +543,9 @@ void whenThereIsNoAnswer() {
     const auto bounded = proxima::limit(proxima::abs(x) / x, x, 0);
     show("limit(abs(x)/x, x, 0)",
          bounded ? bounded->str() : "Failure: " + bounded.error().message);
-    const auto oneSided = proxima::limit(proxima::abs(x) / x, x, 0, proxima::Side::FromAbove);
+    const auto one_sided = proxima::limit(proxima::abs(x) / x, x, 0, proxima::Side::FromAbove);
     show("limit(abs(x)/x, x, 0, FromAbove)",
-         oneSided ? oneSided->str() : "Failure: " + oneSided.error().message);
+         one_sided ? one_sided->str() : "Failure: " + one_sided.error().message);
 
     // Operations with no ordinary way to fail — diff, expand, factor,
     // ratsimp, subst — throw proxima::MaximaError instead, because a failure
@@ -623,7 +623,7 @@ void assumptions() {
 
 // --- 10. The kernel, configuration and caching --------------------------------
 
-void theKernel() {
+void the_kernel() {
     section("10. The kernel, configuration and caching");
 
     const proxima::Symbol x("x");
@@ -636,29 +636,29 @@ void theKernel() {
     // one kernel take turns.
     //
     // proxima::Config configures it. Every field has a sensible default:
-    //   maximaRoot      where Maxima is installed; empty means discover it
+    //   maxima_root      where Maxima is installed; empty means discover it
     //   timeout         how long one call may take (default two minutes)
-    //   startupTimeout  how long starting or restarting may take
-    //   cacheEntries    in-memory reply cache size; 0 disables it
-    //   cacheDirectory  keep replies between runs; empty means do not
-    //   loadUserInit    read the user's maxima-init.mac (default: no, so
+    //   startup_timeout  how long starting or restarting may take
+    //   cache_entries    in-memory reply cache size; 0 disables it
+    //   cache_directory  keep replies between runs; empty means do not
+    //   load_user_init    read the user's maxima-init.mac (default: no, so
     //                   results do not vary from machine to machine)
-    //   userDir         where Maxima keeps user state when that is off
+    //   user_dir         where Maxima keeps user state when that is off
 
     // --- caching between runs --------------------------------------------
     //
-    // With cacheDirectory set, answers are written to disk and shared by
+    // With cache_directory set, answers are written to disk and shared by
     // every kernel using the same directory, in this process or another.
     // Every entry is keyed on the Maxima version, this library's version and
     // the assumptions in force, so an answer is only reused under the
     // conditions that produced it.
-    const std::filesystem::path cacheDirectory
+    const std::filesystem::path cache_directory
         = std::filesystem::temp_directory_path() / "proxima_tour_cache";
     std::error_code ignored;
-    std::filesystem::remove_all(cacheDirectory, ignored); // Start clean.
+    std::filesystem::remove_all(cache_directory, ignored); // Start clean.
 
     proxima::Config config;
-    config.cacheDirectory = cacheDirectory;
+    config.cache_directory = cache_directory;
 
     const proxima::Expr question = pow(x, 5) * proxima::exp(x);
     {
@@ -670,10 +670,10 @@ void theKernel() {
         static_cast<void>(proxima::integrate(question, x, first));
     }
     proxima::Kernel second(config); // A fresh Maxima process, same directory.
-    const auto fromDisk = proxima::integrate(question, x, second);
-    show("integrate(x^5 e^x), second kernel", fromDisk ? fromDisk->str() : "Failure");
+    const auto from_disk = proxima::integrate(question, x, second);
+    show("integrate(x^5 e^x), second kernel", from_disk ? from_disk->str() : "Failure");
     show("  answers that came from disk",
-         std::to_string(second.cacheStats().persistentHits));
+         std::to_string(second.cache_stats().persistent_hits));
 
     // --- talking to Maxima directly --------------------------------------
     //
@@ -681,30 +681,30 @@ void theKernel() {
     // hands back Maxima's reply as a Reply: ok, and either the value — as
     // the text of Maxima's internal form — or Maxima's reason for failing.
     //
-    // Prefer evalPure for questions. It uses the cache, on the promise that
+    // Prefer eval_pure for questions. It uses the cache, on the promise that
     // the text changes nothing in Maxima.
-    const proxima::Reply pi = second.evalPure("float(%pi)");
-    show("evalPure(\"float(%pi)\")", pi.ok ? pi.value : pi.reason);
+    const proxima::Reply pi = second.eval_pure("float(%pi)");
+    show("eval_pure(\"float(%pi)\")", pi.ok ? pi.value : pi.reason);
 
     // An Expr can be sent instead of text; it travels as structure, so
     // nothing about it can be misread. Note the reply is Maxima's internal
     // form, here the rational 1/2.
-    const proxima::Reply viaExpr = second.evalPure(proxima::sin(proxima::pi() / 6));
-    show("evalPure(sin(pi()/6))", viaExpr.ok ? viaExpr.value : viaExpr.reason);
+    const proxima::Reply via_expr = second.eval_pure(proxima::sin(proxima::pi() / 6));
+    show("eval_pure(sin(pi()/6))", via_expr.ok ? via_expr.value : via_expr.reason);
 
     // Text Maxima cannot parse is an ordinary failure with a reason, not an
     // exception, and costs one round trip.
-    const proxima::Reply broken = second.evalPure("(1");
-    show("evalPure(\"(1\") ok?", broken.ok ? "yes" : "no: " + broken.reason);
+    const proxima::Reply broken = second.eval_pure("(1");
+    show("eval_pure(\"(1\") ok?", broken.ok ? "yes" : "no: " + broken.reason);
 
     // Asking the same question again is answered from memory.
-    const auto before = second.cacheStats();
-    second.evalPure("float(%pi)");
+    const auto before = second.cache_stats();
+    second.eval_pure("float(%pi)");
     show("the same question again: cache hits",
          std::to_string(before.hits) + " -> "
-             + std::to_string(second.cacheStats().hits));
+             + std::to_string(second.cache_stats().hits));
 
-    // eval, as opposed to evalPure, is for statements that change Maxima —
+    // eval, as opposed to eval_pure, is for statements that change Maxima —
     // an assignment, a definition. Since there is no telling from the text
     // what changed, it empties the cache, and turns off the on-disk cache for
     // this kernel for good. Use it only when you mean it.
@@ -715,18 +715,18 @@ void theKernel() {
     //
     // A call that runs past its timeout throws proxima::TimeoutError. Before it
     // does, the kernel is restarted and its assumptions replayed, so only
-    // that call is lost: the next one works. setTimeout changes the deadline
+    // that call is lost: the next one works. set_timeout changes the deadline
     // for later calls. The restart takes a moment.
-    second.setTimeout(std::chrono::milliseconds(1));
+    second.set_timeout(std::chrono::milliseconds(1));
     try {
         proxima::expand(pow(x + y + z, 200), second);
     } catch (const proxima::TimeoutError &error) {
         show("expand((x+y+z)^200), 1 ms timeout", error.what());
     }
-    second.setTimeout(std::chrono::minutes(2));
+    second.set_timeout(std::chrono::minutes(2));
     show("  and the next call", proxima::expand(pow(x + 1, 2), second));
 
-    std::filesystem::remove_all(cacheDirectory, ignored); // Tidy up.
+    std::filesystem::remove_all(cache_directory, ignored); // Tidy up.
 }
 
 } // namespace
@@ -738,12 +738,12 @@ int main() {
 
     // Part one is plain C++. Any proxima::Error here would be a bug in the tour.
     try {
-        symbolsAndExpressions();
-        exactIntegers();
-        parsingOffline();
-        functionsAndConstants();
+        symbols_and_expressions();
+        exact_integers();
+        parsing_offline();
+        functions_and_constants();
         rendering();
-        numericEvaluation();
+        numeric_evaluation();
     } catch (const proxima::Error &error) {
         std::cerr << "\nunexpected error in part one: " << error.what() << "\n";
         return 1;
@@ -763,10 +763,10 @@ int main() {
     // A *mathematical* failure — no closed form, no solution — is none of
     // these. It is an proxima::Failure returned in a std::expected (section 8).
     try {
-        calculusAndAlgebra();
-        whenThereIsNoAnswer();
+        calculus_and_algebra();
+        when_there_is_no_answer();
         assumptions();
-        theKernel();
+        the_kernel();
     } catch (const proxima::KernelError &error) {
         std::cerr << "\nPart two needs Maxima, which could not be used:\n  "
                   << error.what()

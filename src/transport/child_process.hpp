@@ -33,7 +33,7 @@ public:
     /// `argv[0]` is executed as given rather than searched for on PATH, so
     /// callers pass a resolved path. `env` entries are merged over the parent's
     /// environment rather than replacing it, so the child keeps PATH and
-    /// friends; see mergeEnvironment for how names are matched.
+    /// friends; see merge_environment for how names are matched.
     ///
     /// Throws KernelError if the process or its pipes could not be created,
     /// including an executable that does not exist. That is reported

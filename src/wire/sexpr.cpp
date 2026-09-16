@@ -9,23 +9,23 @@
 namespace proxima::detail {
 namespace {
 
-bool isDelimiter(char c) {
+bool is_delimiter(char c) {
     return c == '(' || c == ')' || c == '"' || c == ';'
            || static_cast<unsigned char>(c) <= ' ';
 }
 
-bool isDigit(char c) {
+bool is_digit(char c) {
     return c >= '0' && c <= '9';
 }
 
 /// True for a token that is entirely an optional sign followed by digits.
-bool looksLikeInteger(std::string_view token) {
+bool looks_like_integer(std::string_view token) {
     size_t at = (token.starts_with('+') || token.starts_with('-')) ? 1 : 0;
     if (at >= token.size()) {
         return false;
     }
     for (; at < token.size(); ++at) {
-        if (!isDigit(token[at])) {
+        if (!is_digit(token[at])) {
             return false;
         }
     }
@@ -39,39 +39,39 @@ bool looksLikeInteger(std::string_view token) {
 /// practice `e` or none is what arrives, but accepting the others costs one
 /// substitution and avoids a mystifying parse failure if the setting ever
 /// differs.
-std::optional<double> parseFloat(std::string_view token) {
+std::optional<double> parse_float(std::string_view token) {
     std::string normalised;
     normalised.reserve(token.size());
-    bool sawDigit = false;
-    bool sawMarker = false;
-    bool sawPoint = false;
+    bool saw_digit = false;
+    bool saw_marker = false;
+    bool saw_point = false;
 
     for (size_t at = 0; at < token.size(); ++at) {
         const char c = token[at];
-        if (isDigit(c)) {
-            sawDigit = true;
+        if (is_digit(c)) {
+            saw_digit = true;
             normalised.push_back(c);
         } else if (c == '.') {
-            if (sawPoint || sawMarker) {
+            if (saw_point || saw_marker) {
                 return std::nullopt;
             }
-            sawPoint = true;
+            saw_point = true;
             normalised.push_back(c);
         } else if (c == '+' || c == '-') {
             normalised.push_back(c);
         } else if (c == 'e' || c == 'E' || c == 's' || c == 'S' || c == 'f'
                    || c == 'F' || c == 'd' || c == 'D' || c == 'l' || c == 'L') {
-            if (sawMarker || !sawDigit) {
+            if (saw_marker || !saw_digit) {
                 return std::nullopt;
             }
-            sawMarker = true;
+            saw_marker = true;
             normalised.push_back('e');
         } else {
             return std::nullopt;
         }
     }
 
-    if (!sawDigit || (!sawPoint && !sawMarker)) {
+    if (!saw_digit || (!saw_point && !saw_marker)) {
         return std::nullopt; // An integer, or not a number at all.
     }
     // A trailing marker with no exponent digits ("1.0d") is how Lisp spells a
@@ -107,7 +107,7 @@ public:
     };
 
     Token next() {
-        skipWhitespace();
+        skip_whitespace();
         if (at_ >= text_.size()) {
             return {TokenKind::End, {}};
         }
@@ -122,10 +122,10 @@ public:
             return {TokenKind::Close, {}};
         }
         if (c == '"') {
-            return {TokenKind::String, readString()};
+            return {TokenKind::String, read_string()};
         }
         if (c == '|') {
-            return {TokenKind::QuotedSymbol, readBarSymbol()};
+            return {TokenKind::QuotedSymbol, read_bar_symbol()};
         }
         if (c == ';') {
             // A Lisp comment, which Maxima never puts in a reply. Found by
@@ -134,18 +134,18 @@ public:
             // from them ran the process out of memory.
             throw ParseError("unexpected ';' in Maxima reply");
         }
-        return {TokenKind::Atom, readAtom()};
+        return {TokenKind::Atom, read_atom()};
     }
 
 private:
-    void skipWhitespace() {
+    void skip_whitespace() {
         while (at_ < text_.size()
                && static_cast<unsigned char>(text_[at_]) <= ' ') {
             ++at_;
         }
     }
 
-    std::string readString() {
+    std::string read_string() {
         ++at_; // Opening quote.
         std::string value;
         while (at_ < text_.size() && text_[at_] != '"') {
@@ -163,7 +163,7 @@ private:
 
     /// `|Symbol With Spaces|` — how Lisp prints a symbol whose name would
     /// otherwise not read back. The bars are not part of the name.
-    std::string readBarSymbol() {
+    std::string read_bar_symbol() {
         ++at_; // Opening bar.
         std::string name;
         while (at_ < text_.size() && text_[at_] != '|') {
@@ -179,9 +179,9 @@ private:
         return name;
     }
 
-    std::string readAtom() {
+    std::string read_atom() {
         const size_t start = at_;
-        while (at_ < text_.size() && !isDelimiter(text_[at_])) {
+        while (at_ < text_.size() && !is_delimiter(text_[at_])) {
             ++at_;
         }
         if (at_ == start) {
@@ -197,11 +197,11 @@ private:
     size_t at_ = 0;
 };
 
-SExpr atomFrom(std::string text) {
-    if (looksLikeInteger(text)) {
+SExpr atom_from(std::string text) {
+    if (looks_like_integer(text)) {
         return SExpr::integer(std::move(text));
     }
-    if (const auto value = parseFloat(text)) {
+    if (const auto value = parse_float(text)) {
         return SExpr::real(*value);
     }
     if (text == ".") {
@@ -222,7 +222,7 @@ SExpr atomFrom(std::string text) {
     return SExpr::symbol(std::move(text));
 }
 
-void appendEscaped(std::string &out, std::string_view text) {
+void append_escaped(std::string &out, std::string_view text) {
     for (const char c : text) {
         if (c == '"' || c == '\\') {
             out.push_back('\\');
@@ -268,7 +268,7 @@ SExpr SExpr::list(std::vector<SExpr> items) {
     return value;
 }
 
-std::optional<std::int64_t> SExpr::asInt64() const {
+std::optional<std::int64_t> SExpr::as_int64() const {
     if (kind_ != Kind::Integer || text_.empty()) {
         return std::nullopt;
     }
@@ -310,7 +310,7 @@ bool SExpr::operator==(const SExpr &other) const {
     return false;
 }
 
-std::string SExpr::toString() const {
+std::string SExpr::to_string() const {
     switch (kind_) {
     case Kind::Integer:
         return text_;
@@ -329,7 +329,7 @@ std::string SExpr::toString() const {
         return text_;
     case Kind::String: {
         std::string out = "\"";
-        appendEscaped(out, text_);
+        append_escaped(out, text_);
         out.push_back('"');
         return out;
     }
@@ -339,7 +339,7 @@ std::string SExpr::toString() const {
             if (i != 0) {
                 out.push_back(' ');
             }
-            out += items_[i].toString();
+            out += items_[i].to_string();
         }
         out.push_back(')');
         return out;
@@ -348,7 +348,7 @@ std::string SExpr::toString() const {
     return {};
 }
 
-SExpr parseSExpr(std::string_view text) {
+SExpr parse_sexpr(std::string_view text) {
     Lexer lexer(text);
 
     // An explicit stack rather than recursion, so that nesting depth costs heap
@@ -388,10 +388,10 @@ SExpr parseSExpr(std::string_view text) {
             value = SExpr::string(token.text);
             break;
         case Lexer::TokenKind::Atom:
-            value = atomFrom(token.text);
+            value = atom_from(token.text);
             break;
         case Lexer::TokenKind::QuotedSymbol:
-            // Its name is its name. Passed through atomFrom, as it used to be,
+            // Its name is its name. Passed through atom_from, as it used to be,
             // |123| read as the integer 123.
             value = SExpr::symbol(token.text);
             break;

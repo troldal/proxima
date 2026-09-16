@@ -71,7 +71,7 @@ TEST_CASE("numbers are folded into one term") {
     SUBCASE("inexactness is contagious, as it is in Maxima") {
         const Expr mixed = Expr(1) + Expr(2.5);
         REQUIRE(mixed.kind() == Kind::Real);
-        CHECK(mixed.realValue() == doctest::Approx(3.5));
+        CHECK(mixed.real_value() == doctest::Approx(3.5));
     }
 
     SUBCASE("regardless of the order they were written in") {
@@ -134,8 +134,8 @@ TEST_CASE("folding cannot overflow, so it never gives up") {
         }
         REQUIRE(total.kind() == Kind::Rational);
         // The 40th harmonic number, exactly, and in lowest terms.
-        CHECK(total.numerator().toString() == "2078178381193813");
-        CHECK(total.denominator().toString() == "485721041551200");
+        CHECK(total.numerator().to_string() == "2078178381193813");
+        CHECK(total.denominator().to_string() == "485721041551200");
     }
 }
 
@@ -278,11 +278,11 @@ TEST_CASE("building without extra copies keeps every normalisation rule") {
         // change either.
         const Expr sum = Expr::add({Expr(-0.0), Expr(x)});
         REQUIRE(sum.kind() == Kind::Add);
-        CHECK_FALSE(std::signbit(sum.arg(0).realValue()));
+        CHECK_FALSE(std::signbit(sum.arg(0).real_value()));
 
         const Expr product = Expr::mul({Expr(-0.0), Expr(x)});
         REQUIRE(product.kind() == Kind::Mul);
-        CHECK(std::signbit(product.arg(0).realValue()));
+        CHECK(std::signbit(product.arg(0).real_value()));
     }
 
     SUBCASE("reals handed over together fold in canonical order") {

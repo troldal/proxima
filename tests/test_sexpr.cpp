@@ -14,135 +14,135 @@
 #include <string>
 #include <vector>
 
-using proxima::detail::parseSExpr;
+using proxima::detail::parse_sexpr;
 using proxima::detail::SExpr;
 
 TEST_CASE("atoms") {
     SUBCASE("integers") {
-        const SExpr value = parseSExpr("42");
-        REQUIRE(value.isInteger());
+        const SExpr value = parse_sexpr("42");
+        REQUIRE(value.is_integer());
         CHECK(value.digits() == "42");
-        CHECK(value.asInt64() == 42);
+        CHECK(value.as_int64() == 42);
     }
     SUBCASE("negative integers") {
-        CHECK(parseSExpr("-7").asInt64() == -7);
+        CHECK(parse_sexpr("-7").as_int64() == -7);
     }
     SUBCASE("symbols") {
-        CHECK(parseSExpr("$X").isSymbol("$X"));
-        CHECK(parseSExpr("MPLUS").isSymbol("MPLUS"));
-        CHECK(parseSExpr("%SIN").isSymbol("%SIN"));
+        CHECK(parse_sexpr("$X").is_symbol("$X"));
+        CHECK(parse_sexpr("MPLUS").is_symbol("MPLUS"));
+        CHECK(parse_sexpr("%SIN").is_symbol("%SIN"));
         // Maxima renders true and false as the Lisp booleans, not $TRUE/$FALSE.
-        CHECK(parseSExpr("T").isSymbol("T"));
-        CHECK(parseSExpr("NIL").isSymbol("NIL"));
+        CHECK(parse_sexpr("T").is_symbol("T"));
+        CHECK(parse_sexpr("NIL").is_symbol("NIL"));
     }
     SUBCASE("floats") {
-        REQUIRE(parseSExpr("1.5").isReal());
-        CHECK(parseSExpr("1.5").realValue() == doctest::Approx(1.5));
-        CHECK(parseSExpr("1.0e-10").realValue() == doctest::Approx(1.0e-10));
-        CHECK(parseSExpr("-0.25").realValue() == doctest::Approx(-0.25));
+        REQUIRE(parse_sexpr("1.5").is_real());
+        CHECK(parse_sexpr("1.5").real_value() == doctest::Approx(1.5));
+        CHECK(parse_sexpr("1.0e-10").real_value() == doctest::Approx(1.0e-10));
+        CHECK(parse_sexpr("-0.25").real_value() == doctest::Approx(-0.25));
     }
     SUBCASE("strings") {
-        REQUIRE(parseSExpr(R"("a string")").isString());
-        CHECK(parseSExpr(R"("a string")").stringValue() == "a string");
+        REQUIRE(parse_sexpr(R"("a string")").is_string());
+        CHECK(parse_sexpr(R"("a string")").string_value() == "a string");
     }
 }
 
 TEST_CASE("a float is never mistaken for an integer, or the reverse") {
     // The distinction matters downstream: an exact 2 and an inexact 2.0 are
     // different values to a CAS.
-    CHECK(parseSExpr("2").isInteger());
-    CHECK(parseSExpr("2.0").isReal());
-    CHECK(parseSExpr("2.").isReal());
-    CHECK(parseSExpr("2e3").isReal());
+    CHECK(parse_sexpr("2").is_integer());
+    CHECK(parse_sexpr("2.0").is_real());
+    CHECK(parse_sexpr("2.").is_real());
+    CHECK(parse_sexpr("2e3").is_real());
 }
 
 TEST_CASE("Lisp exponent markers other than e are accepted") {
     // Maxima sets *read-default-float-format* to double-float so `e` is what
     // arrives, but d/s/f/l are legal Common Lisp and would otherwise fail to
     // parse in a thoroughly mystifying way.
-    CHECK(parseSExpr("1.5d0").realValue() == doctest::Approx(1.5));
-    CHECK(parseSExpr("1.5s0").realValue() == doctest::Approx(1.5));
-    CHECK(parseSExpr("2.0d3").realValue() == doctest::Approx(2000.0));
+    CHECK(parse_sexpr("1.5d0").real_value() == doctest::Approx(1.5));
+    CHECK(parse_sexpr("1.5s0").real_value() == doctest::Approx(1.5));
+    CHECK(parse_sexpr("2.0d3").real_value() == doctest::Approx(2000.0));
 }
 
 TEST_CASE("bignums are kept losslessly rather than truncated") {
     // 30! — Maxima produces these in ordinary use, well past int64. Storing the
     // digits leaves the numeric-representation decision to the layer that has
     // to make it (PLAN.md step 8) instead of silently destroying the value.
-    const SExpr value = parseSExpr("265252859812191058636308480000000");
-    REQUIRE(value.isInteger());
+    const SExpr value = parse_sexpr("265252859812191058636308480000000");
+    REQUIRE(value.is_integer());
     CHECK(value.digits() == "265252859812191058636308480000000");
-    CHECK_FALSE(value.asInt64().has_value());
+    CHECK_FALSE(value.as_int64().has_value());
 }
 
 TEST_CASE("int64 boundaries are handled exactly") {
-    CHECK(parseSExpr("9223372036854775807").asInt64()
+    CHECK(parse_sexpr("9223372036854775807").as_int64()
           == std::numeric_limits<std::int64_t>::max());
-    CHECK(parseSExpr("-9223372036854775808").asInt64()
+    CHECK(parse_sexpr("-9223372036854775808").as_int64()
           == std::numeric_limits<std::int64_t>::min());
     // One past the top must report "does not fit", not wrap.
-    CHECK_FALSE(parseSExpr("9223372036854775808").asInt64().has_value());
+    CHECK_FALSE(parse_sexpr("9223372036854775808").as_int64().has_value());
 }
 
 TEST_CASE("lists") {
     SUBCASE("empty") {
-        const SExpr value = parseSExpr("()");
-        REQUIRE(value.isList());
+        const SExpr value = parse_sexpr("()");
+        REQUIRE(value.is_list());
         CHECK(value.empty());
     }
     SUBCASE("flat") {
-        const SExpr value = parseSExpr("(1 2 3)");
+        const SExpr value = parse_sexpr("(1 2 3)");
         REQUIRE(value.size() == 3);
-        CHECK(value.at(0).asInt64() == 1);
-        CHECK(value.at(2).asInt64() == 3);
+        CHECK(value.at(0).as_int64() == 1);
+        CHECK(value.at(2).as_int64() == 3);
     }
     SUBCASE("nested, as Maxima actually emits") {
-        const SExpr value = parseSExpr("((MPLUS SIMP) 1 $X)");
+        const SExpr value = parse_sexpr("((MPLUS SIMP) 1 $X)");
         REQUIRE(value.size() == 3);
 
         // The head is itself a list: operator first, then flags. Flags beyond
         // SIMP do occur, so it cannot be treated as a pair.
         const SExpr &head = value.at(0);
-        REQUIRE(head.isList());
-        CHECK(head.at(0).isSymbol("MPLUS"));
-        CHECK(head.at(1).isSymbol("SIMP"));
+        REQUIRE(head.is_list());
+        CHECK(head.at(0).is_symbol("MPLUS"));
+        CHECK(head.at(1).is_symbol("SIMP"));
 
-        CHECK(value.at(1).asInt64() == 1);
-        CHECK(value.at(2).isSymbol("$X"));
+        CHECK(value.at(1).as_int64() == 1);
+        CHECK(value.at(2).is_symbol("$X"));
     }
     SUBCASE("extra head flags") {
-        const SExpr value = parseSExpr("((MEXPT SIMP RATSIMP) $X 2)");
+        const SExpr value = parse_sexpr("((MEXPT SIMP RATSIMP) $X 2)");
         CHECK(value.at(0).size() == 3);
     }
 }
 
 TEST_CASE("whitespace and newlines between tokens are irrelevant") {
-    const SExpr spaced = parseSExpr("(  (MPLUS\n SIMP)\t1   $X )");
-    CHECK(spaced == parseSExpr("((MPLUS SIMP) 1 $X)"));
+    const SExpr spaced = parse_sexpr("(  (MPLUS\n SIMP)\t1   $X )");
+    CHECK(spaced == parse_sexpr("((MPLUS SIMP) 1 $X)"));
 }
 
 TEST_CASE("string escapes are undone") {
-    CHECK(parseSExpr(R"("say \"hi\"")").stringValue() == "say \"hi\"");
-    CHECK(parseSExpr(R"("back\\slash")").stringValue() == "back\\slash");
+    CHECK(parse_sexpr(R"("say \"hi\"")").string_value() == "say \"hi\"");
+    CHECK(parse_sexpr(R"("back\\slash")").string_value() == "back\\slash");
     // Parentheses inside a string are content, not structure.
-    CHECK(parseSExpr(R"SX("((MPLUS SIMP) 1)")SX").isString());
+    CHECK(parse_sexpr(R"SX("((MPLUS SIMP) 1)")SX").is_string());
 }
 
 TEST_CASE("bar-quoted symbols keep their name without the bars") {
-    CHECK(parseSExpr("|Odd Symbol|").isSymbol("Odd Symbol"));
-    CHECK(parseSExpr("(|a b| 1)").at(0).isSymbol("a b"));
+    CHECK(parse_sexpr("|Odd Symbol|").is_symbol("Odd Symbol"));
+    CHECK(parse_sexpr("(|a b| 1)").at(0).is_symbol("a b"));
 }
 
 TEST_CASE("malformed input is rejected rather than half-read") {
-    CHECK_THROWS_AS(parseSExpr("(1 2"), proxima::ParseError);
-    CHECK_THROWS_AS(parseSExpr("1 2)"), proxima::ParseError);
-    CHECK_THROWS_AS(parseSExpr(""), proxima::ParseError);
-    CHECK_THROWS_AS(parseSExpr("   "), proxima::ParseError);
-    CHECK_THROWS_AS(parseSExpr(R"("unterminated)"), proxima::ParseError);
-    CHECK_THROWS_AS(parseSExpr("|unterminated"), proxima::ParseError);
+    CHECK_THROWS_AS(parse_sexpr("(1 2"), proxima::ParseError);
+    CHECK_THROWS_AS(parse_sexpr("1 2)"), proxima::ParseError);
+    CHECK_THROWS_AS(parse_sexpr(""), proxima::ParseError);
+    CHECK_THROWS_AS(parse_sexpr("   "), proxima::ParseError);
+    CHECK_THROWS_AS(parse_sexpr(R"("unterminated)"), proxima::ParseError);
+    CHECK_THROWS_AS(parse_sexpr("|unterminated"), proxima::ParseError);
     // Two expressions where one was promised means the frame was mis-split.
-    CHECK_THROWS_AS(parseSExpr("1 2"), proxima::ParseError);
-    CHECK_THROWS_AS(parseSExpr("(1) (2)"), proxima::ParseError);
+    CHECK_THROWS_AS(parse_sexpr("1 2"), proxima::ParseError);
+    CHECK_THROWS_AS(parse_sexpr("(1) (2)"), proxima::ParseError);
 }
 
 TEST_CASE("a ';' in a reply is refused, rather than read for ever") {
@@ -150,17 +150,17 @@ TEST_CASE("a ';' in a reply is refused, rather than read for ever") {
     // reader produced empty atoms at the same place until memory ran out.
     // Maxima never puts a comment in a reply.
     CHECK_THROWS_AS(static_cast<void>(
-                        parseSExpr("((BIGFLOAT SIMP 56) 450359;96273704960 1)")),
+                        parse_sexpr("((BIGFLOAT SIMP 56) 450359;96273704960 1)")),
                     proxima::ParseError);
-    CHECK_THROWS_AS(static_cast<void>(parseSExpr(";")), proxima::ParseError);
-    CHECK_THROWS_AS(static_cast<void>(parseSExpr("(a ; b)")), proxima::ParseError);
+    CHECK_THROWS_AS(static_cast<void>(parse_sexpr(";")), proxima::ParseError);
+    CHECK_THROWS_AS(static_cast<void>(parse_sexpr("(a ; b)")), proxima::ParseError);
 }
 
 TEST_CASE("dotted pairs are rejected explicitly") {
     // Maxima's term representation is proper lists throughout. Treating the dot
     // as an ordinary symbol would corrupt the tree instead of reporting that
     // something unmodelled arrived.
-    CHECK_THROWS_AS(parseSExpr("(a . b)"), proxima::ParseError);
+    CHECK_THROWS_AS(parse_sexpr("(a . b)"), proxima::ParseError);
 }
 
 TEST_CASE("a reply truncated by Lisp's print limits is refused, not misread") {
@@ -168,42 +168,42 @@ TEST_CASE("a reply truncated by Lisp's print limits is refused, not misread") {
     // *print-level* it replaces a deep one with `#`. Both used to read as
     // ordinary symbols, turning a truncated reply into a plausible, wrong
     // expression.
-    CHECK_THROWS_AS(parseSExpr("(1 2 ...)"), proxima::ParseError);
-    CHECK_THROWS_AS(parseSExpr("((MPLUS SIMP) $X #)"), proxima::ParseError);
+    CHECK_THROWS_AS(parse_sexpr("(1 2 ...)"), proxima::ParseError);
+    CHECK_THROWS_AS(parse_sexpr("((MPLUS SIMP) $X #)"), proxima::ParseError);
 
     SUBCASE("while a symbol really called that is escaped, and still reads") {
-        const SExpr quoted = parseSExpr("(A |...| |#|)");
+        const SExpr quoted = parse_sexpr("(A |...| |#|)");
         REQUIRE(quoted.size() == 3);
-        CHECK(quoted.at(1).isSymbol("..."));
-        CHECK(quoted.at(2).isSymbol("#"));
+        CHECK(quoted.at(1).is_symbol("..."));
+        CHECK(quoted.at(2).is_symbol("#"));
     }
 
     SUBCASE("and an escaped name is never read as a number either") {
         // Lisp bar-quotes a symbol whose name would otherwise read as
         // something else. These used to come back as the integer 123 and the
         // real 1.5.
-        const SExpr quoted = parseSExpr("(|123| |1.5|)");
+        const SExpr quoted = parse_sexpr("(|123| |1.5|)");
         REQUIRE(quoted.size() == 2);
-        CHECK(quoted.at(0).isSymbol("123"));
-        CHECK(quoted.at(1).isSymbol("1.5"));
+        CHECK(quoted.at(0).is_symbol("123"));
+        CHECK(quoted.at(1).is_symbol("1.5"));
     }
 }
 
 TEST_CASE("reading past the end of a list is an error, not undefined") {
-    const SExpr value = parseSExpr("(1 2)");
+    const SExpr value = parse_sexpr("(1 2)");
     CHECK_THROWS_AS(value.at(2), proxima::ParseError);
 }
 
 TEST_CASE("deep nesting is bounded rather than overflowing the stack") {
-    const std::string tooDeep(proxima::detail::kMaxSExprDepth + 10, '(');
-    CHECK_THROWS_AS(parseSExpr(tooDeep), proxima::ParseError);
+    const std::string too_deep(proxima::detail::kMaxSExprDepth + 10, '(');
+    CHECK_THROWS_AS(parse_sexpr(too_deep), proxima::ParseError);
 
     // Comfortably deep input still parses.
     const std::size_t depth = 200;
     std::string nested(depth, '(');
     nested += "1";
     nested.append(depth, ')');
-    CHECK_NOTHROW(parseSExpr(nested));
+    CHECK_NOTHROW(parse_sexpr(nested));
 }
 
 TEST_CASE("rendering round-trips through the reader") {
@@ -219,9 +219,9 @@ TEST_CASE("rendering round-trips through the reader") {
              "((BIGFLOAT SIMP 56) 56593902016227522 2)",
          }) {
         CAPTURE(text);
-        const SExpr once = parseSExpr(text);
-        CHECK(once.toString() == text);
-        CHECK(parseSExpr(once.toString()) == once);
+        const SExpr once = parse_sexpr(text);
+        CHECK(once.to_string() == text);
+        CHECK(parse_sexpr(once.to_string()) == once);
     }
 }
 
@@ -251,10 +251,10 @@ TEST_CASE("every recorded Maxima reply parses") {
         CAPTURE(expression);
         CAPTURE(form);
         SExpr parsed;
-        REQUIRE_NOTHROW(parsed = parseSExpr(form));
+        REQUIRE_NOTHROW(parsed = parse_sexpr(form));
         // Re-rendering must read back identically, which catches a reader that
         // accepts input but quietly loses part of it.
-        CHECK(parseSExpr(parsed.toString()) == parsed);
+        CHECK(parse_sexpr(parsed.to_string()) == parsed);
         ++cases;
     }
 
@@ -265,25 +265,25 @@ TEST_CASE("every recorded Maxima reply parses") {
 TEST_CASE("the golden file's own shapes are what the mapping layer expects") {
     // Spot checks on recorded forms, pinning the facts step 9 will rely on.
     SUBCASE("exact rationals stay exact") {
-        const SExpr rational = parseSExpr("((RAT SIMP) 11 15)");
-        CHECK(rational.at(0).at(0).isSymbol("RAT"));
-        CHECK(rational.at(1).asInt64() == 11);
-        CHECK(rational.at(2).asInt64() == 15);
+        const SExpr rational = parse_sexpr("((RAT SIMP) 11 15)");
+        CHECK(rational.at(0).at(0).is_symbol("RAT"));
+        CHECK(rational.at(1).as_int64() == 11);
+        CHECK(rational.at(2).as_int64() == 15);
     }
     SUBCASE("built-in and user function heads differ only in their sigil") {
-        CHECK(parseSExpr("((%SIN SIMP) $X)").at(0).at(0).isSymbol("%SIN"));
-        CHECK(parseSExpr("(($F SIMP) $X)").at(0).at(0).isSymbol("$F"));
+        CHECK(parse_sexpr("((%SIN SIMP) $X)").at(0).at(0).is_symbol("%SIN"));
+        CHECK(parse_sexpr("(($F SIMP) $X)").at(0).at(0).is_symbol("$F"));
     }
     SUBCASE("matrices need no special case") {
         const SExpr matrix
-            = parseSExpr("(($MATRIX SIMP) ((MLIST SIMP) 1 2) ((MLIST SIMP) 3 4))");
-        CHECK(matrix.at(0).at(0).isSymbol("$MATRIX"));
+            = parse_sexpr("(($MATRIX SIMP) ((MLIST SIMP) 1 2) ((MLIST SIMP) 3 4))");
+        CHECK(matrix.at(0).at(0).is_symbol("$MATRIX"));
         CHECK(matrix.size() == 3);
     }
     SUBCASE("bigfloats carry precision in the head") {
         const SExpr bigfloat
-            = parseSExpr("((BIGFLOAT SIMP 56) 56593902016227522 2)");
-        CHECK(bigfloat.at(0).at(0).isSymbol("BIGFLOAT"));
-        CHECK(bigfloat.at(0).at(2).asInt64() == 56);
+            = parse_sexpr("((BIGFLOAT SIMP 56) 56593902016227522 2)");
+        CHECK(bigfloat.at(0).at(0).is_symbol("BIGFLOAT"));
+        CHECK(bigfloat.at(0).at(2).as_int64() == 56);
     }
 }

@@ -49,7 +49,7 @@ namespace proxima::detail {
 /// ## Concurrency
 ///
 /// One file per entry, written to a temporary and renamed into place. The
-/// temporary's name is unique to the writer (see temporaryPathFor), so two
+/// temporary's name is unique to the writer (see temporary_path_for), so two
 /// processes writing the same entry never share a half-written file; they race
 /// only over which of two identical entries is renamed into place last. No
 /// locking, no index to corrupt, and nothing to flush at exit — an entry is
@@ -62,10 +62,10 @@ namespace proxima::detail {
 class PersistentCache {
 public:
     /// `directory` is created if needed. `stamp` is the version and state
-    /// material every key is qualified by. `byteLimit` caps the directory's
+    /// material every key is qualified by. `byte_limit` caps the directory's
     /// entries; zero means no limit, and no sweeping at all.
     PersistentCache(std::filesystem::path directory, std::string stamp,
-                    std::uintmax_t byteLimit = 0);
+                    std::uintmax_t byte_limit = 0);
 
     std::optional<Reply> find(std::string_view source) const;
     void insert(std::string_view source, const Reply &reply) const;
@@ -83,11 +83,11 @@ public:
 
     /// The file an entry for `source` lives in under the current stamp.
     /// Exposed for testing.
-    std::filesystem::path entryPath(std::string_view source) const;
+    std::filesystem::path entry_path(std::string_view source) const;
 
 private:
-    std::string keyFor(std::string_view source) const;
-    std::filesystem::path pathFor(const std::string &key) const;
+    std::string key_for(std::string_view source) const;
+    std::filesystem::path path_for(const std::string &key) const;
 
     /// Deletes orphaned temporaries and, over the limit, the least recently
     /// used entries; records the entries' total size.
@@ -95,7 +95,7 @@ private:
 
     std::filesystem::path directory_;
     std::string stamp_;
-    std::uintmax_t byteLimit_ = 0;
+    std::uintmax_t byte_limit_ = 0;
     bool usable_ = false;
 
     /// Bytes of entries in the directory, as far as this object knows. Unknown
@@ -107,7 +107,7 @@ private:
 ///
 /// Not std::hash: that varies between standard libraries, and a cache on disk
 /// outlives the build that wrote it.
-std::string stableHash(std::string_view text);
+std::string stable_hash(std::string_view text);
 
 /// Where PersistentCache::insert writes an entry before renaming it to
 /// `target`: beside it, as `<target>.tmp-<token>-<n>`.
@@ -116,6 +116,6 @@ std::string stableHash(std::string_view text);
 /// and `n` counts writes within the process, so no other writer — another
 /// thread, another process, another machine sharing the directory — picks the
 /// same name. Exposed for testing.
-std::filesystem::path temporaryPathFor(const std::filesystem::path &target);
+std::filesystem::path temporary_path_for(const std::filesystem::path &target);
 
 } // namespace proxima::detail

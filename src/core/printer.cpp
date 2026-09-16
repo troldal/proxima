@@ -25,7 +25,7 @@
 namespace proxima {
 namespace {
 
-std::string renderReal(double value) {
+std::string render_real(double value) {
     char buffer[40];
     const auto [stopped, error]
         = std::to_chars(buffer, buffer + sizeof(buffer), value);
@@ -60,9 +60,9 @@ std::string joined(std::span<const std::string> parts,
 /// that no longer reads back as the same expression. A renderer declining an
 /// optional operation is the mechanism working, not a gap.
 struct InfixRenderer {
-    std::string integer(const Integer &value) { return value.toString(); }
+    std::string integer(const Integer &value) { return value.to_string(); }
 
-    std::string real(double value) { return renderReal(value); }
+    std::string real(double value) { return render_real(value); }
 
     std::string symbol(std::string_view name) { return std::string(name); }
 
@@ -109,7 +109,7 @@ struct InfixRenderer {
 
     std::string relation(RelOp op, const std::string &lhs,
                          const std::string &rhs) {
-        return lhs + " " + std::string(symbolFor(op)) + " " + rhs;
+        return lhs + " " + std::string(symbol_for(op)) + " " + rhs;
     }
 
     std::string group(const std::string &inner) { return "(" + inner + ")"; }

@@ -61,7 +61,7 @@ std::string escaped(std::string_view text) {
 /// Names with a symbol of their own. Maxima's constants, and the Greek
 /// letters, which are spelled out in Maxima and are expected to be letters in
 /// a typeset formula.
-std::string_view symbolMacro(std::string_view name) {
+std::string_view symbol_macro(std::string_view name) {
     static constexpr std::pair<std::string_view, std::string_view> kMacros[] = {
         {"%pi", "\\pi"},       {"%e", "e"},          {"%i", "i"},
         {"%gamma", "\\gamma"}, {"%phi", "\\varphi"}, {"inf", "\\infty"},
@@ -74,8 +74,8 @@ std::string_view symbolMacro(std::string_view name) {
         {"phi", "\\phi"},      {"chi", "\\chi"},     {"psi", "\\psi"},
         {"omega", "\\omega"},  {"pi", "\\pi"},
     };
-    for (const auto &[name_, macro] : kMacros) {
-        if (name == name_) {
+    for (const auto &[known, macro] : kMacros) {
+        if (name == known) {
             return macro;
         }
     }
@@ -83,7 +83,7 @@ std::string_view symbolMacro(std::string_view name) {
 }
 
 /// Functions TeX sets upright and spaces as operators.
-bool hasOperatorMacro(std::string_view name) {
+bool has_operator_macro(std::string_view name) {
     static constexpr std::string_view kNames[] = {
         "sin",  "cos",  "tan",  "sec",  "csc",  "cot",  "sinh", "cosh",
         "tanh", "log",  "ln",   "exp",  "min",  "max",  "gcd",  "det",
@@ -98,7 +98,7 @@ bool hasOperatorMacro(std::string_view name) {
     return false;
 }
 
-std::string renderReal(double value) {
+std::string render_real(double value) {
     char buffer[40];
     const auto [stopped, error]
         = std::to_chars(buffer, buffer + sizeof(buffer), value);
@@ -112,12 +112,12 @@ std::string renderReal(double value) {
         std::string mantissa = text.substr(0, marker);
         // to_chars pads the exponent (1e-07); a formula shows 10^{-7}.
         std::string exponent = text.substr(marker + 1);
-        const bool negativeExponent = exponent.front() == '-';
+        const bool negative_exponent = exponent.front() == '-';
         exponent.erase(0, exponent.find_first_not_of("+-0"));
         if (exponent.empty()) {
             exponent = "0";
         }
-        if (negativeExponent) {
+        if (negative_exponent) {
             exponent.insert(exponent.begin(), '-');
         }
         return mantissa + " \\times 10^{" + exponent + "}";
@@ -138,12 +138,12 @@ std::string joined(std::span<const std::string> parts,
 }
 
 struct TeXRenderer {
-    std::string integer(const Integer &value) { return value.toString(); }
+    std::string integer(const Integer &value) { return value.to_string(); }
 
-    std::string real(double value) { return renderReal(value); }
+    std::string real(double value) { return render_real(value); }
 
     std::string symbol(std::string_view name) {
-        if (const std::string_view macro = symbolMacro(name); !macro.empty()) {
+        if (const std::string_view macro = symbol_macro(name); !macro.empty()) {
             return std::string(macro);
         }
         // A single letter is already italic in maths mode; a longer name would
@@ -195,10 +195,10 @@ struct TeXRenderer {
         std::string out;
         for (std::size_t i = 0; i < factors.size(); ++i) {
             if (i != 0) {
-                const bool startsWithDigit
+                const bool starts_with_digit
                     = !factors[i].empty() && factors[i].front() >= '0'
                       && factors[i].front() <= '9';
-                out += startsWithDigit ? " \\cdot " : " ";
+                out += starts_with_digit ? " \\cdot " : " ";
             }
             out += factors[i];
         }
@@ -222,7 +222,7 @@ struct TeXRenderer {
     }
 
     std::string call(std::string_view head, std::span<const std::string> args) {
-        std::string name = hasOperatorMacro(head)
+        std::string name = has_operator_macro(head)
                                ? "\\" + std::string(head)
                                : "\\operatorname{" + escaped(head) + "}";
         return name + "\\left(" + joined(args, ", ") + "\\right)";
@@ -267,16 +267,16 @@ struct TeXRenderer {
 
     // --- the two queries that make this TeX rather than infix text ---------
 
-    Strength strengthOf(Construct construct) {
+    Strength strength_of(Construct construct) {
         // A fraction is braced, so it needs no brackets of its own however it
         // is used: `\frac{a}{b}x` is unambiguous where `a/b*x` would not be.
         if (construct == Construct::Fraction) {
             return Strength::Atom;
         }
-        return defaultStrength(construct);
+        return default_strength(construct);
     }
 
-    Strength contextFor(Slot slot) {
+    Strength context_for(Slot slot) {
         switch (slot) {
         case Slot::Numerator:
         case Slot::Denominator:
@@ -286,14 +286,14 @@ struct TeXRenderer {
             // `\frac{1+x}{x-1}`, not `\frac{\left(1+x\right)}{...}`.
             return Strength::Loosest;
         default:
-            return defaultContext(slot);
+            return default_context(slot);
         }
     }
 };
 
 } // namespace
 
-std::string toTeX(const Expr &expr) {
+std::string to_tex(const Expr &expr) {
     return render(expr, TeXRenderer{});
 }
 

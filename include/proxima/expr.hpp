@@ -37,13 +37,13 @@ struct Node;
 /// Wraps a finished node in an Expr. The single point at which the shared
 /// representation enters the value type, so nothing outside src/core can build
 /// one directly.
-Expr makeExpr(std::shared_ptr<const Node> node);
+Expr make_expr(std::shared_ptr<const Node> node);
 
 /// Whether two expressions share one representation. Implies ==, but not the
 /// other way round, which is why proxima::transform asks this rather than == to
 /// tell an operand came back untouched: 0.0 and -0.0 are equal, and a rewrite
 /// from one to the other must not be mistaken for no change.
-bool sameRepresentation(const Expr &lhs, const Expr &rhs) noexcept;
+bool same_representation(const Expr &lhs, const Expr &rhs) noexcept;
 } // namespace detail
 
 enum class Kind {
@@ -98,10 +98,10 @@ public:
     /// proxima::IntegralNumber for which those are.
     template <typename T>
         requires IntegralNumber<T>
-    Expr(T value) : Expr(makeInteger(static_cast<Integer>(value))) {} // NOLINT
+    Expr(T value) : Expr(make_integer(static_cast<Integer>(value))) {} // NOLINT
 
     /// Implicit from an exact integer of any size.
-    Expr(Integer value) : Expr(makeInteger(std::move(value))) {} // NOLINT
+    Expr(Integer value) : Expr(make_integer(std::move(value))) {} // NOLINT
 
     /// Implicit from any floating-point type, producing an inexact Real. Note
     /// that `Expr(0.5)` and `Expr::rational(1, 2)` are different values, as
@@ -205,25 +205,25 @@ public:
     bool is(Kind k) const { return kind() == k; }
 
     /// True for Integer, Rational and Real — the leaves arithmetic can fold.
-    bool isNumber() const;
+    bool is_number() const;
 
     /// True for a number that is negative. False for every non-number.
-    bool isNegativeNumber() const;
+    bool is_negative_number() const;
 
     /// Accessors. Each throws proxima::Error if the expression is not of the kind it
     /// asks for, rather than returning something meaningless.
-    Integer integerValue() const;
+    Integer integer_value() const;
     Integer numerator() const;
     Integer denominator() const;
-    double realValue() const;
+    double real_value() const;
 
     /// The name of a Symbol or the head of a Function.
     const std::string &name() const;
 
-    RelOp relationOp() const;
+    RelOp relation_op() const;
 
     /// The source text of an Opaque node.
-    const std::string &opaqueText() const;
+    const std::string &opaque_text() const;
 
     /// Operands: the terms of an Add, factors of a Mul, base and exponent of a
     /// Pow, arguments of a Function, the two sides of a Relation. Empty for
@@ -241,13 +241,13 @@ public:
     bool operator==(const Expr &other) const;
 
 private:
-    static Expr makeInteger(Integer value);
+    static Expr make_integer(Integer value);
 
     explicit Expr(std::shared_ptr<const detail::Node> node)
         : node_(std::move(node)) {}
 
-    friend Expr detail::makeExpr(std::shared_ptr<const detail::Node> node);
-    friend bool detail::sameRepresentation(const Expr &lhs, const Expr &rhs) noexcept;
+    friend Expr detail::make_expr(std::shared_ptr<const detail::Node> node);
+    friend bool detail::same_representation(const Expr &lhs, const Expr &rhs) noexcept;
 
     std::shared_ptr<const detail::Node> node_;
 };
@@ -292,12 +292,12 @@ Expr lhs(const Expr &relation);
 Expr rhs(const Expr &relation);
 
 /// Maxima's spelling of a relation operator: "=", "#", "<", "<=", ">", ">=".
-std::string_view symbolFor(RelOp op);
+std::string_view symbol_for(RelOp op);
 
 /// The kind's name as the enumerator spells it: "Integer", "Add", "Opaque".
 /// For messages, logs and test output; `std::format("{}", kind)` and
 /// `out << kind` write the same.
-std::string_view kindName(Kind kind);
+std::string_view kind_name(Kind kind);
 
 std::ostream &operator<<(std::ostream &out, Kind kind);
 
@@ -316,9 +316,9 @@ std::ostream &operator<<(std::ostream &out, const Expr &expr);
 /// `x < 0` would compile and mean "sorts before" rather than build the
 /// relation — which is what lt(x, 0) is for, and why == is the only
 /// comparison operator Expr has.
-std::weak_ordering canonicalOrder(const Expr &lhs, const Expr &rhs);
+std::weak_ordering canonical_order(const Expr &lhs, const Expr &rhs);
 
-/// canonicalOrder as a less-than, for std::sort and for ordered containers:
+/// canonical_order as a less-than, for std::sort and for ordered containers:
 /// `std::set<Expr, CanonicalLess>`, `std::map<Expr, T, CanonicalLess>`. It
 /// takes a Symbol too, through its conversion to Expr.
 ///
@@ -328,7 +328,7 @@ std::weak_ordering canonicalOrder(const Expr &lhs, const Expr &rhs);
 /// which calls `<` directly, and Expr deliberately has none.
 struct CanonicalLess {
     bool operator()(const Expr &lhs, const Expr &rhs) const {
-        return canonicalOrder(lhs, rhs) < 0;
+        return canonical_order(lhs, rhs) < 0;
     }
 };
 
@@ -337,7 +337,7 @@ namespace detail {
 /// The notations a format spec can ask for.
 enum class Notation { Infix, TeX, MathML };
 
-/// `expr` written in `notation`: str(), toTeX() or toMathML().
+/// `expr` written in `notation`: str(), to_tex() or to_mathml().
 std::string notate(const Expr &expr, Notation notation);
 
 } // namespace detail
@@ -352,7 +352,7 @@ struct std::hash<proxima::Expr> {
 };
 
 /// `std::format("{}", expr)` is `expr.str()`, and a spec can ask for another
-/// notation: `{:tex}` is toTeX(), `{:mathml}` is toMathML(). After the
+/// notation: `{:tex}` is to_tex(), `{:mathml}` is to_mathml(). After the
 /// notation, or instead of it, come the usual string options, separated from a
 /// notation by a colon — `{:>30}`, `{:tex:*<40}`. An unknown notation is a
 /// std::format_error, which for a constant format string means a compile error.
@@ -361,7 +361,7 @@ struct std::formatter<proxima::Expr, char> {
     constexpr auto parse(std::format_parse_context &context) {
         auto it = context.begin();
         const auto end = context.end();
-        const auto startsWith = [&it, &end](std::string_view word) {
+        const auto starts_with = [&it, &end](std::string_view word) {
             auto cursor = it;
             for (const char c : word) {
                 if (cursor == end || *cursor != c) {
@@ -372,10 +372,10 @@ struct std::formatter<proxima::Expr, char> {
             return true;
         };
 
-        if (startsWith("tex")) {
+        if (starts_with("tex")) {
             notation_ = proxima::detail::Notation::TeX;
             it += 3;
-        } else if (startsWith("mathml")) {
+        } else if (starts_with("mathml")) {
             notation_ = proxima::detail::Notation::MathML;
             it += 6;
         }
@@ -396,11 +396,11 @@ private:
     std::formatter<std::string_view, char> text_;
 };
 
-/// `std::format("{}", kind)` is proxima::kindName(kind), with the usual string
+/// `std::format("{}", kind)` is proxima::kind_name(kind), with the usual string
 /// options: `{:>8}`.
 template <>
 struct std::formatter<proxima::Kind, char> : std::formatter<std::string_view, char> {
     auto format(proxima::Kind kind, std::format_context &context) const {
-        return std::formatter<std::string_view, char>::format(proxima::kindName(kind), context);
+        return std::formatter<std::string_view, char>::format(proxima::kind_name(kind), context);
     }
 };

@@ -20,17 +20,17 @@ namespace proxima {
 /// A symbol can be named either way — by the Symbol an expression was built
 /// with, or by its name — so `{{x, 2.0}, {"y", 3.0}}` reads as consistently as
 /// Compiled's list of variables does. Stored by name either way, so that the
-/// lookup evalNumeric makes for every symbol it meets builds nothing.
+/// lookup eval_numeric makes for every symbol it meets builds nothing.
 ///
 /// A name given twice keeps the last value given.
 class Bindings {
 public:
     /// One value, for a symbol or a name.
     struct Entry {
-        Entry(const Symbol &symbol, double boundValue)
-            : name(symbol.name()), value(boundValue) {}
-        Entry(std::string_view symbolName, double boundValue)
-            : name(symbolName), value(boundValue) {}
+        Entry(const Symbol &symbol, double bound_value)
+            : name(symbol.name()), value(bound_value) {}
+        Entry(std::string_view symbol_name, double bound_value)
+            : name(symbol_name), value(bound_value) {}
 
         std::string name;
         double value;
@@ -48,15 +48,15 @@ public:
 
     /// Gives a symbol a value, replacing any it had.
     void set(const Symbol &symbol, double value) { set(symbol.name(), value); }
-    void set(std::string_view symbolName, double value) {
-        values_.insert_or_assign(std::string(symbolName), value);
+    void set(std::string_view symbol_name, double value) {
+        values_.insert_or_assign(std::string(symbol_name), value);
     }
 
     /// The entry for a symbol, or end().
-    const_iterator find(std::string_view symbolName) const { return values_.find(symbolName); }
+    const_iterator find(std::string_view symbol_name) const { return values_.find(symbol_name); }
     const_iterator find(const Symbol &symbol) const { return find(symbol.name()); }
 
-    bool contains(std::string_view symbolName) const { return values_.contains(symbolName); }
+    bool contains(std::string_view symbol_name) const { return values_.contains(symbol_name); }
     bool contains(const Symbol &symbol) const { return contains(symbol.name()); }
 
     /// Name–value pairs, in name order.
@@ -88,11 +88,11 @@ private:
 /// symbol, a function it does not know, a relation, or an Opaque node — the
 /// last being Maxima source text this library never interpreted, which is
 /// precisely why it cannot be evaluated here.
-double evalNumeric(const Expr &expr, const Bindings &bindings = {});
+double eval_numeric(const Expr &expr, const Bindings &bindings = {});
 
-/// True when evalNumeric could succeed: every symbol bound and every function
+/// True when eval_numeric could succeed: every symbol bound and every function
 /// known. Cheaper than catching, when the caller wants to ask before committing.
-bool isEvaluable(const Expr &expr, const Bindings &bindings = {});
+bool is_evaluable(const Expr &expr, const Bindings &bindings = {});
 
 namespace detail {
 
@@ -126,7 +126,7 @@ struct Instruction {
 
 /// An expression prepared once for evaluation many times.
 ///
-/// The work `evalNumeric` repeats per call — walking the tree, looking each
+/// The work `eval_numeric` repeats per call — walking the tree, looking each
 /// symbol up by name in a map, resolving each function name — happens here
 /// once. What is left is a flat instruction list over a small stack, with
 /// symbols resolved to positions in the caller's argument array.
@@ -161,7 +161,7 @@ public:
     double operator()(double value) const;
 
     std::size_t arity() const { return variables_.size(); }
-    const std::vector<std::string> &variableNames() const { return variables_; }
+    const std::vector<std::string> &variable_names() const { return variables_; }
 
     /// Number of instructions, a rough measure of the expression's size.
     std::size_t size() const { return code_.size(); }
@@ -176,7 +176,7 @@ private:
 /// Binds `expr` to one variable for repeated evaluation.
 ///
 /// Backed by a Compiled, so the returned function is cheap to call.
-std::function<double(double)> asFunction(const Expr &expr, const Symbol &variable,
+std::function<double(double)> as_function(const Expr &expr, const Symbol &variable,
                                          const Bindings &fixed = {});
 
 } // namespace proxima

@@ -31,21 +31,21 @@ constexpr const char *kKey = "test";
 /// A complete reply frame, exactly as the Lisp helper formats one.
 std::string frame(std::uint64_t id, bool ok, const std::string &value,
                   const std::string &reason = "") {
-    return MaximaSession::frameBegin(kKey, id) + (ok ? "T" : "NIL")
-           + MaximaSession::frameSeparator(kKey, id) + value
-           + MaximaSession::frameSeparator(kKey, id) + reason
-           + MaximaSession::frameEnd(kKey, id) + "\n";
+    return MaximaSession::frame_begin(kKey, id) + (ok ? "T" : "NIL")
+           + MaximaSession::frame_separator(kKey, id) + value
+           + MaximaSession::frame_separator(kKey, id) + reason
+           + MaximaSession::frame_end(kKey, id) + "\n";
 }
 
 /// The banner Maxima prints before anything else, plus the prompts that appear
 /// between statements. All of it is noise the frame delimiters let us discard.
-std::string noise(int promptNumber) {
-    return "(%i" + std::to_string(promptNumber) + ") ";
+std::string noise(int prompt_number) {
+    return "(%i" + std::to_string(prompt_number) + ") ";
 }
 
 /// The one response a session consumes during construction: the banner, then
 /// the frame answering the handshake probe (request 1).
-std::vector<std::string> handshakeScript() {
+std::vector<std::string> handshake_script() {
     return {"Maxima 5.50.0 https://maxima.sourceforge.io\n"
             "using Lisp SBCL 2.6.8\n"
             + noise(1) + noise(2) + noise(3) + noise(4)
@@ -55,9 +55,9 @@ std::vector<std::string> handshakeScript() {
 /// Builds a session over a scripted transport, keeping a borrowed pointer to
 /// the transport so tests can inspect what was sent.
 struct ScriptedSession {
-    explicit ScriptedSession(std::vector<std::string> afterHandshake) {
-        std::vector<std::string> script = handshakeScript();
-        script.insert(script.end(), afterHandshake.begin(), afterHandshake.end());
+    explicit ScriptedSession(std::vector<std::string> after_handshake) {
+        std::vector<std::string> script = handshake_script();
+        script.insert(script.end(), after_handshake.begin(), after_handshake.end());
 
         auto owned = std::make_unique<FakeTransport>(std::move(script));
         transport = owned.get();
@@ -73,7 +73,7 @@ struct ScriptedSession {
 TEST_CASE("the handshake makes the session machine-readable and deterministic") {
     const ScriptedSession scripted({});
 
-    const std::string sent = scripted.transport->sentText();
+    const std::string sent = scripted.transport->sent_text();
     // Without these three the protocol does not work at all: display2d turns
     // off ASCII art, nolabels stops an unbounded leak of %i/%o labels, and
     // errormsg keeps error text out of the stream.
@@ -83,7 +83,7 @@ TEST_CASE("the handshake makes the session machine-readable and deterministic") 
 
     // And a framed probe, which is what synchronises the stream. A form, so
     // that the handshake needs nothing but the helper installed at launch.
-    CHECK(sent.find(MaximaSession::requestFor(kKey, 1, Payload::form("T")))
+    CHECK(sent.find(MaximaSession::request_for(kKey, 1, Payload::form("T")))
           != std::string::npos);
 }
 
@@ -93,7 +93,7 @@ TEST_CASE("a request carries its own correlation id") {
 
     // Request 1 was the handshake probe, so the first real request is 2.
     CHECK(scripted.transport->sent().back()
-          == MaximaSession::requestFor(kKey, 2, Payload::text("x+1")) + "\n");
+          == MaximaSession::request_for(kKey, 2, Payload::text("x+1")) + "\n");
 }
 
 TEST_CASE("a successful reply yields the internal s-expression") {
@@ -182,8 +182,8 @@ TEST_CASE("a value containing its own request's id is not truncated") {
 }
 
 TEST_CASE("each session draws a frame key of its own") {
-    const std::string first = proxima::detail::randomFrameKey();
-    const std::string second = proxima::detail::randomFrameKey();
+    const std::string first = proxima::detail::random_frame_key();
+    const std::string second = proxima::detail::random_frame_key();
     CHECK(first.size() == 16);
     CHECK(first.find_first_not_of("0123456789abcdef") == std::string::npos);
     CHECK(first != second);
@@ -198,13 +198,13 @@ TEST_CASE("a reply that never completes is abandoned at the size limit") {
 }
 
 TEST_CASE("a closing delimiter with no opening one is a protocol error") {
-    ScriptedSession scripted({MaximaSession::frameEnd(kKey, 2) + "\n"});
+    ScriptedSession scripted({MaximaSession::frame_end(kKey, 2) + "\n"});
     CHECK_THROWS_AS(scripted.session->eval(Payload::text("x")), proxima::KernelError);
 }
 
 TEST_CASE("a frame missing its field separators is a protocol error") {
-    ScriptedSession scripted({MaximaSession::frameBegin(kKey, 2) + "T"
-                              + MaximaSession::frameEnd(kKey, 2)});
+    ScriptedSession scripted({MaximaSession::frame_begin(kKey, 2) + "T"
+                              + MaximaSession::frame_end(kKey, 2)});
     CHECK_THROWS_AS(scripted.session->eval(Payload::text("x")), proxima::KernelError);
 }
 
@@ -212,7 +212,7 @@ TEST_CASE("a session whose child has died reports a KernelError") {
     // The script runs out, so FakeTransport reports itself dead — the same
     // signal a real transport gives when the child exits.
     ScriptedSession scripted({});
-    REQUIRE(scripted.transport->scriptExhausted());
+    REQUIRE(scripted.transport->script_exhausted());
     CHECK_THROWS_AS(scripted.session->eval(Payload::text("1+1")), proxima::KernelError);
 }
 
@@ -233,15 +233,15 @@ TEST_CASE("a session that cannot answer restarts and replays its state") {
     // missing every assumption the caller had established, which is worse than
     // an outright failure because nothing announces it.
     int built = 0;
-    std::vector<std::string> sentToSecond;
+    std::vector<std::string> sent_to_second;
 
     auto factory = [&]() -> std::unique_ptr<proxima::detail::ITransport> {
         ++built;
         if (built == 1) {
             // Answers the handshake, then nothing: the child has gone.
-            return std::make_unique<FakeTransport>(handshakeScript());
+            return std::make_unique<FakeTransport>(handshake_script());
         }
-        std::vector<std::string> script = handshakeScript();
+        std::vector<std::string> script = handshake_script();
         // The replayed statement, then the caller's retry.
         script.push_back(frame(2, true, "$DONE"));
         script.push_back(frame(3, true, "$RECOVERED"));
@@ -285,8 +285,8 @@ TEST_CASE("a timeout ends the busy child at once instead of waiting for it") {
     // two seconds to leave. A child that timed out was not asked: it is still
     // computing and never leaves, so every timeout cost two seconds more than
     // it needed to.
-    FakeTransport busy(handshakeScript());
-    busy.staySilentWhenExhausted();
+    FakeTransport busy(handshake_script());
+    busy.stay_silent_when_exhausted();
 
     int built = 0;
     auto factory = [&]() -> std::unique_ptr<proxima::detail::ITransport> {
@@ -294,7 +294,7 @@ TEST_CASE("a timeout ends the busy child at once instead of waiting for it") {
         if (built == 1) {
             return std::make_unique<Borrowed>(busy);
         }
-        std::vector<std::string> script = handshakeScript();
+        std::vector<std::string> script = handshake_script();
         script.push_back(frame(2, true, "$AFTER"));
         return std::make_unique<FakeTransport>(std::move(script));
     };
@@ -307,20 +307,20 @@ TEST_CASE("a timeout ends the busy child at once instead of waiting for it") {
                     proxima::TimeoutError);
     CHECK(built == 2);
     CHECK(busy.terminated());
-    CHECK_FALSE(busy.killedGracefully());
+    CHECK_FALSE(busy.killed_gracefully());
 
     // And only that call was lost.
     CHECK(session.eval(Payload::text("again")).value == "$AFTER");
 }
 
 TEST_CASE("bookkeeping does not wait behind a call in progress") {
-    // One lock used to guard everything, so cacheStats() and setTimeout()
+    // One lock used to guard everything, so cache_stats() and set_timeout()
     // waited for a running computation — for as long as Config::timeout — and
-    // setTimeout could never shorten the call it was waiting behind.
+    // set_timeout could never shorten the call it was waiting behind.
     using namespace std::chrono_literals;
 
-    auto owned = std::make_unique<FakeTransport>(handshakeScript());
-    owned->staySilentWhenExhausted();
+    auto owned = std::make_unique<FakeTransport>(handshake_script());
+    owned->stay_silent_when_exhausted();
     proxima::Config config;
     config.timeout = 30s;
     MaximaSession session(std::move(owned), config, kKey);
@@ -331,16 +331,16 @@ TEST_CASE("bookkeeping does not wait behind a call in progress") {
     std::this_thread::sleep_for(200ms); // Well into its wait for a reply.
 
     auto stats = std::async(std::launch::async, [&session] {
-        return session.cacheStats();
+        return session.cache_stats();
     });
     CHECK(stats.wait_for(2s) == std::future_status::ready);
 
-    session.setTimeout(50ms);
+    session.set_timeout(50ms);
     const bool finished = running.wait_for(5s) == std::future_status::ready;
     CHECK(finished);
     if (!finished) {
         // Let the call end so the test does not hang on the old behaviour.
-        session.setTimeout(1ms);
+        session.set_timeout(1ms);
     }
     CHECK_THROWS_AS(running.get(), proxima::TimeoutError);
 }
@@ -349,19 +349,19 @@ TEST_CASE("bookkeeping does not wait behind a call in progress") {
 /// reply until the test releases it — a computation the test can pause.
 class GatedTransport final : public proxima::detail::ITransport {
 public:
-    GatedTransport(std::vector<std::string> script, std::string gatedReply)
-        : script_(std::move(script)), gatedReply_(std::move(gatedReply)) {}
+    GatedTransport(std::vector<std::string> script, std::string gated_reply)
+        : script_(std::move(script)), gated_reply_(std::move(gated_reply)) {}
 
     void send(std::string_view) override {}
     std::string receive(std::chrono::milliseconds timeout) override {
         if (next_ < script_.size()) {
             return script_[next_++];
         }
-        if (!gatedSent_) {
+        if (!gated_sent_) {
             waiting = true;
             if (release) {
-                gatedSent_ = true;
-                return gatedReply_;
+                gated_sent_ = true;
+                return gated_reply_;
             }
         }
         std::this_thread::sleep_for(timeout);
@@ -377,8 +377,8 @@ public:
 private:
     std::vector<std::string> script_;
     std::size_t next_ = 0;
-    std::string gatedReply_;
-    bool gatedSent_ = false;
+    std::string gated_reply_;
+    bool gated_sent_ = false;
 };
 
 TEST_CASE("an answer computed across a change of state is not cached") {
@@ -387,13 +387,13 @@ TEST_CASE("an answer computed across a change of state is not cached") {
     // a question. The answer belongs to the state before the change.
     using namespace std::chrono_literals;
 
-    auto owned = std::make_unique<GatedTransport>(handshakeScript(),
+    auto owned = std::make_unique<GatedTransport>(handshake_script(),
                                                   frame(2, true, "$BEFORE"));
     GatedTransport *gate = owned.get();
     MaximaSession session(std::move(owned), proxima::Config{}, kKey);
 
     auto asking = std::async(std::launch::async, [&session] {
-        return session.evalPure(Payload::text("question"));
+        return session.eval_pure(Payload::text("question"));
     });
     while (!gate->waiting) {
         std::this_thread::sleep_for(1ms);
@@ -408,25 +408,25 @@ TEST_CASE("an answer computed across a change of state is not cached") {
     gate->release = true;
     CHECK(asking.get().value == "$BEFORE");
     static_cast<void>(remembering.get());
-    CHECK(session.cacheStats().entries == 0);
+    CHECK(session.cache_stats().entries == 0);
 }
 
 TEST_CASE("a statement and its record are one conversation") {
     // A Context's statement and the journal's record of it used to be two
     // separate calls. A question from another thread could be answered in
     // between — under Maxima's new state, but cached under the journal's old
-    // one. Inside converseAtomically it has to wait until the record is made.
+    // one. Inside converse_atomically it has to wait until the record is made.
     using namespace std::chrono_literals;
 
     ScriptedSession scripted({frame(2, true, "$DONE"), frame(3, true, "$ANSWER")});
     MaximaSession &session = *scripted.session;
 
     std::future<proxima::Reply> asking;
-    session.converseAtomically([&](MaximaSession::Conversation &conversation) {
-        conversation.evalTracked(Payload::text("assume(x > 0)"));
+    session.converse_atomically([&](MaximaSession::Conversation &conversation) {
+        conversation.eval_tracked(Payload::text("assume(x > 0)"));
 
         asking = std::async(std::launch::async, [&session] {
-            return session.evalPure(Payload::text("question"));
+            return session.eval_pure(Payload::text("question"));
         });
         // Between the statement and its record: the question must wait.
         CHECK(asking.wait_for(200ms) == std::future_status::timeout);
@@ -437,15 +437,15 @@ TEST_CASE("a statement and its record are one conversation") {
     CHECK(asking.get().value == "$ANSWER");
     // Asked once the record existed, so its answer describes the recorded
     // state, and is kept.
-    CHECK(session.cacheStats().entries == 1);
+    CHECK(session.cache_stats().entries == 1);
     // And the statement went out before the question did.
-    const std::string sent = scripted.transport->sentText();
+    const std::string sent = scripted.transport->sent_text();
     CHECK(sent.find("assume(x > 0)") < sent.find("question"));
 }
 
 TEST_CASE("a session with no way to build another transport does not restart") {
     ScriptedSession scripted({});
-    REQUIRE(scripted.transport->scriptExhausted());
+    REQUIRE(scripted.transport->script_exhausted());
     CHECK_THROWS_AS(scripted.session->eval(Payload::text("1+1")), proxima::KernelError);
     // Still dead, and honestly so, rather than pretending to recover.
     CHECK_THROWS_AS(scripted.session->eval(Payload::text("1+1")), proxima::KernelError);
@@ -455,7 +455,7 @@ TEST_CASE("restart() replaces the process and replays the journal") {
     int built = 0;
     auto factory = [&]() -> std::unique_ptr<proxima::detail::ITransport> {
         ++built;
-        std::vector<std::string> script = handshakeScript();
+        std::vector<std::string> script = handshake_script();
         if (built > 1) {
             // The replayed statement, then a question.
             script.push_back(frame(2, true, "$DONE"));
@@ -481,7 +481,7 @@ TEST_CASE("forgetting a statement stops it being replayed") {
     int built = 0;
     auto factory = [&]() -> std::unique_ptr<proxima::detail::ITransport> {
         ++built;
-        std::vector<std::string> script = handshakeScript();
+        std::vector<std::string> script = handshake_script();
         if (built > 1) {
             // Only the retry, with no replayed statement before it: if the
             // forgotten entry were still in the journal it would consume this

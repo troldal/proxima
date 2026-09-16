@@ -53,7 +53,7 @@ TEST_CASE("replace rewrites a symbol locally, and the result is normalised") {
         const Symbol a("a");
         const Expr f = Expr(a) * pow(Expr(x), 2) + Expr(x);
         const proxima::Compiled fixed(proxima::replace(f, a, Expr(2.5)), x);
-        CHECK(fixed(3.0) == doctest::Approx(proxima::evalNumeric(f, {{"a", 2.5}, {"x", 3.0}})));
+        CHECK(fixed(3.0) == doctest::Approx(proxima::eval_numeric(f, {{"a", 2.5}, {"x", 3.0}})));
     }
 }
 
@@ -67,16 +67,16 @@ TEST_CASE("visit goes through every node, a node before its operands") {
                               proxima::Kind::Symbol});
 }
 
-TEST_CASE("anyOf stops at the first node that answers yes") {
+TEST_CASE("any_of stops at the first node that answers yes") {
     const Expr e = proxima::sin(Expr(Symbol("x"))) + 1;
     int asked = 0;
-    CHECK(proxima::anyOf(e, [&asked](const Expr &node) {
+    CHECK(proxima::any_of(e, [&asked](const Expr &node) {
         ++asked;
         return node.is(proxima::Kind::Integer);
     }));
     CHECK(asked == 2); // The sum, then its first operand.
 
-    CHECK_FALSE(proxima::anyOf(e, [](const Expr &node) { return node.is(proxima::Kind::Real); }));
+    CHECK_FALSE(proxima::any_of(e, [](const Expr &node) { return node.is(proxima::Kind::Real); }));
 }
 
 TEST_CASE("transform rewrites bottom-up and shares what it leaves alone") {
@@ -88,7 +88,7 @@ TEST_CASE("transform rewrites bottom-up and shares what it leaves alone") {
         int calls = 0;
         const Expr doubled = proxima::transform(e, [&calls](const Expr &node) -> Expr {
             ++calls;
-            return node.is(proxima::Kind::Integer) ? Expr(node.integerValue()) * 2 : node;
+            return node.is(proxima::Kind::Integer) ? Expr(node.integer_value()) * 2 : node;
         });
         CHECK(doubled == 4 * Expr(x) + 6);
         CHECK(calls == 5); // 3, then 2 and x, then 2*x, then the sum.
@@ -98,8 +98,8 @@ TEST_CASE("transform rewrites bottom-up and shares what it leaves alone") {
         const Expr untouched = proxima::sin(Expr(y));
         const Expr e = Expr::function("f", {untouched, Expr(x)});
         const Expr result = proxima::replace(e, x, Expr(1));
-        CHECK(proxima::detail::sameRepresentation(result.arg(0), untouched));
-        CHECK(proxima::detail::sameRepresentation(proxima::replace(e, Symbol("z"), Expr(1)), e));
+        CHECK(proxima::detail::same_representation(result.arg(0), untouched));
+        CHECK(proxima::detail::same_representation(proxima::replace(e, Symbol("z"), Expr(1)), e));
     }
 
     SUBCASE("a rewrite to an equal but different value is kept") {
@@ -108,7 +108,7 @@ TEST_CASE("transform rewrites bottom-up and shares what it leaves alone") {
         const Expr result = proxima::transform(e, [](const Expr &node) -> Expr {
             return node.is(proxima::Kind::Real) ? Expr(0.0) : node;
         });
-        CHECK_FALSE(std::signbit(result.arg(0).realValue()));
+        CHECK_FALSE(std::signbit(result.arg(0).real_value()));
     }
 
     SUBCASE("and nothing is evaluated") {

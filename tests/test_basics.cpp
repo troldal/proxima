@@ -15,11 +15,11 @@ TEST_CASE("a default Config asks for discovery rather than a fixed path") {
     // Empty is meaningful: it means "find Maxima yourself". A hard-coded
     // default would quietly work on the machine it was written on and nowhere
     // else.
-    CHECK(config.maximaRoot.empty());
+    CHECK(config.maxima_root.empty());
 
     // A library must compute the same answer on every machine, so the user's
     // own maxima-init.mac is out of the picture unless asked for.
-    CHECK_FALSE(config.loadUserInit);
+    CHECK_FALSE(config.load_user_init);
 }
 
 TEST_CASE("KernelError is catchable at every level of the hierarchy") {

@@ -54,12 +54,12 @@ static_assert(std::is_convertible_v<proxima::Integer, Expr>);
 TEST_CASE("small fixed-width integers are numbers, not characters") {
     // std::int8_t is signed char, which is why only plain char is excluded.
     CHECK(Expr(std::int8_t{-3}).kind() == Kind::Integer);
-    CHECK(Expr(std::int8_t{-3}).integerValue() == -3);
-    CHECK(Expr(std::uint8_t{200}).integerValue() == 200);
+    CHECK(Expr(std::int8_t{-3}).integer_value() == -3);
+    CHECK(Expr(std::uint8_t{200}).integer_value() == 200);
 
     SUBCASE("and every floating-point type is a Real") {
         CHECK(Expr(2.5f).kind() == Kind::Real);
-        CHECK(Expr(2.5f).realValue() == 2.5);
+        CHECK(Expr(2.5f).real_value() == 2.5);
         CHECK(Expr(2.5L).kind() == Kind::Real);
     }
 }
@@ -67,9 +67,9 @@ TEST_CASE("small fixed-width integers are numbers, not characters") {
 TEST_CASE("numeric leaves") {
     SUBCASE("integers") {
         CHECK(Expr(42).kind() == Kind::Integer);
-        CHECK(Expr(42).integerValue() == 42);
-        CHECK(Expr(-7).integerValue() == -7);
-        CHECK(Expr().integerValue() == 0);
+        CHECK(Expr(42).integer_value() == 42);
+        CHECK(Expr(-7).integer_value() == -7);
+        CHECK(Expr().integer_value() == 0);
     }
     SUBCASE("reals are distinct from integers") {
         // 2 and 2.0 are different values to a CAS: one is exact.
@@ -85,7 +85,7 @@ TEST_CASE("numeric leaves") {
     }
     SUBCASE("a whole rational collapses to an integer") {
         CHECK(Expr::rational(6, 3).kind() == Kind::Integer);
-        CHECK(Expr::rational(6, 3).integerValue() == 2);
+        CHECK(Expr::rational(6, 3).integer_value() == 2);
     }
     SUBCASE("the sign lives in the numerator") {
         const Expr value = Expr::rational(1, -2);
@@ -174,9 +174,9 @@ TEST_CASE("operators build the expected shapes") {
     }
     SUBCASE("negating a literal gives a literal") {
         CHECK((-Expr(5)).kind() == Kind::Integer);
-        CHECK((-Expr(5)).integerValue() == -5);
+        CHECK((-Expr(5)).integer_value() == -5);
         CHECK((-Expr::rational(1, 2)) == Expr::rational(-1, 2));
-        CHECK((-Expr(2.5)).realValue() == doctest::Approx(-2.5));
+        CHECK((-Expr(2.5)).real_value() == doctest::Approx(-2.5));
     }
     SUBCASE("negating anything else multiplies by -1") {
         CHECK((-Expr(x)).kind() == Kind::Mul);
@@ -215,7 +215,7 @@ TEST_CASE("relations are built by name, not by operator") {
     const Expr equation = eq(Expr(x), Expr(1));
 
     CHECK(equation.kind() == Kind::Relation);
-    CHECK(equation.relationOp() == proxima::RelOp::Equal);
+    CHECK(equation.relation_op() == proxima::RelOp::Equal);
     CHECK(equation.str() == "x = 1");
     CHECK(gt(Expr(x), Expr(0)).str() == "x > 0");
     // Maxima spells inequality '#', not '!='.
@@ -310,12 +310,12 @@ TEST_CASE("negative zero equals zero, so it hashes equally") {
     // MSVC's std::hash<double> hashes the bit pattern, where libstdc++ special-
     // cases zero; an unordered container then failed to find one by the other.
     const Expr zero = Expr::real(0.0);
-    const Expr negativeZero = Expr::real(-0.0);
-    CHECK(zero == negativeZero);
-    CHECK(zero.hash() == negativeZero.hash());
+    const Expr negative_zero = Expr::real(-0.0);
+    CHECK(zero == negative_zero);
+    CHECK(zero.hash() == negative_zero.hash());
 
     const std::unordered_set<Expr> set{zero};
-    CHECK(set.count(negativeZero) == 1);
+    CHECK(set.count(negative_zero) == 1);
 }
 
 TEST_CASE("printing parenthesises by precedence") {
@@ -374,11 +374,11 @@ TEST_CASE("rationals and reals print recognisably") {
 
 TEST_CASE("accessors reject the wrong kind instead of returning nonsense") {
     const Symbol x("x");
-    CHECK_THROWS_AS(Expr(x).integerValue(), proxima::Error);
-    CHECK_THROWS_AS(Expr(1).realValue(), proxima::Error);
+    CHECK_THROWS_AS(Expr(x).integer_value(), proxima::Error);
+    CHECK_THROWS_AS(Expr(1).real_value(), proxima::Error);
     CHECK_THROWS_AS(Expr(1).name(), proxima::Error);
-    CHECK_THROWS_AS(Expr(1).relationOp(), proxima::Error);
-    CHECK_THROWS_AS(Expr(1).opaqueText(), proxima::Error);
+    CHECK_THROWS_AS(Expr(1).relation_op(), proxima::Error);
+    CHECK_THROWS_AS(Expr(1).opaque_text(), proxima::Error);
     CHECK_THROWS_AS(Expr(1).arg(0), proxima::Error);
 }
 

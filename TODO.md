@@ -44,8 +44,8 @@ Work since, and what it turned up that the review had not found:
   `sqrt(1 - x^2)` as `1 - x^2^(1/2)` — again a different expression — because
   a missing `root()` was synthesised from already-rendered text. The demo
   found it; roots are now rewritten as display nodes and walked normally.
-- **TeX and MathML renderers** (`666756c`, `693771a`): `toTeX()` and
-  `toMathML()`. Found: both padded small exponents, `10^{-07}`.
+- **TeX and MathML renderers** (`666756c`, `693771a`): `to_tex()` and
+  `to_mathml()`. Found: both padded small exponents, `10^{-07}`.
 - **Demo** (`2855343`, `07e62bc`): results through all four renderers,
   including the user-written `examples/text2d.hpp`.
 - **`mod` and `round` agree with Maxima** (`de0061e`). Resolves both §1 numeric
@@ -121,7 +121,7 @@ Work since, and what it turned up that the review had not found:
   `proxima::CanonicalLess`.
 - **§5, one commit each** (`3ea48d5` … `edd45a1`). Three of the seven had
   already been fixed by earlier work and are ticked with those commits. Found
-  on the way: the dead `Opaque` fallback in `mapRational` was not dead — a
+  on the way: the dead `Opaque` fallback in `map_rational` was not dead — a
   `(RAT 1 0)` became the text `(1/0)`, which passes for an answer — and two
   more comments, in `errors.hpp` and `tests/CMakeLists.txt`, still described
   shipped work as future.
@@ -150,9 +150,11 @@ Every section is closed except §7's CI item, which is left for later.
 
 A second full review, made after the rename to Proxima, is §9 at the end of
 this file. It is where the open work now is. §9.1 is done except the two
-items that wait on §9.6 — `evalExpr`'s `query` and the throwing operators —
+items that wait on §9.6 — `eval_expr`'s `query` and the throwing operators —
 and §9.2's parser fix is in (`3292b45` … `d7f32f8`). Suite after that round:
-333 cases on Windows under GCC, clang-cl and MSVC, 335 on Linux.
+333 cases on Windows under GCC, clang-cl and MSVC, 335 on Linux. Then the
+naming convention of §9.3: functions and variables are snake_case, types
+PascalCase, and every identifier in this file was renamed with the code.
 
 ---
 
@@ -161,7 +163,7 @@ and §9.2's parser fix is in (`3292b45` … `d7f32f8`). Suite after that round:
 These produce a result that disagrees with Maxima, silently.
 
 - [x] **`mod` in the numeric evaluator is `std::fmod`; Maxima's `mod` is
-  floored.** `evalNumeric(mod(-7, 3))` gives **-1**; Maxima gives **2**.
+  floored.** `eval_numeric(mod(-7, 3))` gives **-1**; Maxima gives **2**.
   A closed form containing `mod` evaluates to a different number here than
   in Maxima. Fix: `a - b * std::floor(a / b)`. (`src/core/numeric.cpp`,
   `kBuiltins`; measured.)
@@ -223,7 +225,7 @@ These produce a result that disagrees with Maxima, silently.
   a test now pins that, since printing without them would produce exactly what
   is refused.
 
-- [x] **NaN breaks `compareExpr`'s strict weak ordering.** `compareExpr`
+- [x] **NaN breaks `compare_expr`'s strict weak ordering.** `compare_expr`
   orders numbers through `double`; for NaN neither `<` nor `>` holds, so
   distinct NaNs compare *equal* to everything numeric, which violates the
   precondition of the `std::sort` calls in `normalize()` — that is
@@ -276,7 +278,7 @@ These produce a result that disagrees with Maxima, silently.
 
 - [x] **Discovery's error message hardcodes `sbcl.exe` on every
   platform.** Uses `kSbclName` everywhere else; two messages in
-  `discoverMaxima` do not. (`src/kernel/discovery.cpp`)
+  `discover_maxima` do not. (`src/kernel/discovery.cpp`)
 
   *Outcome:* fixed in `722d9c9`; the test checks the message names the
   platform's own executable.
@@ -318,7 +320,7 @@ These produce a result that disagrees with Maxima, silently.
   longer shows a hand-written check for `ind`.
 
 - [x] **Large results came back silently truncated.** *Found while measuring
-  §3's `readFrame`, whose large replies never grew.* Maxima runs with Lisp's
+  §3's `read_frame`, whose large replies never grew.* Maxima runs with Lisp's
   `*print-length*` at 100 and `*print-level*` at 15, and the helper printed
   every reply under them: a sum of more than 100 terms arrived as its first 100
   and `...`, anything nested deeper than 15 levels as `#`, and the reader took
@@ -366,7 +368,7 @@ These produce a result that disagrees with Maxima, silently.
   it. The request is `cppsend(id, errcatch(ratdisrep(<text>)))$` with the
   text spliced in raw. Any `$`, `;`, unbalanced paren or other syntax slip
   in the text makes Maxima's *reader* fail before `errcatch` is ever
-  entered. No frame is produced, so `readFrame` waits the full
+  entered. No frame is produced, so `read_frame` waits the full
   `Config::timeout` (**two minutes** by default), throws `TimeoutError`,
   and then `recover()` kills and restarts the kernel — paying the
   transport's 2-second grace period on top. *Measured:* `eval("1$ 2")`,
@@ -377,7 +379,7 @@ These produce a result that disagrees with Maxima, silently.
   `eval("1) + cppsend(0, [7]")` succeeds — the spliced text is live
   Maxima code and can call the framing helper itself.
 
-  This is reachable from: `Kernel::eval` / `evalPure` with user text,
+  This is reachable from: `Kernel::eval` / `eval_pure` with user text,
   any `Expr::opaque(...)`, any `Symbol` or `Expr::function` head containing
   a character Maxima's reader treats specially, and `proxima::parse` — no,
   `proxima::parse` is safe: it quotes the text into a string literal for
@@ -412,17 +414,17 @@ These produce a result that disagrees with Maxima, silently.
   2.56 s to 0.56 s, restart included.
 
 - [x] **`Kernel::eval` switches persistence off for the rest of the
-  kernel's life.** `stateAccounted_ = false` is never reset. One diagnostic
-  `eval("1+1")` and `Config::cacheDirectory` is dead until a new Kernel.
+  kernel's life.** `state_accounted_ = false` is never reset. One diagnostic
+  `eval("1+1")` and `Config::cache_directory` is dead until a new Kernel.
   The reasoning is sound (an unrecorded change cannot be keyed), but there
-  is no `Kernel::evalPure`-style way back and nothing tells the caller.
+  is no `Kernel::eval_pure`-style way back and nothing tells the caller.
   Either expose a `resetPersistence()` / document loudly, or make `eval`
   restart the kernel with the journal replayed — which *does* restore an
   accounted state.
 
   *Outcome:* fixed in `cf6a0eb` with both halves, but not by making `eval`
   restart — that would discard exactly the definitions `eval` is used to
-  make. `Kernel::persistenceActive()` reports the state and `Kernel::restart()`
+  make. `Kernel::persistence_active()` reports the state and `Kernel::restart()`
   replays the journal into a fresh Maxima, which resumes persistence. Found:
   automatic recovery after a death or timeout did the same replay yet left
   persistence off; it now resumes there too.
@@ -446,10 +448,10 @@ These produce a result that disagrees with Maxima, silently.
   waits, keeping its facts and replay entries, and is torn down with the last
   of them.
 
-- [x] **`PersistentCache::readField` trusts the stored length.** A corrupt
+- [x] **`PersistentCache::read_field` trusts the stored length.** A corrupt
   or hostile `.reply` file with length `18446744073709551615` makes
   `text.resize()` throw `std::length_error` / `bad_alloc`, which escapes
-  `evalPure` as a non-`proxima::Error` exception. Cap the length (a reply cannot
+  `eval_pure` as a non-`proxima::Error` exception. Cap the length (a reply cannot
   exceed the file size) and treat anything else as a miss.
 
   *Outcome:* fixed in `a2a55fd`, capping each field at what remains of the
@@ -462,10 +464,10 @@ These produce a result that disagrees with Maxima, silently.
   *Outcome:* both, in `c1b91eb`: every method goes through one checked
   accessor that throws `KernelError`, and the move operations say so.
 
-- [x] **`sharedKernel()` and static destruction order.** A function-local
+- [x] **`shared_kernel()` and static destruction order.** A function-local
   static Kernel is destroyed at exit; a user's own static that holds a
   `Context` (which holds a raw `Kernel*`) and outlives it will call into a
-  dead object. Also: `ops.hpp` says `sharedKernel` is "Not thread-safe —
+  dead object. Also: `ops.hpp` says `shared_kernel` is "Not thread-safe —
   see PLAN.md step 13", which is wrong on both counts (C++11 statics are
   thread-safe to initialise, and step 13 serialised the Kernel). Fix the
   comment; consider `Context` holding a `shared_ptr` or a weak reference.
@@ -475,7 +477,7 @@ These produce a result that disagrees with Maxima, silently.
   is destroyed; a Context holds a `weak_ptr` to it, so once the Kernel is gone
   its operations throw `KernelError` and its destructor does nothing. That
   covers any Context outliving its Kernel, not only a static one outliving
-  `sharedKernel()`. The comment is corrected.
+  `shared_kernel()`. The comment is corrected.
 
 - [x] **Win32 launch leaks every inheritable handle into every child.**
   `CreateProcessA(..., bInheritHandles = TRUE, ...)` with no
@@ -494,7 +496,7 @@ These produce a result that disagrees with Maxima, silently.
 
 - [x] **Win32 uses the ANSI API family.** `CreateProcessA`,
   `GetEnvironmentStringsA`, `STARTUPINFOA`. A Maxima installed under a
-  non-ASCII path — or a non-ASCII `Config::userDir` — will fail or be
+  non-ASCII path — or a non-ASCII `Config::user_dir` — will fail or be
   mangled. Use the `W` variants and convert.
 
   *Outcome:* half done in `83f3bc8`. Boost.Process launches with
@@ -513,7 +515,7 @@ These produce a result that disagrees with Maxima, silently.
   disabled a non-ASCII install still fails, now inside SBCL rather than here.
 
 - [x] **Win32 `send` ignores `WriteFile`'s return value.** A failed or
-  short write is silently dropped; the next `readFrame` then times out
+  short write is silently dropped; the next `read_frame` then times out
   with a misleading diagnosis.
 
   *Outcome:* fixed in `83f3bc8`. `asio::write` writes everything or reports
@@ -521,25 +523,25 @@ These produce a result that disagrees with Maxima, silently.
   and `alive()` report the dead child at once.
 
 - [x] **The session mutex is held for the whole computation.**
-  `cacheStats()` and `setTimeout()` take the same lock as `eval`, so both
-  block for up to two minutes behind a running integral, and `setTimeout`
+  `cache_stats()` and `set_timeout()` take the same lock as `eval`, so both
+  block for up to two minutes behind a running integral, and `set_timeout`
   cannot shorten an in-flight call. Separate a short lock for the
   bookkeeping from the long one for the pipe.
 
   *Outcome:* fixed in `539d93c` as suggested: a pipe lock for the conversation
-  and a state lock for everything else, with `readFrame` re-reading the
-  timeout each poll so `setTimeout` shortens a waiting call. Splitting them
-  meant the journal can change mid-computation, so `evalPure` now caches an
+  and a state lock for everything else, with `read_frame` re-reading the
+  timeout each poll so `set_timeout` shortens a waiting call. Splitting them
+  meant the journal can change mid-computation, so `eval_pure` now caches an
   answer only if a state generation counter is unchanged across the call.
-  `evalPure`'s cache lookups deliberately still take the pipe lock — see the
+  `eval_pure`'s cache lookups deliberately still take the pipe lock — see the
   next item.
 
 - [x] **A Context's statement and its journal record are two separate
-  calls.** `Context::assume` sends `assume(...)` through `evalTracked`, then
+  calls.** `Context::assume` sends `assume(...)` through `eval_tracked`, then
   records it with `remember()`; `~Context` does `forget()`, then
-  `killcontext`. Each is locked on its own, so another thread's `evalPure` can
+  `killcontext`. Each is locked on its own, so another thread's `eval_pure` can
   run in between, compute under Maxima's new state, and file the answer under
-  the journal's old one — in the in-memory cache, and in `cacheDirectory`,
+  the journal's old one — in the in-memory cache, and in `cache_directory`,
   where it outlives the process. The window predates `539d93c` (the old single
   lock was also released between the two calls); the generation counter added
   there closes only the case where the journal changes *during* a
@@ -547,8 +549,8 @@ These produce a result that disagrees with Maxima, silently.
   and evaluates) under the pipe lock, so the change and its record are
   atomic. Found by reasoning while splitting the lock, not yet measured.
 
-  *Outcome:* fixed in `6bc0f7d` as proposed. `MaximaSession::converseAtomically`
-  runs its steps under one hold of the pipe lock, offering `evalTracked`,
+  *Outcome:* fixed in `6bc0f7d` as proposed. `MaximaSession::converse_atomically`
+  runs its steps under one hold of the pipe lock, offering `eval_tracked`,
   `remember` and `forget`, and Context makes every change that way: opening a
   scope (reading the active context, `supcontext`, the record), each
   assumption or declaration with its record, and each teardown. No public API
@@ -611,7 +613,7 @@ Fine at today's sizes; these are the walls you will hit.
   `x - (1 + y)` printed as `x - 1 + y`, which re-parses to a different
   expression. `tests/test_render.cpp` pins the round trip now.
 
-- [x] **`readFrame` is O(n²) on large replies.** Every 4 KB chunk appends
+- [x] **`read_frame` is O(n²) on large replies.** Every 4 KB chunk appends
   to `buffer` and then `buffer.find(end)` searches *from the beginning*.
   Not yet visible in practice — `expand((x+y+z)^40)` is a 6 KB reply and
   takes 16 ms end to end — but it is quadratic in reply size by
@@ -620,7 +622,7 @@ Fine at today's sizes; these are the walls you will hit.
   reply is 256 syscalls and 256 searches.
 
   *Outcome:* done in `9130264`, both halves: the search starts just before the
-  bytes that arrived, and a read takes up to 64 KB. *Measured:* `readFrame`
+  bytes that arrived, and a read takes up to 64 KB. *Measured:* `read_frame`
   alone over 4 KB reads, 4 MB went from 49-52 ms to 12-13 ms, now roughly
   linear; against Maxima, the 889 KB reply of `expand((x+y+z)^120)` from about
   51 to 46 ms, its transfer share from 15-17 ms to 12. Most of the rest is
@@ -630,7 +632,7 @@ Fine at today's sizes; these are the walls you will hit.
 - [x] **Win32 `receive` polls with `Sleep(1)`.** `PeekNamedPipe` +
   `Sleep(1)` in a loop; on a default Windows timer that sleep is 1–15 ms,
   so every round trip carries that latency floor. *Measured:* **15.5 ms
-  per trivial `evalPure`** (200 cache-missing `1+i` calls), which is
+  per trivial `eval_pure`** (200 cache-missing `1+i` calls), which is
   almost exactly Windows' default 15.625 ms scheduler tick — the cost is
   the sleep, not Maxima. That is 3 s for 200 questions, and it is the
   number behind "a round trip costs milliseconds" in the docs. The comment
@@ -640,12 +642,12 @@ Fine at today's sizes; these are the walls you will hit.
 
   *Outcome:* fixed in `83f3bc8` with Asio's pipes, which wait on the
   completion port. Same 200-call measurement: **0.04 ms** per trivial
-  `evalPure`, and 1.5 ms per `expand` round trip (was 15.6 ms).
+  `eval_pure`, and 1.5 ms per `expand` round trip (was 15.6 ms).
 
 - [x] **`Context` construction clears the reply cache just to read a
-  name.** `evaluateOrThrow(kernel, "context")` goes through `evalTracked`,
+  name.** `evaluate_or_throw(kernel, "context")` goes through `eval_tracked`,
   which clears the in-memory cache, before anything has changed. Use
-  `evalPure` for the read.
+  `eval_pure` for the read.
 
   *Outcome:* no change needed. Since `6bc0f7d` the read is one step of the
   conversation that opens the context and records it with `remember()`, which
@@ -653,26 +655,26 @@ Fine at today's sizes; these are the walls you will hit.
   state. A read that did not clear would change nothing observable, so no API
   was added for it.
 
-- [x] **`evalNumeric`'s `walk()` allocates a `std::vector<double>` per
-  function call**, and `isEvaluable` builds failure strings it then
+- [x] **`eval_numeric`'s `walk()` allocates a `std::vector<double>` per
+  function call**, and `is_evaluable` builds failure strings it then
   discards. Use a small stack array (max builtin arity is 2 except
   `max`/`min`) and pass `nullptr` for the failure sink.
 
   *Outcome:* done in `2df55b4`: an eight-slot stack array, spilling only for a
   longer call, and failure messages built only when there is a sink.
-  *Measured* (Release, 200,000 calls): `evalNumeric` on an expression of
-  function calls 4 -> 0 allocations and about 165 -> 87 ms; `isEvaluable` on an
+  *Measured* (Release, 200,000 calls): `eval_numeric` on an expression of
+  function calls 4 -> 0 allocations and about 165 -> 87 ms; `is_evaluable` on an
   unbound symbol 42 -> 4 ms; on a relation, which printed the whole expression
   to discard the message, 45 allocations and about 520 ms -> 0 and 0.4 ms.
 
-- [x] **`Compiled::pushConstant` dedups with `std::find` on `double ==`.**
+- [x] **`Compiled::push_constant` dedups with `std::find` on `double ==`.**
   Merges `-0.0` with `0.0` (sign of zero lost — harmless in practice) and
   never merges NaN. Compare bit patterns if you want exact dedup; it is
   O(n) per constant either way, fine for expression sizes seen here.
 
   *Outcome:* fixed in `8bb6ca4`, and it was not harmless: `atan2(0.0, -1)` is
   pi and `atan2(-0.0, -1)` is -pi, so the compiled form of their sum answered
-  2 pi where `evalNumeric` answered 0, and `1/0.0 + 1/-0.0` gave inf instead of
+  2 pi where `eval_numeric` answered 0, and `1/0.0 + 1/-0.0` gave inf instead of
   NaN. A test comparing the two evaluators failed on both first. Constants now
   share a slot only when equal with the same sign, or both NaN.
 
@@ -692,13 +694,13 @@ Fine at today's sizes; these are the walls you will hit.
 
 - [x] **`Expr` has no ordering.** It cannot be a `std::map` key, cannot be
   sorted, cannot be put in a `std::set` — yet a total order already exists
-  in `detail::compareExpr`. Expose it as `operator<=>` (fixing the NaN
+  in `detail::compare_expr`. Expose it as `operator<=>` (fixing the NaN
   case first, §1).
 
   *Outcome:* done in `dda4dee`, deliberately not as `operator<=>` or `<`:
   `Expr` converts implicitly from numbers and symbols, so `x < 0` would compile
   and mean "sorts before" rather than build `lt(x, 0)`. Instead there is
-  `proxima::canonicalOrder`, a `std::weak_ordering` since 0.0 and -0.0 are equal but
+  `proxima::canonical_order`, a `std::weak_ordering` since 0.0 and -0.0 are equal but
   print differently; and `proxima::CanonicalLess`, for sorting and for
   `std::set<Expr, CanonicalLess>`. (`std::less` was specialised for `Expr` and
   `Symbol` at first, so containers needed no comparator; removed after
@@ -725,32 +727,32 @@ Fine at today's sizes; these are the walls you will hit.
   throws, rather than leaving the symbol silently behind.
 
 - [x] **No traversal helpers.** `args()` is enough to write a recursion,
-  but a `visit`/`transform`/`anyOf` would stop every caller writing the
-  same one (`contains` and `mentionsSymbol` in this codebase are already
+  but a `visit`/`transform`/`any_of` would stop every caller writing the
+  same one (`contains` and `mentions_symbol` in this codebase are already
   the same function twice).
 
-  *Outcome:* done in `8e77475`: `visit` (every node, pre-order), `anyOf` (stops
+  *Outcome:* done in `8e77475`: `visit` (every node, pre-order), `any_of` (stops
   at the first yes) and `transform` (bottom-up, rebuilding through the builders,
-  sharing what it leaves alone). `contains`, `replace` and `mentionsSymbol` are
+  sharing what it leaves alone). `contains`, `replace` and `mentions_symbol` are
   each one of them now. Found: `transform` cannot use `==` to tell that an
   operand came back unchanged, because 0.0 == -0.0 and a rewrite from one to the
   other would be dropped; it compares representations instead, and a test pins
   that.
 
 - [x] **The wire format leaks through `Kernel::eval`.** *(Partly done:
-  `eval`/`evalPure`/`evalTracked` now have `const Expr &` overloads, so a
+  `eval`/`eval_pure`/`eval_tracked` now have `const Expr &` overloads, so a
   caller can send structure. The reply is still raw text.)* It returns
-  `Reply::value` as raw s-expression text. A public `Kernel::evalExpr`
+  `Reply::value` as raw s-expression text. A public `Kernel::eval_expr`
   returning `std::expected<Expr, Failure>` — which is what `ops.cpp`'s
   private `evaluate()` already is — would let users who need a Maxima
   function this library has not wrapped get an `Expr` back without
   parsing s-expressions themselves. Keep `eval` for the raw case.
 
-  *Outcome:* done in `a88c5e0`: `Kernel::evalExpr`, for text or an `Expr`,
-  with `eval`'s cache semantics, and a free `proxima::toExpr(const Reply &)`, so an
-  `evalPure` or `evalTracked` reply reads the same way without a method for
+  *Outcome:* done in `a88c5e0`: `Kernel::eval_expr`, for text or an `Expr`,
+  with `eval`'s cache semantics, and a free `proxima::to_expr(const Reply &)`, so an
+  `eval_pure` or `eval_tracked` reply reads the same way without a method for
   every combination. `Failure` moved to `<proxima/reply.hpp>`. The operations and
-  `Context` read their replies through `toExpr`, replacing two private copies of
+  `Context` read their replies through `to_expr`, replacing two private copies of
   the parse.
 
 - [x] **The operation set is thin for "basic workable".** Missing and
@@ -764,9 +766,9 @@ Fine at today's sizes; these are the walls you will hit.
 
   *Outcome:* done in `51a3779`, all but matrices: `is` (answering
   `Truth::True`, `False` or `Unknown`), `taylor`, `trigsimp`, `trigexpand`,
-  `radcan`, `partfrac`, `coeff`, `toFloat` (`float` being a C++ keyword; it
+  `radcan`, `partfrac`, `coeff`, `to_float` (`float` being a C++ keyword; it
   covers `numer` too), `sum` and `product` (a `Failure` when no closed form is
-  found), `nroots`, `realroots`, `findRoot` and `ode2`; `lhs` and `rhs` are
+  found), `nroots`, `realroots`, `find_root` and `ode2`; `lhs` and `rhs` are
   local, and a `derivative` builder makes the `'diff` noun an ODE is written
   with. Found: a symbolic `sum` closes only under `simpsum`, which `ev` turns on
   for the one evaluation; `product` stays a noun even so; and `ode2` prints why
@@ -780,7 +782,7 @@ Fine at today's sizes; these are the walls you will hit.
   `int`/`double` one, but it is the kind of thing that turns into an
   ambiguity the day someone adds an overload. Consider a sub-namespace
   (`proxima::fn`) or accept it and document "don't `using namespace proxima`".
-  Also: `minusInf()` vs `inf()` naming; `tanh`, `asinh`, `acosh`, `atanh`,
+  Also: `minus_inf()` vs `inf()` naming; `tanh`, `asinh`, `acosh`, `atanh`,
   `erf`, `floor`, `ceiling`, `signum` are in the numeric builtin table but
   have no builder; `%gamma` is a Maxima constant the numeric layer does
   not know (`std::numbers::egamma` exists); `%phi` is known but
@@ -796,7 +798,7 @@ Fine at today's sizes; these are the walls you will hit.
   behaviour was `tour.cpp`'s `proxima::sin(0)`. Compile-time checks pin all of it.
   Also done: builders for `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `floor`,
   `ceiling` and `signum`, each round-tripped through Maxima in a test; `minf()`,
-  with `minusInf()` deprecated; `%gamma` in the numeric layer; `%phi` and
+  with `minus_inf()` deprecated; `%gamma` in the numeric layer; `%phi` and
   `%gamma` documented.
 
 - [x] **`simplify` is `ratsimp`.** Documented, but the name promises more
@@ -809,17 +811,17 @@ Fine at today's sizes; these are the walls you will hit.
   `simplify` stays as its alias, not deprecated, so existing code is unaffected;
   the README and examples say `ratsimp`.
 
-- [x] **`isUnevaluated(result, "list")` is used to mean "is a list".**
+- [x] **`is_unevaluated(result, "list")` is used to mean "is a list".**
   A misnomer that reads as "Maxima failed" at every call site in `solve`.
-  Add `isList()`.
+  Add `is_list()`.
 
-  *Outcome:* done in `b71ccdf`; `solve` now calls `isList()`.
+  *Outcome:* done in `b71ccdf`; `solve` now calls `is_list()`.
 
-- [x] **`wrongKind()` prints the kind as an integer.** "expression is not
-  an integer (kind 4)". Add a `to_string(Kind)` / `kindName()` — it is
+- [x] **`wrong_kind()` prints the kind as an integer.** "expression is not
+  an integer (kind 4)". Add a `to_string(Kind)` / `kind_name()` — it is
   also wanted for tests and logging.
 
-  *Outcome:* done in `498e495`: `proxima::kindName`, with `operator<<` and a
+  *Outcome:* done in `498e495`: `proxima::kind_name`, with `operator<<` and a
   `std::formatter` for `Kind`; the message now reads "(its kind is Symbol)".
   `tour.cpp` carried its own copy of the same switch, which is gone.
 
@@ -866,7 +868,7 @@ stand out. All refer to plan steps as future work that has since shipped:
 - [x] `include/proxima/kernel.hpp`: "This is the whole public surface for now…
   structured expressions arrive with the term layer (PLAN.md steps 7-9)".
   *(Fixed in `b71ccdf`.)*
-- [x] `include/proxima/ops.hpp`, `sharedKernel`: "Not thread-safe — see PLAN.md
+- [x] `include/proxima/ops.hpp`, `shared_kernel`: "Not thread-safe — see PLAN.md
   step 13". Wrong, see §2. *(Already fixed in `2a74041`, which rewrote the
   doc: starting it is thread-safe, and calls on it take turns.)*
 - [x] `include/proxima/context.hpp`: "so that PLAN.md step 14's cache key can
@@ -884,15 +886,15 @@ stand out. All refer to plan steps as future work that has since shipped:
   is killed" — true, but `recover()` *does* kill it on timeout; say so,
   since the current wording suggests a runaway process is left behind.
   *(Fixed in `6f5a2a7`, which also says every timeout pays for a startup.)*
-- [x] `src/wire/from_maxima.cpp`: `mapInteger` and `mapRational` have
+- [x] `src/wire/from_maxima.cpp`: `map_integer` and `map_rational` have
   `Opaque` fallbacks for "digits that do not parse" that can no longer
   happen — the lexer guarantees digits and `Integer` is unbounded. Dead
   code; remove or `assert`.
 
-  *Outcome:* fixed in `97faf78`, and only half dead. `mapInteger`'s fallback
-  could not be reached; `mapRational`'s could, by a denominator of zero or a
+  *Outcome:* fixed in `97faf78`, and only half dead. `map_integer`'s fallback
+  could not be reached; `map_rational`'s could, by a denominator of zero or a
   part that is not an integer, and turned `(RAT 1 0)` into the text `(1/0)`.
-  Both now throw `ParseError`, which `fromMaxima` promises for a term that is not
+  Both now throw `ParseError`, which `from_maxima` promises for a term that is not
   well formed. Tests written first failed on the old code.
 - [x] `src/kernel/persistent_cache.hpp`: the concurrency claim (see §1).
   *(Already fixed in `f2de237`, with the per-writer temporaries it describes.)*
@@ -935,14 +937,14 @@ candidates, most valuable first.
   *Outcome:* done in `bfcdea6`, under §3.
 
 - [x] ~~**A real database for the persistent cache?** SQLite would give
-  bounded size (there is *no eviction* today — `Config::cacheDirectory`
+  bounded size (there is *no eviction* today — `Config::cache_directory`
   grows forever), atomic multi-entry writes and a proper cross-process
   story. It is a compiled dependency, though, and the one-file-per-entry
   design is genuinely simple.~~ Recommendation: keep the files, add a size
   cap with LRU-by-mtime eviction, and fix the temp-name collision (§1).
 
   *Outcome:* SQLite struck; the recommendation done. The temp-name collision
-  was fixed in `f2de237`. The size cap is `e4dd610`: `Config::cacheDirectoryLimit`,
+  was fixed in `f2de237`. The size cap is `e4dd610`: `Config::cache_directory_limit`,
   256 MB by default. A read refreshes an entry's modification time. Over the
   limit, the oldest entries go until the directory is at three quarters of it,
   and temporaries over an hour old go too. The first write learns the
@@ -960,7 +962,7 @@ candidates, most valuable first.
   parser needed instead.
 
 - [x] **A fuzz target for the two parsers.** libFuzzer/AFL on
-  `parseSExpr` and `Expr::parse` is an afternoon and is how hand-written
+  `parse_sexpr` and `Expr::parse` is an afternoon and is how hand-written
   readers earn trust. `kMaxSExprDepth` exists, so someone already thought
   about hostile input; a fuzzer would find what the depth limit does not.
 
@@ -1090,7 +1092,7 @@ Maxima itself). Gaps, all cheap:
   `test_context.cpp`, and a restart after an out-of-order end.)*
 - [x] Two threads sharing one `Kernel` (the README promises it is safe;
   nothing exercises it). *(`dc0f03b`: four threads share one `Kernel` against
-  Maxima, mixing a cached `evalPure` with a raw `eval` that clears the cache,
+  Maxima, mixing a cached `eval_pure` with a raw `eval` that clears the cache,
   every question distinct, and every answer comes back to its own caller. The
   session's locking was already tested over FakeTransport; this tests the
   promise itself.)*
@@ -1116,17 +1118,17 @@ Maxima itself). Gaps, all cheap:
 
 Things I checked that are fine and that a reviewer might flag anyway.
 
-- `sharedKernel()` as a function-local static is thread-safe to
+- `shared_kernel()` as a function-local static is thread-safe to
   construct; the comment is wrong, not the code.
 - `operator/` producing `x*0^(-1)` for division by zero: deliberate,
   Maxima is the one that objects, and it does.
 - `x - x` staying `x - x`: correct, one canonicaliser.
 - `-0.0 == 0.0` as `Expr`: true, with equal hashes; consistent.
 - `Integer`'s small-value fast paths: verified allocation-free.
-- `isupper`/`islower` in `decodeMaximaName` are locale-sensitive in
+- `isupper`/`islower` in `decode_maxima_name` are locale-sensitive in
   principle; Maxima symbol names reaching here are ASCII in practice.
 - The 4 KB transport chunk and `find`-from-zero are the same issue as
-  §3's `readFrame`; listed once.
+  §3's `read_frame`; listed once.
 
 ---
 
@@ -1184,7 +1186,7 @@ to the kernel. That is where the work is.
   Unix machine.** *Measured:* Maxima loads `maxima-init.mac` from
   `$MAXIMA_USERDIR` (a probe with `proxima_probe: 42$` in that file printed 42;
   with the variable unset it printed the unbound symbol). With
-  `Config::loadUserInit` false — the default — the library sets
+  `Config::load_user_init` false — the default — the library sets
   `MAXIMA_USERDIR` to `temp_directory_path()/proxima/userdir`, which on Linux
   and macOS is `/tmp/proxima/userdir`: one directory for every user of the
   machine. Whoever creates it first owns it; a `maxima-init.mac` placed there
@@ -1196,7 +1198,7 @@ to the kernel. That is where the work is.
   init file can exist there at all; or, if a stable directory is wanted for
   what Maxima writes into it, a per-user one under `$XDG_CACHE_HOME` /
   `%LOCALAPPDATA%` with its ownership and mode checked before use. Then a test
-  that the default is private. (`Config::cacheDirectory` has the same trust
+  that the default is private. (`Config::cache_directory` has the same trust
   shape: anyone who can write to a shared cache directory can make
   `integrate` answer anything, since entries carry no integrity check. That
   one is opt-in and documented as shared, so it is a documentation item:
@@ -1211,17 +1213,17 @@ to the kernel. That is where the work is.
   everyone else; otherwise the kernel refuses to start and says why. Windows
   keeps `%TEMP%\proxima\userdir`. Tests: the default's owner and mode, and
   refusal of an open directory, a symbolic link and a file (Unix only). A
-  `Config::userDir` given explicitly is used as it is, and its documentation
-  now says it must not be writable by others. `Config::cacheDirectory`'s
+  `Config::user_dir` given explicitly is used as it is, and its documentation
+  now says it must not be writable by others. `Config::cache_directory`'s
   documentation says the same, in the terms above, in the commit that ticks
   this section.
 
 - [x] **A reply that contains the frame delimiter truncates its own frame.**
-  Not measured. `readFrame` searches for `@@E<id>@@` anywhere in the stream,
+  Not measured. `read_frame` searches for `@@E<id>@@` anywhere in the stream,
   and the value is printed with `~s`, so a Maxima *string* whose text contains
   the delimiter — reachable from `Expr::opaque("\"@@E7@@\"")`, or from any
   string a user builds — ends the frame early. The truncated value then fails
-  `parseSExpr`, which surfaces as a `ParseError` escaping `toExpr`; the tail of
+  `parse_sexpr`, which surfaces as a `ParseError` escaping `to_expr`; the tail of
   the real frame is skipped by the next request. Ids are sequential, so the
   id is guessable. Low severity, one-line fix: put a per-session random nonce
   in the delimiters (`@@E<nonce>-<id>@@`), or have the helper length-prefix the
@@ -1235,7 +1237,7 @@ to the kernel. That is where the work is.
   New tests: a value containing its own request's old-style delimiter
   survives, and two keys differ.
 
-- [x] **`readFrame`'s buffer is unbounded.** A child that streams without
+- [x] **`read_frame`'s buffer is unbounded.** A child that streams without
   ever completing a frame is bounded only by `Config::timeout`, and at pipe
   speed two minutes is gigabytes. Cap the buffer (256 MB, say) and treat
   reaching it as a `KernelError` with a terminate, like a timeout.
@@ -1244,28 +1246,28 @@ to the kernel. That is where the work is.
   `KernelError`, so `converse` restarts the child as it does for any broken
   conversation. Tested with two half-limit chunks and no closing delimiter.
 
-- [ ] **`Kernel::evalExpr` has `eval`'s destructive semantics.** It calls
+- [ ] **`Kernel::eval_expr` has `eval`'s destructive semantics.** It calls
   `eval`, so it clears the reply cache and switches persistence off for the
   kernel — while being the convenient entry point a user reaches for to ask a
-  question (`evalExpr("gcd(12, 18)")`, the README's own example). The safe
-  verb is the long one (`evalPure`), the short one is the dangerous one, and
+  question (`eval_expr("gcd(12, 18)")`, the README's own example). The safe
+  verb is the long one (`eval_pure`), the short one is the dangerous one, and
   nothing in the type says which is which. §9.6 item 6 makes the distinction
   a type. Until then: add `query(text) -> std::expected<Expr, Failure>` on the
-  pure path, and document `evalExpr` as a statement.
+  pure path, and document `eval_expr` as a statement.
 
-  *Outcome:* half done. `evalExpr` is now documented as a statement, in bold,
+  *Outcome:* half done. `eval_expr` is now documented as a statement, in bold,
   in `kernel.hpp` (`2ac8654`) and in the README (`495fbb0`), both pointing to
-  `toExpr(kernel.evalPure(...))` for a pure question. `query` is not added:
+  `to_expr(kernel.eval_pure(...))` for a pure question. `query` is not added:
   it would be a fifth evaluation verb that §9.6 item 6 would remove again, so
   it waits for that decision. Open.
 
 - [x] **The in-memory reply cache is bounded by count, not bytes.**
-  `Config::cacheEntries` is 4096; a single reply can be 889 KB
+  `Config::cache_entries` is 4096; a single reply can be 889 KB
   (`expand((x+y+z)^120)`, §3). Worst case 3.6 GB resident. The persistent cache
   already has a byte budget; give `ReplyCache` one too, or evict by size.
 
-  *Outcome:* fixed in `495fbb0`. A new `Config::cacheBytes`, 64 MB, enforced
-  alongside `cacheEntries`: least recently used first. Each entry is charged
+  *Outcome:* fixed in `495fbb0`. A new `Config::cache_bytes`, 64 MB, enforced
+  alongside `cache_entries`: least recently used first. Each entry is charged
   its text, the key twice (the index holds a copy), and a fixed 256 bytes
   for the nodes. A reply larger than the limit on its own is not kept, and
   takes any older answer under its key with it, so a stale reply is never
@@ -1311,14 +1313,14 @@ to the kernel. That is where the work is.
   *Outcome:* fixed in `93a1a00`, hashing as the expression, so it agrees with
   `std::hash<Expr>`; tested.
 
-- [x] **`findRoot`'s failure message formats the interval with
+- [x] **`find_root`'s failure message formats the interval with
   `std::to_string(double)`**, which prints six decimals: a failure between
   1e-9 and 1e-8 reads "between 0.000000 and 0.000000". Use `std::format`.
 
   *Outcome:* fixed in `93a1a00`; the message now reads "between 1e-09 and
   1e-08", which a test pins.
 
-- [x] **`toTeX` renders `minf` as `-\infty` inside a sum term**, so `x + minf`
+- [x] **`to_tex` renders `minf` as `-\infty` inside a sum term**, so `x + minf`
   is `x + -\infty`; `minf` should carry its sign through `negate()`, as the
   MathML renderer does with `mrow`. Also a decision rather than a bug: the TeX
   and MathML renderers turn a user's own symbol named `gamma`, `pi`, `phi` or
@@ -1410,7 +1412,7 @@ to the kernel. That is where the work is.
   hot loops. Caching the string in the node (`mutable`, once) is possible but
   not obviously worth the size. Low.
 
-- [ ] **Small things in the persistent cache:** `readField` does three seeks
+- [ ] **Small things in the persistent cache:** `read_field` does three seeks
   per field (twelve per entry read) to bound the length — read the file into a
   string once; `sweep()` sorts every entry when only the eviction boundary
   matters (`nth_element`). Low.
@@ -1418,25 +1420,25 @@ to the kernel. That is where the work is.
 ### 9.3 Ergonomics and the shape of the API
 
 - [ ] **Three verbs for evaluation, and the safe one has the longest name.**
-  `eval` (clears the cache, stops persistence), `evalPure`, `evalTracked`,
-  `evalExpr` (as `eval`), plus `remember`/`forget` to maintain the journal by
+  `eval` (clears the cache, stops persistence), `eval_pure`, `eval_tracked`,
+  `eval_expr` (as `eval`), plus `remember`/`forget` to maintain the journal by
   hand. The distinction between them is a promise the caller makes and
-  nothing checks: `evalPure("a: 7")` is accepted and quietly poisons every
+  nothing checks: `eval_pure("a: 7")` is accepted and quietly poisons every
   later cached answer. §9.6 item 6 makes the promise a type. Failing that,
   rename so the default is the safe one — `query` for the pure path, `execute`
-  for a statement — and make `evalTracked`, `remember` and `forget` internal
+  for a statement — and make `eval_tracked`, `remember` and `forget` internal
   once `Context` is their only client.
 
 - [ ] **`Reply` is a hand-rolled `expected` in a public header** — `ok`,
   `value`, `reason`. It should be `std::expected<std::string, Failure>` if the
   raw wire form stays public at all, and the wire form is better made
-  `detail`: the public API deals in `Expr`, and `toExpr` already exists.
+  `detail`: the public API deals in `Expr`, and `to_expr` already exists.
 
 - [ ] **Half the operations throw and half return `std::expected`.**
   `diff`, `expand`, `factor`, `ratsimp`, `subst`, `taylor`, `trigsimp`,
-  `trigexpand`, `radcan`, `partfrac`, `toFloat`, `coeff`, `nroots`,
+  `trigexpand`, `radcan`, `partfrac`, `to_float`, `coeff`, `nroots`,
   `realroots` and `is` throw `MaximaError`; `integrate`, `limit`, `solve`,
-  `ode2`, `sum`, `product`, `findRoot` and `parse` return a `Failure`. The rule
+  `ode2`, `sum`, `product`, `find_root` and `parse` return a `Failure`. The rule
   — "no ordinary way to fail" — is a judgement made per function, not a
   property of the type: `diff(Expr::opaque("$"), x)` throws where
   `integrate` of the same input returns a value. Every caller who wants one
@@ -1449,8 +1451,8 @@ to the kernel. That is where the work is.
   verbose spelling. Show the terse one, and put `namespace px = proxima;` in
   the README's first example.
 
-- [ ] **Accessors that throw on the wrong kind.** `integerValue()`, `name()`,
-  `realValue()`, `relationOp()`, `opaqueText()` and `arg(i)` each throw
+- [ ] **Accessors that throw on the wrong kind.** `integer_value()`, `name()`,
+  `real_value()`, `relation_op()`, `opaque_text()` and `arg(i)` each throw
   `proxima::Error` unless the caller has checked `is(Kind::…)` first, so every
   reader of a tree is a `switch` on `kind()` followed by calls that could
   throw if the switch is wrong. `Node` is a `std::variant` already; §9.6
@@ -1463,12 +1465,12 @@ to the kernel. That is where the work is.
   a handful of entries in contiguous memory beats a node-per-entry
   `std::map`.
 
-- [ ] **`asFunction` returns a `std::function`** — an allocation and an
+- [ ] **`as_function` returns a `std::function`** — an allocation and an
   indirect call per point — when `Compiled` is already a callable value that
   can be returned by value. Return `Compiled`, or `auto`; if a type-erased
   form is wanted, `std::move_only_function`.
 
-- [ ] **`sharedKernel()` is ambient global state that every operation
+- [ ] **`shared_kernel()` is ambient global state that every operation
   defaults to.** Convenient for a script; for a library built on Proxima it
   means one Maxima for everyone, static-destruction order to reason about
   (§2 fixed the crash, not the design), and no way to tell from a call site
@@ -1484,7 +1486,7 @@ to the kernel. That is where the work is.
   exception-swallowing destructor and the journal all exist to manage that
   ambient state. §9.6 item 5 replaces it with a value.
 
-- [ ] **Naming: camelCase against snake_case.** Proxima's free functions and
+- [x] **Naming: camelCase against snake_case.** Proxima's free functions and
   members are camelCase — `evalNumeric`, `isEvaluable`, `toTeX`,
   `canonicalOrder` — while FXT and the standard library are snake_case —
   `and_then`, `value_or`, `transform`. The moment the two are used in one
@@ -1493,6 +1495,24 @@ to the kernel. That is where the work is.
   because renaming afterwards is churn across every file. Recommendation:
   snake_case for functions and members, PascalCase for types — the standard
   library's convention and FXT's.
+
+  *Outcome:* decided and done: snake_case for functions, methods, variables,
+  parameters and members (private ones with a trailing underscore);
+  PascalCase for types, concepts, template parameters and enumerators; named
+  constants keep `kPascalCase`. 375 identifiers were renamed across the
+  sources, the examples, the fuzzers and the Markdown — `eval_pure`,
+  `to_tex`, `to_mathml`, `parse_sexpr`, `Config::cache_entries`. The rename
+  set was taken only from identifiers that occur in C++ code outside strings
+  and comments, so test data such as the Maxima symbol `xY` is untouched,
+  while comments and messages naming a function follow it. Two helpers in
+  `discovery.cpp` became `directory_exists` and `regular_file_exists`, since
+  `std::filesystem` has the snake_case names and a path argument would have
+  found them by argument-dependent lookup. `.clang-tidy` now enforces the
+  convention with `readability-identifier-naming`, with four exceptions it
+  documents; it reports nothing across `src`, `include`, `tests`, `examples`
+  and `fuzz`. Names in the historical text of this file and `PLAN.md` were
+  updated with the code, so they still name things that exist; names of
+  things since removed (`evalRaw`, `resetPersistence`) are left as they were.
 
 - [ ] **`Kernel::remember` and `forget` are public.** Manipulating the replay
   journal by hand is an invitation to make the journal lie, which is the one
@@ -1518,14 +1538,14 @@ to the kernel. That is where the work is.
 
 - [ ] **`std::generator` (C++23) for traversal.** `for (const Expr &node :
   proxima::nodes(e))` reads better than a callback and composes with ranges:
-  `anyOf(e, p)` becomes `std::ranges::any_of(nodes(e), p)`. GCC 14 and MSVC
+  `any_of(e, p)` becomes `std::ranges::any_of(nodes(e), p)`. GCC 14 and MSVC
   19.39 have it; check libc++ 22 before relying on it, since clang is a
   supported compiler here.
 
 - [ ] **`std::ranges::to` and views (C++23)** where the code loops by hand to
-  build a vector: `mapArguments` is `form.items() | views::drop(1) |
-  views::transform(fromMaxima) | ranges::to<std::vector>()`; `solve`'s
-  by-name collection, `sortedChildren`, `Compiled`'s variable names likewise.
+  build a vector: `map_arguments` is `form.items() | views::drop(1) |
+  views::transform(from_maxima) | ranges::to<std::vector>()`; `solve`'s
+  by-name collection, `sorted_children`, `Compiled`'s variable names likewise.
   Readability, not speed.
 
 - [ ] **`std::print` / `std::println` (C++23)** in the examples and the tour
@@ -1536,7 +1556,7 @@ to the kernel. That is where the work is.
 - [ ] **FXT itself.** Header-only, MIT, the same author, `std::expected`
   underneath by default. Its `operator|` is constrained on `expected_like`,
   which `std::expected<Expr, Failure>` satisfies (checked against
-  `IsExpected.hpp`), so `proxima::integrate(f, x) | fxt::transform(toTeX)`
+  `IsExpected.hpp`), so `proxima::integrate(f, x) | fxt::transform(to_tex)`
   works *today* with no change to either library. What does not interoperate
   is `fxt::attempt` and `fxt::result<T>`, which fix the error type to
   `fxt::failure`. Whether Proxima should *depend* on FXT or merely compose
@@ -1559,10 +1579,10 @@ to the kernel. That is where the work is.
 - [ ] **Property tests for the invariants the design rests on.** Every
   guarantee below is asserted on hand-picked cases and none on generated
   ones: normalisation is idempotent (`Expr::add(e.args()) == e` for every
-  `Add`); `a == b` ⇔ `canonicalOrder(a, b) == 0` ⇔ `a.hash() == b.hash()`;
+  `Add`); `a == b` ⇔ `canonical_order(a, b) == 0` ⇔ `a.hash() == b.hash()`;
   `Expr::parse(e.str()) == e` (the fuzzer checks this, but only when it
   runs); `transform(e, identity)` shares every node; and
-  `fromMaxima(parseSExpr(toMaxima(e))) == e` needs no kernel and is never
+  `from_maxima(parse_sexpr(to_maxima(e))) == e` needs no kernel and is never
   checked over random trees. A generator over `Kind` with a size bound, and
   a few hundred trees per run.
 
@@ -1643,13 +1663,13 @@ they are ordered so that each is useful without the next.
   struct Failure {
       Cause cause;
       std::string message;
-      std::optional<Expr> missingFact;   // NeedsAssumption: the relation asked about
+      std::optional<Expr> missing_fact;   // NeedsAssumption: the relation asked about
       std::exception_ptr exception;      // when wrapping one
   };
   ```
 
   With `Cause`, `fxt::ensure`-style gates and `fxt::match` branches read as
-  intent rather than string searches, and `stuck.error().missingFact` is what
+  intent rather than string searches, and `stuck.error().missing_fact` is what
   the README's "when Maxima needs a fact" section wants to show. The shape is
   deliberately `fxt::failure`'s — message, exception, typed context — so a
   bridge (item 11) is a conversion, not a redesign.
@@ -1679,13 +1699,13 @@ they are ordered so that each is useful without the next.
 
   ```cpp
   const auto s = e.match(
-      [](const Integer &n)            { return n.toString(); },
-      [](const proxima::Rational &q)   { return q.numerator.toString() + "/" + ...; },
+      [](const Integer &n)            { return n.to_string(); },
+      [](const proxima::Rational &q)   { return q.numerator.to_string() + "/" + ...; },
       [](double r)                    { return std::format("{}", r); },
       [](const proxima::SymbolView &v) { return std::string(v.name); },
       [](const proxima::Sum &s)        { return join(s.terms()); },   // and Product, Power, Call, Relation, Opaque
   );
-  const std::optional<Integer> n = e.as_integer();     // replaces the throwing integerValue()
+  const std::optional<Integer> n = e.as_integer();     // replaces the throwing integer_value()
   n.transform([](const Integer &i) { ... });           // C++23 monadic optional
   ```
 
@@ -1729,10 +1749,10 @@ they are ordered so that each is useful without the next.
 
   `Query::form(expr)` and `Query::text("gcd(12, 18)")` are the pure escape
   hatches by construction; `Statement::text("a: 7")` is the only thing that
-  invalidates a cache, and it says so in its name. `evalExpr`'s trap (§9.1)
+  invalidates a cache, and it says so in its name. `eval_expr`'s trap (§9.1)
   cannot be written. `fxt::unit` is the natural success type for `tell`.
 
-- [ ] **7. Traversal as folds and ranges.** `visit`, `anyOf` and `transform`
+- [ ] **7. Traversal as folds and ranges.** `visit`, `any_of` and `transform`
   are three special cases of one catamorphism:
 
   ```cpp
@@ -1741,10 +1761,10 @@ they are ordered so that each is useful without the next.
   std::generator<const Expr &> nodes(const Expr &e);
   ```
 
-  `transform` becomes `fold` with `withOperands`; returning `std::optional`
+  `transform` becomes `fold` with `with_operands`; returning `std::optional`
   from the rewrite callback says "unchanged" directly, retiring the
   representation-identity trick that `transform` needs today; and `nodes(e)`
-  makes `anyOf` a `std::ranges::any_of`. All pure, all in the core.
+  makes `any_of` a `std::ranges::any_of`. All pure, all in the core.
 
 - [ ] **8. Immutability where it is missing.** `Bindings::with(...)` beside
   `set`, or instead of it; `Config` is already a value copied into the
@@ -1760,7 +1780,7 @@ they are ordered so that each is useful without the next.
   `Expr::parse` returns `result<Expr>` (with `Cause::Parse` and the offset);
   `Compiled`'s constructor cannot return a value, so add `compile(expr,
   vars) -> result<Compiled>` and keep the constructor for those who want the
-  throw. `evalNumeric` → `result<double>` with `Cause::Eval`; `isEvaluable`
+  throw. `eval_numeric` → `result<double>` with `Cause::Eval`; `is_evaluable`
   stays as the cheap predicate.
 
 - [ ] **11. Depend on FXT, or mirror it?** Two honest options. (a) Depend:
@@ -1783,7 +1803,7 @@ they are ordered so that each is useful without the next.
   a pure value: it *is* the effect, and the design is honest about that.
 
 **Suggested order.** (1) The small, sharp things: `Feature::Prime`, the user
-directory, the parser's superlinear sum, `evalExpr`'s semantics, the frame
+directory, the parser's superlinear sum, `eval_expr`'s semantics, the frame
 nonce, the buffer cap. (2) The opaque `Integer`, which halves what consumers
 pay. (3) The naming decision, then `result` everywhere with the new
 `Failure` — items 1, 2 and 10, which change every signature once. (4)

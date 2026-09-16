@@ -13,8 +13,8 @@ namespace proxima {
 /// This library's version, as "major.minor.patch".
 inline constexpr const char *version = PROXIMA_VERSION_STRING;
 
-inline constexpr int versionMajor = PROXIMA_VERSION_MAJOR;
-inline constexpr int versionMinor = PROXIMA_VERSION_MINOR;
-inline constexpr int versionPatch = PROXIMA_VERSION_PATCH;
+inline constexpr int version_major = PROXIMA_VERSION_MAJOR;
+inline constexpr int version_minor = PROXIMA_VERSION_MINOR;
+inline constexpr int version_patch = PROXIMA_VERSION_PATCH;
 
 } // namespace proxima

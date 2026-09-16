@@ -24,9 +24,42 @@ Checks: >
   modernize-use-equals-delete,
   google-explicit-constructor,
   misc-unused-using-decls,
-  readability-braces-around-statements
+  readability-braces-around-statements,
+  readability-identifier-naming
 HeaderFilterRegex: '.*/(include/proxima|src)/.*'
 CheckOptions:
   # A cast to void is how a discarded result is marked deliberate here: the
   # asio calls in child_process.cpp report their error through an argument too.
   bugprone-unused-return-value.AllowCastToVoid: true
+  # The naming convention: snake_case for functions, variables, parameters and
+  # members, with a trailing underscore on private ones; PascalCase for types,
+  # concepts, template parameters and enumerators; kPascalCase for named
+  # constants. Exceptions: the public version constants, which a user reads
+  # as `proxima::version_major`; the standard's own alias names (`type`,
+  # `const_iterator`); the parser's k-prefixed precedence enumerators, which
+  # are constants; and a single capital, a mathematical name like `F`.
+  readability-identifier-naming.NamespaceCase: lower_case
+  readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.StructCase: CamelCase
+  readability-identifier-naming.UnionCase: CamelCase
+  readability-identifier-naming.EnumCase: CamelCase
+  readability-identifier-naming.TypeAliasCase: CamelCase
+  readability-identifier-naming.TypeAliasIgnoredRegexp: '^(type|value_type|size_type|difference_type|reference|const_reference|pointer|iterator|const_iterator)$'
+  readability-identifier-naming.TypedefCase: CamelCase
+  readability-identifier-naming.ConceptCase: CamelCase
+  readability-identifier-naming.TemplateParameterCase: CamelCase
+  readability-identifier-naming.EnumConstantCase: CamelCase
+  readability-identifier-naming.EnumConstantIgnoredRegexp: '^k[A-Z][A-Za-z0-9]*$'
+  readability-identifier-naming.FunctionCase: lower_case
+  readability-identifier-naming.MethodCase: lower_case
+  readability-identifier-naming.VariableCase: lower_case
+  readability-identifier-naming.VariableIgnoredRegexp: '^[A-Z]$'
+  readability-identifier-naming.ParameterCase: lower_case
+  readability-identifier-naming.MemberCase: lower_case
+  readability-identifier-naming.PrivateMemberSuffix: _
+  readability-identifier-naming.ProtectedMemberSuffix: _
+  readability-identifier-naming.ConstexprVariableCase: CamelCase
+  readability-identifier-naming.ConstexprVariablePrefix: k
+  readability-identifier-naming.GlobalConstantCase: CamelCase
+  readability-identifier-naming.GlobalConstantPrefix: k
+  readability-identifier-naming.ConstexprVariableIgnoredRegexp: '^version(_major|_minor|_patch)?$'

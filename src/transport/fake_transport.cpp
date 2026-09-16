@@ -16,7 +16,7 @@ std::string FakeTransport::receive(std::chrono::milliseconds timeout) {
         return {};
     }
     if (next_ >= responses_.size()) {
-        if (silentWhenExhausted_) {
+        if (silent_when_exhausted_) {
             // A real transport waits for output that does not come; so does
             // this, so a session's deadline passes in real time.
             std::this_thread::sleep_for(timeout);
@@ -27,12 +27,12 @@ std::string FakeTransport::receive(std::chrono::milliseconds timeout) {
 }
 
 bool FakeTransport::alive() const {
-    return !killed_ && (next_ < responses_.size() || silentWhenExhausted_);
+    return !killed_ && (next_ < responses_.size() || silent_when_exhausted_);
 }
 
 void FakeTransport::kill() {
     killed_ = true;
-    killedGracefully_ = true;
+    killed_gracefully_ = true;
 }
 
 void FakeTransport::terminate() {
@@ -40,7 +40,7 @@ void FakeTransport::terminate() {
     terminated_ = true;
 }
 
-std::string FakeTransport::sentText() const {
+std::string FakeTransport::sent_text() const {
     std::string all;
     for (const std::string &chunk : sent_) {
         all += chunk;

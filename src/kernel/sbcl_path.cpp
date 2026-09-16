@@ -20,7 +20,7 @@ namespace proxima::detail {
 #ifdef _WIN32
 namespace {
 
-bool isAscii(const std::wstring &text) {
+bool is_ascii(const std::wstring &text) {
     for (const wchar_t c : text) {
         if (c >= 0x80) {
             return false;
@@ -32,7 +32,7 @@ bool isAscii(const std::wstring &text) {
 } // namespace
 #endif
 
-std::filesystem::path sbclReadablePath(const std::filesystem::path &path) {
+std::filesystem::path sbcl_readable_path(const std::filesystem::path &path) {
 #ifdef _WIN32
     // Measured against the SBCL 2.6.7 that ships with Maxima 5.50: launched
     // with a core under a directory named "mæxima_中文", the runtime reports
@@ -48,7 +48,7 @@ std::filesystem::path sbclReadablePath(const std::filesystem::path &path) {
     // A short name is plain ASCII, so the runtime can open the file by it.
     // ASCII paths are left alone so that messages and SBCL's own
     // *CORE-PATHNAME* keep the names a person would recognise.
-    if (isAscii(path.native())) {
+    if (is_ascii(path.native())) {
         return path;
     }
     const DWORD needed = GetShortPathNameW(path.c_str(), nullptr, 0);
@@ -63,7 +63,7 @@ std::filesystem::path sbclReadablePath(const std::filesystem::path &path) {
     buffer.resize(written);
     // A volume with short-name generation turned off returns the long name for
     // every component that has no short one.
-    if (!isAscii(buffer)) {
+    if (!is_ascii(buffer)) {
         return path;
     }
     return std::filesystem::path(std::move(buffer));

@@ -22,7 +22,7 @@ namespace proxima::detail {
 ///
 /// Throws ParseError only for input that is not a well-formed Maxima term at
 /// all, such as an empty list where a head was expected.
-Expr fromMaxima(const SExpr &form);
+Expr from_maxima(const SExpr &form);
 
 /// Undoes Maxima's case inversion on a symbol name.
 ///
@@ -31,6 +31,6 @@ Expr fromMaxima(const SExpr &form);
 /// the same inversion applied again, which is why it is its own inverse.
 ///
 /// Exposed for testing.
-std::string decodeMaximaName(std::string_view raw);
+std::string decode_maxima_name(std::string_view raw);
 
 } // namespace proxima::detail

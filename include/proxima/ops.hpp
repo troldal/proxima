@@ -24,7 +24,7 @@ namespace proxima {
 /// proxima::Context still open on it by then — one with static storage duration,
 /// say — does not call into the destroyed kernel: its operations throw
 /// proxima::KernelError, and its destructor does nothing.
-Kernel &sharedKernel();
+Kernel &shared_kernel();
 
 /// Parses Maxima source into an expression.
 ///
@@ -33,7 +33,7 @@ Kernel &sharedKernel();
 /// than Expr::parse, because Expr belongs to a layer that knows nothing about
 /// the kernel.
 std::expected<Expr, Failure> parse(std::string_view source,
-                                   Kernel &kernel = sharedKernel());
+                                   Kernel &kernel = shared_kernel());
 
 // --- Operations with no ordinary way to fail ------------------------------
 //
@@ -42,27 +42,27 @@ std::expected<Expr, Failure> parse(std::string_view source,
 
 /// Differentiates `expr` with respect to `wrt`, `order` times.
 Expr diff(const Expr &expr, const Symbol &wrt, unsigned order = 1,
-          Kernel &kernel = sharedKernel());
+          Kernel &kernel = shared_kernel());
 
-Expr expand(const Expr &expr, Kernel &kernel = sharedKernel());
-Expr factor(const Expr &expr, Kernel &kernel = sharedKernel());
+Expr expand(const Expr &expr, Kernel &kernel = shared_kernel());
+Expr factor(const Expr &expr, Kernel &kernel = shared_kernel());
 
 /// Rational simplification: puts the expression over a common denominator
 /// and cancels, so (x^2 - 1)/(x - 1) is x + 1. It treats a function
 /// application, sin(x) or sqrt(x), as an opaque variable, so it knows no
 /// identities: for those, see trigsimp, trigexpand and radcan.
-Expr ratsimp(const Expr &expr, Kernel &kernel = sharedKernel());
+Expr ratsimp(const Expr &expr, Kernel &kernel = shared_kernel());
 
 /// The same as ratsimp, under the name it used to have. No CAS has a
 /// general-purpose "make it nicer", and this is not one; new code should say
 /// ratsimp, which says what happens.
-Expr simplify(const Expr &expr, Kernel &kernel = sharedKernel());
+Expr simplify(const Expr &expr, Kernel &kernel = shared_kernel());
 
 /// Substitutes `value` for every occurrence of `symbol`, in Maxima, which
 /// evaluates the result: `sin(x)` with x = 0 comes back as 0. For a rewrite
 /// that needs no kernel and does not evaluate, see proxima::replace.
 Expr subst(const Expr &expr, const Symbol &symbol, const Expr &value,
-           Kernel &kernel = sharedKernel());
+           Kernel &kernel = shared_kernel());
 
 // --- Operations that can ordinarily fail ----------------------------------
 
@@ -72,12 +72,12 @@ Expr subst(const Expr &expr, const Symbol &symbol, const Expr &value,
 /// treat that as an error: it returns the integral unevaluated, and that noun
 /// form is what this recognises.
 std::expected<Expr, Failure> integrate(const Expr &expr, const Symbol &wrt,
-                                       Kernel &kernel = sharedKernel());
+                                       Kernel &kernel = shared_kernel());
 
 /// Definite integral over [from, to].
 std::expected<Expr, Failure> integrate(const Expr &expr, const Symbol &wrt,
                                        const Expr &from, const Expr &to,
-                                       Kernel &kernel = sharedKernel());
+                                       Kernel &kernel = shared_kernel());
 
 /// Which side to approach from, for a limit that differs either way.
 enum class Side { Both, FromAbove, FromBelow };
@@ -95,7 +95,7 @@ enum class Side { Both, FromAbove, FromBelow };
 /// Approaching from one side can turn a Failure into a value.
 std::expected<Expr, Failure> limit(const Expr &expr, const Symbol &wrt,
                                    const Expr &to, Side side = Side::Both,
-                                   Kernel &kernel = sharedKernel());
+                                   Kernel &kernel = shared_kernel());
 
 /// Solves `equation` for `unknown`, returning one value per solution.
 ///
@@ -108,7 +108,7 @@ std::expected<Expr, Failure> limit(const Expr &expr, const Symbol &wrt,
 /// An empty result means Maxima found no solutions, which is itself an answer.
 std::expected<std::vector<Expr>, Failure>
 solve(const Expr &equation, const Symbol &unknown,
-      Kernel &kernel = sharedKernel());
+      Kernel &kernel = shared_kernel());
 
 /// One solution of a system: a value for each unknown, in the order they were
 /// asked for, so `solution[i]` belongs to `unknowns[i]`.
@@ -135,7 +135,7 @@ using Solution = std::vector<Expr>;
 /// caller wanting only fully determined solutions should check for them.
 std::expected<std::vector<Solution>, Failure>
 solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
-      Kernel &kernel = sharedKernel());
+      Kernel &kernel = shared_kernel());
 
 /// A differential equation's general solution, from Maxima's `ode2`, for a
 /// first- or second-order ordinary equation.
@@ -147,7 +147,7 @@ solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
 /// answering `false`.
 std::expected<Expr, Failure> ode2(const Expr &equation, const Symbol &dependent,
                                   const Symbol &independent,
-                                  Kernel &kernel = sharedKernel());
+                                  Kernel &kernel = shared_kernel());
 
 // --- Questions under the assumptions in force ------------------------------
 
@@ -159,39 +159,39 @@ enum class Truth { False, True, Unknown };
 /// `is(lt(a, 0))` False; with nothing assumed, both are Unknown.
 ///
 /// Throws proxima::MaximaError if Maxima answers anything but a truth value.
-Truth is(const Expr &predicate, Kernel &kernel = sharedKernel());
+Truth is(const Expr &predicate, Kernel &kernel = shared_kernel());
 
 // --- More rearrangement: these throw proxima::MaximaError if Maxima objects ------
 
 /// The Taylor expansion of `expr` in `wrt` about `at`, up to `wrt^order`, as
 /// an ordinary expression: `taylor(sin(x), x, 0, 5)` is x - x^3/6 + x^5/120.
 Expr taylor(const Expr &expr, const Symbol &wrt, const Expr &at, unsigned order,
-            Kernel &kernel = sharedKernel());
+            Kernel &kernel = shared_kernel());
 
 /// Simplifies with the Pythagorean identities: sin(x)^2 + cos(x)^2 is 1.
-Expr trigsimp(const Expr &expr, Kernel &kernel = sharedKernel());
+Expr trigsimp(const Expr &expr, Kernel &kernel = shared_kernel());
 
 /// Expands functions of sums and multiples: sin(2*x) is 2*cos(x)*sin(x).
-Expr trigexpand(const Expr &expr, Kernel &kernel = sharedKernel());
+Expr trigexpand(const Expr &expr, Kernel &kernel = shared_kernel());
 
 /// Simplifies logarithms, exponentials and radicals into a canonical form:
 /// exp(2*log(x)) is x^2. Treats sqrt(x^2) as x, as Maxima's radcan does.
-Expr radcan(const Expr &expr, Kernel &kernel = sharedKernel());
+Expr radcan(const Expr &expr, Kernel &kernel = shared_kernel());
 
 /// The partial-fraction decomposition of `expr` in `wrt`.
-Expr partfrac(const Expr &expr, const Symbol &wrt, Kernel &kernel = sharedKernel());
+Expr partfrac(const Expr &expr, const Symbol &wrt, Kernel &kernel = shared_kernel());
 
 /// Maxima's `float`: every number and numeric constant in `expr` as a
 /// double, symbols left alone — `%pi + x` is 3.141592653589793 + x. For
-/// evaluation with no kernel, see proxima::evalNumeric. (Not `float`, which C++
+/// evaluation with no kernel, see proxima::eval_numeric. (Not `float`, which C++
 /// reserves.)
-Expr toFloat(const Expr &expr, Kernel &kernel = sharedKernel());
+Expr to_float(const Expr &expr, Kernel &kernel = shared_kernel());
 
 /// The coefficient of `term^power` in `expr`. The expression is taken as it
 /// stands, not expanded first — as Maxima's coeff does — so the coefficient
 /// of x in (x + 1)^2 is 0; expand first to get 2.
 Expr coeff(const Expr &expr, const Expr &term, int power = 1,
-           Kernel &kernel = sharedKernel());
+           Kernel &kernel = shared_kernel());
 
 // --- Sums and products -------------------------------------------------------
 
@@ -202,13 +202,13 @@ Expr coeff(const Expr &expr, const Expr &term, int power = 1,
 /// the sum unevaluated. Maxima's `simpsum` is on for this evaluation only.
 std::expected<Expr, Failure> sum(const Expr &term, const Symbol &index,
                                  const Expr &from, const Expr &to,
-                                 Kernel &kernel = sharedKernel());
+                                 Kernel &kernel = shared_kernel());
 
 /// The product of `term` for `index` from `from` to `to`, in closed form. A
 /// Failure when there is none — which, for symbolic bounds, is usual.
 std::expected<Expr, Failure> product(const Expr &term, const Symbol &index,
                                      const Expr &from, const Expr &to,
-                                     Kernel &kernel = sharedKernel());
+                                     Kernel &kernel = shared_kernel());
 
 // --- Roots, numerically ----------------------------------------------------
 
@@ -218,22 +218,22 @@ std::expected<Expr, Failure> product(const Expr &term, const Symbol &index,
 /// rational coefficients.
 std::size_t nroots(const Expr &polynomial, const Expr &low = Expr::symbol("minf"),
                    const Expr &high = Expr::symbol("inf"),
-                   Kernel &kernel = sharedKernel());
+                   Kernel &kernel = shared_kernel());
 
 /// The distinct real roots of a univariate polynomial, each once however
 /// repeated, as exact rationals within Maxima's `rootsepsilon` (1e-7) of the
 /// root — or exactly, when the root is rational. In the order Maxima gives
 /// them, which is not sorted. Throws proxima::MaximaError for anything but a
 /// univariate polynomial with rational coefficients.
-std::vector<Expr> realroots(const Expr &polynomial, Kernel &kernel = sharedKernel());
+std::vector<Expr> realroots(const Expr &polynomial, Kernel &kernel = shared_kernel());
 
 /// A root of `expr` in `wrt` between `low` and `high`, found numerically by
 /// Maxima's `find_root`. The expression must change sign across the interval.
 ///
 /// A Failure, with Maxima's message, when it does not; and when the expression
 /// does not evaluate to a number there, because some other symbol is in it.
-std::expected<double, Failure> findRoot(const Expr &expr, const Symbol &wrt,
+std::expected<double, Failure> find_root(const Expr &expr, const Symbol &wrt,
                                         double low, double high,
-                                        Kernel &kernel = sharedKernel());
+                                        Kernel &kernel = shared_kernel());
 
 } // namespace proxima

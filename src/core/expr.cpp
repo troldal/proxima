@@ -12,7 +12,7 @@
 namespace proxima {
 
 namespace detail {
-Expr makeExpr(std::shared_ptr<const Node> node) {
+Expr make_expr(std::shared_ptr<const Node> node) {
     return Expr(std::move(node));
 }
 } // namespace detail
@@ -23,35 +23,35 @@ using detail::Application;
 using detail::Fraction;
 using detail::Node;
 
-void hashCombine(std::size_t &seed, std::size_t value) {
+void hash_combine(std::size_t &seed, std::size_t value) {
     // The usual mixing constant; adequate for a hash table key, and cheap.
     seed ^= value + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
 }
 
-std::size_t hashOf(const Node &node) {
+std::size_t hash_of(const Node &node) {
     std::size_t seed = std::hash<int>{}(static_cast<int>(node.kind));
 
     switch (node.kind) {
     case Kind::Integer:
-        hashCombine(seed, std::hash<Integer>{}(node.integer()));
+        hash_combine(seed, std::hash<Integer>{}(node.integer()));
         break;
     case Kind::Rational:
-        hashCombine(seed, std::hash<Integer>{}(node.fraction().numerator));
-        hashCombine(seed, std::hash<Integer>{}(node.fraction().denominator));
+        hash_combine(seed, std::hash<Integer>{}(node.fraction().numerator));
+        hash_combine(seed, std::hash<Integer>{}(node.fraction().denominator));
         break;
     case Kind::Real:
         // 0.0 == -0.0, so the two must hash alike, and MSVC's std::hash<double>
         // hashes the bit pattern, which differs. (NaN, the other value whose
         // equality and bits disagree, is refused by Expr::real.)
-        hashCombine(seed, std::hash<double>{}(node.real() == 0.0 ? 0.0 : node.real()));
+        hash_combine(seed, std::hash<double>{}(node.real() == 0.0 ? 0.0 : node.real()));
         break;
     case Kind::Symbol:
     case Kind::Opaque:
     case Kind::Function:
-        hashCombine(seed, std::hash<std::string>{}(node.text()));
+        hash_combine(seed, std::hash<std::string>{}(node.text()));
         break;
     case Kind::Relation:
-        hashCombine(seed, std::hash<int>{}(static_cast<int>(node.relOp)));
+        hash_combine(seed, std::hash<int>{}(static_cast<int>(node.rel_op)));
         break;
     case Kind::Add:
     case Kind::Mul:
@@ -63,40 +63,40 @@ std::size_t hashOf(const Node &node) {
     // normaliser (PLAN.md step 10) is what makes x+1 and 1+x agree by putting
     // their operands in a canonical order first.
     for (const Expr &arg : node.args()) {
-        hashCombine(seed, arg.hash());
+        hash_combine(seed, arg.hash());
     }
     return seed;
 }
 
 Expr finish(Node node) {
-    node.hash = hashOf(node);
-    return detail::makeExpr(std::make_shared<const Node>(std::move(node)));
+    node.hash = hash_of(node);
+    return detail::make_expr(std::make_shared<const Node>(std::move(node)));
 }
 
-[[noreturn]] void wrongKind(const char *wanted, Kind actual) {
+[[noreturn]] void wrong_kind(const char *wanted, Kind actual) {
     throw Error(std::string("expression is not ") + wanted + " (its kind is "
-                + std::string(kindName(actual)) + ")");
+                + std::string(kind_name(actual)) + ")");
 }
 
 } // namespace
 
 // --- construction ---------------------------------------------------------
 
-Expr Expr::makeInteger(Integer value) {
+Expr Expr::make_integer(Integer value) {
     Node node;
     node.kind = Kind::Integer;
     node.payload = std::move(value);
     return finish(std::move(node));
 }
 
-Expr::Expr() : Expr(makeInteger(0)) {}
+Expr::Expr() : Expr(make_integer(0)) {}
 
 Expr Expr::integer(Integer value) {
-    return makeInteger(std::move(value));
+    return make_integer(std::move(value));
 }
 
 Expr Expr::rational(Integer numerator, Integer denominator) {
-    if (denominator.isZero()) {
+    if (denominator.is_zero()) {
         throw Error("rational with zero denominator");
     }
 
@@ -104,16 +104,16 @@ Expr Expr::rational(Integer numerator, Integer denominator) {
     // simply reduction. This used to need three special cases for the extreme
     // negative value alone.
     const Integer divisor = gcd(numerator, denominator);
-    if (!divisor.isZero()) {
+    if (!divisor.is_zero()) {
         numerator = numerator / divisor;
         denominator = denominator / divisor;
     }
-    if (denominator.isNegative()) {
+    if (denominator.is_negative()) {
         numerator = -numerator;
         denominator = -denominator;
     }
     if (denominator == Integer(1)) {
-        return makeInteger(std::move(numerator));
+        return make_integer(std::move(numerator));
     }
 
     Node node;
@@ -163,7 +163,7 @@ Expr Expr::function(std::string head, std::vector<Expr> args) {
 Expr Expr::relation(RelOp op, Expr lhs, Expr rhs) {
     Node node;
     node.kind = Kind::Relation;
-    node.relOp = op;
+    node.rel_op = op;
     node.payload = std::vector<Expr>{std::move(lhs), std::move(rhs)};
     return finish(std::move(node));
 }
@@ -178,7 +178,7 @@ Expr Expr::opaque(std::string text) {
 Expr Expr::add(std::vector<Expr> terms) {
     // Normalised at construction, so every Expr in existence is in canonical
     // form and equality never has to re-derive it.
-    terms = detail::normalizeSum(std::move(terms));
+    terms = detail::normalize_sum(std::move(terms));
     if (terms.empty()) {
         return integer(0);
     }
@@ -192,7 +192,7 @@ Expr Expr::add(std::vector<Expr> terms) {
 }
 
 Expr Expr::mul(std::vector<Expr> factors) {
-    factors = detail::normalizeProduct(std::move(factors));
+    factors = detail::normalize_product(std::move(factors));
     if (factors.empty()) {
         return integer(1);
     }
@@ -206,7 +206,7 @@ Expr Expr::mul(std::vector<Expr> factors) {
 }
 
 Expr Expr::pow(Expr base, Expr exponent) {
-    if (auto simplified = detail::normalizePower(base, exponent)) {
+    if (auto simplified = detail::normalize_power(base, exponent)) {
         return *simplified;
     }
     Node node;
@@ -221,17 +221,17 @@ Kind Expr::kind() const {
     return node_->kind;
 }
 
-bool Expr::isNumber() const {
+bool Expr::is_number() const {
     const Kind k = node_->kind;
     return k == Kind::Integer || k == Kind::Rational || k == Kind::Real;
 }
 
-bool Expr::isNegativeNumber() const {
+bool Expr::is_negative_number() const {
     switch (node_->kind) {
     case Kind::Integer:
-        return node_->integer().isNegative();
+        return node_->integer().is_negative();
     case Kind::Rational:
-        return node_->fraction().numerator.isNegative(); // Denominator is positive.
+        return node_->fraction().numerator.is_negative(); // Denominator is positive.
     case Kind::Real:
         return node_->real() < 0.0;
     default:
@@ -239,9 +239,9 @@ bool Expr::isNegativeNumber() const {
     }
 }
 
-Integer Expr::integerValue() const {
+Integer Expr::integer_value() const {
     if (node_->kind != Kind::Integer) {
-        wrongKind("an integer", node_->kind);
+        wrong_kind("an integer", node_->kind);
     }
     return node_->integer();
 }
@@ -251,7 +251,7 @@ Integer Expr::numerator() const {
         return node_->integer();
     }
     if (node_->kind != Kind::Rational) {
-        wrongKind("a rational", node_->kind);
+        wrong_kind("a rational", node_->kind);
     }
     return node_->fraction().numerator;
 }
@@ -261,35 +261,35 @@ Integer Expr::denominator() const {
         return Integer(1);
     }
     if (node_->kind != Kind::Rational) {
-        wrongKind("a rational", node_->kind);
+        wrong_kind("a rational", node_->kind);
     }
     return node_->fraction().denominator;
 }
 
-double Expr::realValue() const {
+double Expr::real_value() const {
     if (node_->kind != Kind::Real) {
-        wrongKind("a real", node_->kind);
+        wrong_kind("a real", node_->kind);
     }
     return node_->real();
 }
 
 const std::string &Expr::name() const {
     if (node_->kind != Kind::Symbol && node_->kind != Kind::Function) {
-        wrongKind("a symbol or function", node_->kind);
+        wrong_kind("a symbol or function", node_->kind);
     }
     return node_->text();
 }
 
-RelOp Expr::relationOp() const {
+RelOp Expr::relation_op() const {
     if (node_->kind != Kind::Relation) {
-        wrongKind("a relation", node_->kind);
+        wrong_kind("a relation", node_->kind);
     }
-    return node_->relOp;
+    return node_->rel_op;
 }
 
-const std::string &Expr::opaqueText() const {
+const std::string &Expr::opaque_text() const {
     if (node_->kind != Kind::Opaque) {
-        wrongKind("opaque", node_->kind);
+        wrong_kind("opaque", node_->kind);
     }
     return node_->text();
 }
@@ -315,7 +315,7 @@ std::size_t Expr::hash() const {
     return node_->hash;
 }
 
-bool detail::sameRepresentation(const Expr &lhs, const Expr &rhs) noexcept {
+bool detail::same_representation(const Expr &lhs, const Expr &rhs) noexcept {
     return lhs.node_ == rhs.node_;
 }
 
@@ -343,7 +343,7 @@ bool Expr::operator==(const Expr &other) const {
     case Kind::Function:
         return a.text() == b.text() && a.args() == b.args();
     case Kind::Relation:
-        return a.relOp == b.relOp && a.args() == b.args();
+        return a.rel_op == b.rel_op && a.args() == b.args();
     case Kind::Add:
     case Kind::Mul:
     case Kind::Pow:
@@ -352,8 +352,8 @@ bool Expr::operator==(const Expr &other) const {
     return false;
 }
 
-std::weak_ordering canonicalOrder(const Expr &lhs, const Expr &rhs) {
-    const int order = detail::compareExpr(lhs, rhs);
+std::weak_ordering canonical_order(const Expr &lhs, const Expr &rhs) {
+    const int order = detail::compare_expr(lhs, rhs);
     if (order < 0) {
         return std::weak_ordering::less;
     }
@@ -381,14 +381,14 @@ Expr operator/(const Expr &lhs, const Expr &rhs) {
     // coefficient, not a negative power. Without this the two spell the same
     // value differently and never compare equal.
     if (rhs.is(Kind::Integer) || rhs.is(Kind::Rational)) {
-        if (!rhs.numerator().isZero()) {
+        if (!rhs.numerator().is_zero()) {
             return lhs * Expr::rational(rhs.denominator(), rhs.numerator());
         }
-    } else if (rhs.is(Kind::Real) && rhs.realValue() != 0.0
-               && std::isfinite(1.0 / rhs.realValue())) {
+    } else if (rhs.is(Kind::Real) && rhs.real_value() != 0.0
+               && std::isfinite(1.0 / rhs.real_value())) {
         // Not when the reciprocal overflows, as dividing by 1e-320 does: that
         // stays a negative power below, rather than becoming infinity.
-        return lhs * Expr::real(1.0 / rhs.realValue());
+        return lhs * Expr::real(1.0 / rhs.real_value());
     }
     // Anything else, including division by zero, becomes a negative power —
     // which is also how Maxima represents it, and lets Maxima be the one to
@@ -402,11 +402,11 @@ Expr operator-(const Expr &operand) {
     // Maxima represents negation internally too.
     switch (operand.kind()) {
     case Kind::Integer:
-        return Expr::integer(-operand.integerValue());
+        return Expr::integer(-operand.integer_value());
     case Kind::Rational:
         return Expr::rational(-operand.numerator(), operand.denominator());
     case Kind::Real:
-        return Expr::real(-operand.realValue());
+        return Expr::real(-operand.real_value());
     default:
         break;
     }
@@ -450,7 +450,7 @@ Expr rhs(const Expr &relation) {
     return relation.arg(1);
 }
 
-std::string_view kindName(Kind kind) {
+std::string_view kind_name(Kind kind) {
     switch (kind) {
     case Kind::Integer:
         return "Integer";
@@ -477,7 +477,7 @@ std::string_view kindName(Kind kind) {
     return "?";
 }
 
-std::string_view symbolFor(RelOp op) {
+std::string_view symbol_for(RelOp op) {
     switch (op) {
     case RelOp::Equal:
         return "=";

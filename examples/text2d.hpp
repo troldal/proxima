@@ -98,7 +98,7 @@ inline std::string centred(const std::string &row, std::size_t width) {
 } // namespace detail
 
 struct Renderer {
-    Box integer(const proxima::Integer &value) { return text(value.toString()); }
+    Box integer(const proxima::Integer &value) { return text(value.to_string()); }
 
     Box real(double value) {
         std::string s = std::to_string(value);
@@ -235,7 +235,7 @@ struct Renderer {
 
     Box relation(proxima::RelOp op, const Box &lhs, const Box &rhs) {
         return detail::beside(
-            {lhs, text(" " + std::string(proxima::symbolFor(op)) + " "), rhs});
+            {lhs, text(" " + std::string(proxima::symbol_for(op)) + " "), rhs});
     }
 
     /// Brackets that grow with their contents.
@@ -259,16 +259,16 @@ struct Renderer {
 
     // --- the notation delimits itself in three places ---------------------
 
-    proxima::Strength strengthOf(proxima::Construct construct) {
+    proxima::Strength strength_of(proxima::Construct construct) {
         // A drawn fraction or radical needs no brackets around it.
         if (construct == proxima::Construct::Fraction
             || construct == proxima::Construct::Root) {
             return proxima::Strength::Atom;
         }
-        return proxima::defaultStrength(construct);
+        return proxima::default_strength(construct);
     }
 
-    proxima::Strength contextFor(proxima::Slot slot) {
+    proxima::Strength context_for(proxima::Slot slot) {
         switch (slot) {
         case proxima::Slot::Numerator:
         case proxima::Slot::Denominator:
@@ -278,7 +278,7 @@ struct Renderer {
             // already shows where the subexpression begins and ends.
             return proxima::Strength::Loosest;
         default:
-            return proxima::defaultContext(slot);
+            return proxima::default_context(slot);
         }
     }
 

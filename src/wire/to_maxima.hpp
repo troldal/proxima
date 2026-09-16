@@ -12,7 +12,7 @@ namespace proxima::detail {
 /// to read and evaluate.
 ///
 /// The outbound half of the translation layer, and the mirror image of
-/// fromMaxima. Before this existed the outbound direction was *text*:
+/// from_maxima. Before this existed the outbound direction was *text*:
 /// Expr::str() rendered infix, Maxima re-parsed it, and any character the
 /// reader disliked — a `$` in an Opaque, a space in a symbol name — failed in
 /// Maxima's *reader*, before `errcatch` was ever entered, which produced no
@@ -26,17 +26,17 @@ namespace proxima::detail {
 ///
 /// Throws proxima::Error for a value with no Maxima spelling, which today means
 /// only a NaN.
-std::string toMaxima(const Expr &expr);
+std::string to_maxima(const Expr &expr);
 
 /// Encodes a symbol name as Maxima stores it: `x` is `$X`, `X` is `|$x|`,
-/// `%pi` is `$%PI`. The inverse of decodeMaximaName, bar-quoted wherever the
+/// `%pi` is `$%PI`. The inverse of decode_maxima_name, bar-quoted wherever the
 /// Lisp reader would otherwise alter or reject the name. Exposed for testing.
-std::string encodeMaximaName(std::string_view name);
+std::string encode_maxima_name(std::string_view name);
 
 /// Renders `text` as a string literal with backslash escapes — the same
 /// syntax for Maxima source and for the Lisp reader, which is what lets one
 /// function serve both. Exposed for testing and for the session layer, which
 /// wraps every request in one of these.
-std::string stringLiteral(std::string_view text);
+std::string string_literal(std::string_view text);
 
 } // namespace proxima::detail

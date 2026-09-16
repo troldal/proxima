@@ -22,7 +22,7 @@ namespace proxima::detail {
 /// Maxima produces bignums in ordinary use: `30!` is
 /// `265252859812191058636308480000000`, well past `int64`. Storing the digits
 /// keeps the reader lossless and leaves the choice of numeric representation to
-/// the layer that has to make it. Use asInt64() when the value fits and the
+/// the layer that has to make it. Use as_int64() when the value fits and the
 /// digits otherwise.
 class SExpr {
 public:
@@ -43,29 +43,29 @@ public:
     static SExpr list(std::vector<SExpr> items);
 
     Kind kind() const { return kind_; }
-    bool isInteger() const { return kind_ == Kind::Integer; }
-    bool isReal() const { return kind_ == Kind::Real; }
-    bool isSymbol() const { return kind_ == Kind::Symbol; }
-    bool isString() const { return kind_ == Kind::String; }
-    bool isList() const { return kind_ == Kind::List; }
+    bool is_integer() const { return kind_ == Kind::Integer; }
+    bool is_real() const { return kind_ == Kind::Real; }
+    bool is_symbol() const { return kind_ == Kind::Symbol; }
+    bool is_string() const { return kind_ == Kind::String; }
+    bool is_list() const { return kind_ == Kind::List; }
 
     /// True when this is the symbol `name`. The common test in the mapping
     /// layer, where most questions are "is this head MPLUS?".
-    bool isSymbol(std::string_view name) const {
+    bool is_symbol(std::string_view name) const {
         return kind_ == Kind::Symbol && text_ == name;
     }
 
     /// The digits of an Integer, sign included: an optional sign and at least
     /// one digit, which the reader guarantees. Meaningless for other kinds,
-    /// whose text it would return — check isInteger() first.
+    /// whose text it would return — check is_integer() first.
     const std::string &digits() const { return text_; }
 
     /// The Integer's value, or nullopt when it does not fit in 64 bits.
-    std::optional<std::int64_t> asInt64() const;
+    std::optional<std::int64_t> as_int64() const;
 
-    double realValue() const { return real_; }
-    const std::string &symbolName() const { return text_; }
-    const std::string &stringValue() const { return text_; }
+    double real_value() const { return real_; }
+    const std::string &symbol_name() const { return text_; }
+    const std::string &string_value() const { return text_; }
 
     const std::vector<SExpr> &items() const { return items_; }
 
@@ -77,9 +77,9 @@ public:
     /// reaching past the end means the reply was not the shape expected.
     const SExpr &at(std::size_t index) const;
 
-    /// Renders back to s-expression text. Round-trips through parseSExpr for
+    /// Renders back to s-expression text. Round-trips through parse_sexpr for
     /// everything the reader accepts; used for diagnostics and test failures.
-    std::string toString() const;
+    std::string to_string() const;
 
     bool operator==(const SExpr &other) const;
 
@@ -101,7 +101,7 @@ private:
 /// are rejected explicitly rather than silently mis-read — Maxima's term
 /// representation uses proper lists throughout, so one appearing would mean
 /// something unmodelled had arrived.
-SExpr parseSExpr(std::string_view text);
+SExpr parse_sexpr(std::string_view text);
 
 /// Nesting limit, chosen so that a pathological reply cannot overflow the stack
 /// when the resulting tree is destroyed. Far beyond any real expression.

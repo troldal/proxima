@@ -14,20 +14,20 @@
 
 using proxima::Expr;
 using proxima::Kind;
-using proxima::detail::decodeMaximaName;
-using proxima::detail::fromMaxima;
-using proxima::detail::parseSExpr;
+using proxima::detail::decode_maxima_name;
+using proxima::detail::from_maxima;
+using proxima::detail::parse_sexpr;
 
 namespace {
 
 /// Reads an internal form and renders it back as Maxima infix — the whole
 /// inbound path in one step, which is what most of these cases care about.
-std::string mapped(const char *internalForm) {
-    return fromMaxima(parseSExpr(internalForm)).str();
+std::string mapped(const char *internal_form) {
+    return from_maxima(parse_sexpr(internal_form)).str();
 }
 
-Expr mapExpr(const char *internalForm) {
-    return fromMaxima(parseSExpr(internalForm));
+Expr map_expr(const char *internal_form) {
+    return from_maxima(parse_sexpr(internal_form));
 }
 
 } // namespace
@@ -36,19 +36,19 @@ TEST_CASE("symbol names undo Maxima's case inversion") {
     // Maxima stores x as $X and X as $x, inverting uniformly-cased names and
     // leaving mixed-case ones (which reached it bar-quoted) alone. Getting this
     // wrong would rename every variable in the library.
-    CHECK(decodeMaximaName("X") == "x");
-    CHECK(decodeMaximaName("x") == "X");
-    CHECK(decodeMaximaName("xY") == "xY");
-    CHECK(decodeMaximaName("X_1") == "x_1");
-    CHECK(decodeMaximaName("ALPHA") == "alpha");
-    CHECK(decodeMaximaName("%GAMMA") == "%gamma");
-    CHECK(decodeMaximaName("") == "");
-    CHECK(decodeMaximaName("_") == "_");
+    CHECK(decode_maxima_name("X") == "x");
+    CHECK(decode_maxima_name("x") == "X");
+    CHECK(decode_maxima_name("xY") == "xY");
+    CHECK(decode_maxima_name("X_1") == "x_1");
+    CHECK(decode_maxima_name("ALPHA") == "alpha");
+    CHECK(decode_maxima_name("%GAMMA") == "%gamma");
+    CHECK(decode_maxima_name("") == "");
+    CHECK(decode_maxima_name("_") == "_");
 
     SUBCASE("decoding is its own inverse") {
         for (const char *name : {"X", "x", "xY", "X_1", "%PI"}) {
             CAPTURE(name);
-            CHECK(decodeMaximaName(decodeMaximaName(name)) == std::string(name));
+            CHECK(decode_maxima_name(decode_maxima_name(name)) == std::string(name));
         }
     }
 }
@@ -68,7 +68,7 @@ TEST_CASE("atoms") {
 }
 
 TEST_CASE("exact rationals stay exact") {
-    const Expr value = mapExpr("((RAT SIMP) 11 15)");
+    const Expr value = map_expr("((RAT SIMP) 11 15)");
     CHECK(value.kind() == Kind::Rational);
     CHECK(value.numerator() == 11);
     CHECK(value.denominator() == 15);
@@ -78,7 +78,7 @@ TEST_CASE("exact rationals stay exact") {
 TEST_CASE("a large integer arrives as a number, exactly") {
     // 30!. proxima::Integer is unbounded, so this is an Integer node rather than
     // the Opaque text it used to become.
-    const Expr value = mapExpr("265252859812191058636308480000000");
+    const Expr value = map_expr("265252859812191058636308480000000");
     CHECK(value.kind() == Kind::Integer);
     CHECK(value.str() == "265252859812191058636308480000000");
 }
@@ -89,25 +89,25 @@ TEST_CASE("a rational with large parts is still a rational") {
     // printing.
     // 31 rather than 3: 30! is divisible by 3, so that would reduce away and
     // test the wrong thing. 31 is prime and larger than 30, so it does not.
-    const Expr value = mapExpr(
+    const Expr value = map_expr(
         "((RAT SIMP) 265252859812191058636308480000000 31)");
     CHECK(value.kind() == Kind::Rational);
-    CHECK(value.numerator().toString() == "265252859812191058636308480000000");
+    CHECK(value.numerator().to_string() == "265252859812191058636308480000000");
     CHECK(value.denominator() == proxima::Integer(31));
 
     SUBCASE("and a reducible one is reduced") {
-        const Expr reducible = mapExpr(
+        const Expr reducible = map_expr(
             "((RAT SIMP) 265252859812191058636308480000000 3)");
-        CHECK(reducible.numerator().toString()
+        CHECK(reducible.numerator().to_string()
               == "88417619937397019545436160000000");
         CHECK(reducible.denominator() == proxima::Integer(1));
     }
 }
 
 TEST_CASE("operators map to typed nodes") {
-    CHECK(mapExpr("((MPLUS SIMP) 1 $X)").kind() == Kind::Add);
-    CHECK(mapExpr("((MTIMES SIMP) 2 $X)").kind() == Kind::Mul);
-    CHECK(mapExpr("((MEXPT SIMP) $X 2)").kind() == Kind::Pow);
+    CHECK(map_expr("((MPLUS SIMP) 1 $X)").kind() == Kind::Add);
+    CHECK(map_expr("((MTIMES SIMP) 2 $X)").kind() == Kind::Mul);
+    CHECK(map_expr("((MEXPT SIMP) $X 2)").kind() == Kind::Pow);
 
     CHECK(mapped("((MPLUS SIMP) 1 $X)") == "1 + x");
     CHECK(mapped("((MTIMES SIMP) 2 $X ((%SIN SIMP) $X))") == "2*x*sin(x)");
@@ -117,13 +117,13 @@ TEST_CASE("operators map to typed nodes") {
 TEST_CASE("extra head flags are ignored") {
     // Heads carry simplification flags beyond SIMP; only the first element
     // names the operator.
-    CHECK(mapExpr("((MEXPT SIMP RATSIMP) $X 2)").kind() == Kind::Pow);
+    CHECK(map_expr("((MEXPT SIMP RATSIMP) $X 2)").kind() == Kind::Pow);
     CHECK(mapped("((MEXPT SIMP RATSIMP) $X 2)") == "x^2");
 }
 
 TEST_CASE("relations map to typed nodes rather than applications") {
-    CHECK(mapExpr("((MEQUAL SIMP) $X 1)").kind() == Kind::Relation);
-    CHECK(mapExpr("((MEQUAL SIMP) $X 1)").relationOp() == proxima::RelOp::Equal);
+    CHECK(map_expr("((MEQUAL SIMP) $X 1)").kind() == Kind::Relation);
+    CHECK(map_expr("((MEQUAL SIMP) $X 1)").relation_op() == proxima::RelOp::Equal);
 
     CHECK(mapped("((MEQUAL SIMP) $X 1)") == "x = 1");
     CHECK(mapped("((MGREATERP SIMP) $X 0)") == "x > 0");
@@ -168,7 +168,7 @@ TEST_CASE("a bigfloat keeps its exact value, though not its bigfloat-ness") {
     // bfloat(%pi): mantissa * 2^(exponent - bits(mantissa)). There is no
     // arbitrary-precision float to map onto, so it becomes the exact rational
     // it equals. Nothing is rounded; sending it back gives a rational.
-    const Expr value = mapExpr("((BIGFLOAT SIMP 56) 56593902016227522 2)");
+    const Expr value = map_expr("((BIGFLOAT SIMP 56) 56593902016227522 2)");
     CHECK(value.kind() == Kind::Opaque);
     CHECK(value.str() == "(56593902016227522/2^54)");
 }
@@ -179,15 +179,15 @@ TEST_CASE("strings become Maxima source text, re-escaped") {
 }
 
 TEST_CASE("a malformed term is rejected rather than half-mapped") {
-    CHECK_THROWS_AS(fromMaxima(parseSExpr("()")), proxima::ParseError);
-    CHECK_THROWS_AS(fromMaxima(parseSExpr("((42 SIMP) 1)")), proxima::ParseError);
+    CHECK_THROWS_AS(from_maxima(parse_sexpr("()")), proxima::ParseError);
+    CHECK_THROWS_AS(from_maxima(parse_sexpr("((42 SIMP) 1)")), proxima::ParseError);
 
     SUBCASE("including a rational that is not one") {
         // These used to become Opaque text, "(1/0)" and "($X/2)", and so
         // survived as something that looked like an answer.
-        CHECK_THROWS_AS(fromMaxima(parseSExpr("((RAT SIMP) 1 0)")), proxima::ParseError);
-        CHECK_THROWS_AS(fromMaxima(parseSExpr("((RAT SIMP) $X 2)")), proxima::ParseError);
-        CHECK_THROWS_AS(fromMaxima(parseSExpr("((RAT SIMP) 1)")), proxima::ParseError);
+        CHECK_THROWS_AS(from_maxima(parse_sexpr("((RAT SIMP) 1 0)")), proxima::ParseError);
+        CHECK_THROWS_AS(from_maxima(parse_sexpr("((RAT SIMP) $X 2)")), proxima::ParseError);
+        CHECK_THROWS_AS(from_maxima(parse_sexpr("((RAT SIMP) 1)")), proxima::ParseError);
     }
 }
 
@@ -215,9 +215,9 @@ TEST_CASE("every recorded Maxima reply maps to something printable") {
 
         CAPTURE(expression);
         CAPTURE(form);
-        Expr mappedExpr;
-        REQUIRE_NOTHROW(mappedExpr = fromMaxima(parseSExpr(form)));
-        CHECK_FALSE(mappedExpr.str().empty());
+        Expr mapped_expr;
+        REQUIRE_NOTHROW(mapped_expr = from_maxima(parse_sexpr(form)));
+        CHECK_FALSE(mapped_expr.str().empty());
         ++cases;
     }
     CHECK(cases >= 35);

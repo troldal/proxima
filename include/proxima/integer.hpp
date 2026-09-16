@@ -43,8 +43,8 @@ class Integer;
 namespace detail {
 // The implementations behind proxima::abs and proxima::gcd, which are templates only to
 // constrain what they accept.
-Integer absOf(const Integer &value);
-Integer gcdOf(const Integer &a, const Integer &b);
+Integer abs_of(const Integer &value);
+Integer gcd_of(const Integer &a, const Integer &b);
 } // namespace detail
 
 /// An exact integer of unbounded size.
@@ -102,21 +102,21 @@ public:
 
     /// -1, 0 or 1.
     int sign() const;
-    bool isZero() const { return value_.is_zero(); }
-    bool isNegative() const { return sign() < 0; }
+    bool is_zero() const { return value_.is_zero(); }
+    bool is_negative() const { return sign() < 0; }
 
     /// The value, when it fits in 64 bits.
-    std::optional<std::int64_t> toInt64() const;
+    std::optional<std::int64_t> to_int64() const;
 
     /// True when the value fits in 64 bits, which is the common case.
     ///
     /// cpp_int holds a value that small within the object, so this also means
     /// no heap storage is in use — but the guarantee this makes, and the one
     /// the fast paths below rest on, is about the range and not the allocation.
-    bool isSmall() const;
+    bool is_small() const;
 
-    std::string toString() const;
-    double toDouble() const;
+    std::string to_string() const;
+    double to_double() const;
     std::size_t hash() const;
 
     Integer operator-() const;
@@ -139,8 +139,8 @@ public:
     std::strong_ordering operator<=>(const Integer &other) const;
 
 private:
-    friend Integer detail::absOf(const Integer &value);
-    friend Integer detail::gcdOf(const Integer &a, const Integer &b);
+    friend Integer detail::abs_of(const Integer &value);
+    friend Integer detail::gcd_of(const Integer &a, const Integer &b);
 
     using Backend = boost::multiprecision::cpp_int;
 
@@ -155,17 +155,17 @@ private:
 /// proxima::ExprArgument for why that matters.
 template <std::same_as<Integer> T>
 Integer abs(const T &value) {
-    return detail::absOf(value);
+    return detail::abs_of(value);
 }
 
 namespace detail {
 // Returns its own parameter by reference: only ever called on gcd's arguments,
 // which outlive the call the reference is used in.
-inline const Integer &asInteger(const Integer &value) {
+inline const Integer &as_integer(const Integer &value) {
     return value; // NOLINT(bugprone-return-const-ref-from-parameter)
 }
 template <IntegralNumber T>
-Integer asInteger(T value) {
+Integer as_integer(T value) {
     return Integer(value);
 }
 } // namespace detail
@@ -179,10 +179,10 @@ template <typename A, typename B>
     requires(std::same_as<A, Integer> && (std::same_as<B, Integer> || IntegralNumber<B>))
             || (IntegralNumber<A> && std::same_as<B, Integer>)
 Integer gcd(const A &a, const B &b) {
-    return detail::gcdOf(detail::asInteger(a), detail::asInteger(b));
+    return detail::gcd_of(detail::as_integer(a), detail::as_integer(b));
 }
 
-/// Writes the decimal digits, as toString() does.
+/// Writes the decimal digits, as to_string() does.
 std::ostream &operator<<(std::ostream &out, const Integer &value);
 
 } // namespace proxima
@@ -199,7 +199,7 @@ struct std::hash<proxima::Integer> {
 template <>
 struct std::formatter<proxima::Integer, char> : std::formatter<std::string_view, char> {
     auto format(const proxima::Integer &value, std::format_context &context) const {
-        const std::string digits = value.toString();
+        const std::string digits = value.to_string();
         return std::formatter<std::string_view, char>::format(std::string_view(digits),
                                                               context);
     }

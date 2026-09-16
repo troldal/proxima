@@ -16,7 +16,7 @@ namespace {
 
 /// Heads whose Maxima internal spelling is not `$NAME`.
 ///
-/// The reverse of fromMaxima's display-name table, plus `list`: Maxima's
+/// The reverse of from_maxima's display-name table, plus `list`: Maxima's
 /// operator heads carry no sigil (`MABS`, not `$ABS`), a derivative noun is
 /// `%DERIVATIVE`, and a list is `MLIST`. Everything else is a `$`-prefixed
 /// verb, which is exactly what Maxima's own parser produces for `sin(x)`,
@@ -26,7 +26,7 @@ constexpr std::pair<std::string_view, std::string_view> kInternalHeads[] = {
     {"not", "MNOT"},          {"list", "MLIST"},
 };
 
-constexpr std::string_view relationHead(RelOp op) {
+constexpr std::string_view relation_head(RelOp op) {
     switch (op) {
     case RelOp::Equal:
         return "MEQUAL";
@@ -47,7 +47,7 @@ constexpr std::string_view relationHead(RelOp op) {
 /// True when the Lisp reader would hand `token` back unchanged: no lowercase
 /// (the reader upcases), nothing it treats as syntax. The token always begins
 /// with a sigil, so it can never read as a number.
-bool readsPlainly(std::string_view token) {
+bool reads_plainly(std::string_view token) {
     for (const char c : token) {
         const auto uc = static_cast<unsigned char>(c);
         if (!(std::isupper(uc) != 0 || std::isdigit(uc) != 0 || c == '_'
@@ -60,11 +60,11 @@ bool readsPlainly(std::string_view token) {
 
 /// `sigil` + the name, case-inverted as Maxima stores it, bar-quoted if the
 /// reader would otherwise alter it.
-std::string encodeWithSigil(char sigil, std::string_view name) {
-    // decodeMaximaName is its own inverse: the same inversion encodes.
+std::string encode_with_sigil(char sigil, std::string_view name) {
+    // decode_maxima_name is its own inverse: the same inversion encodes.
     std::string token(1, sigil);
-    token += decodeMaximaName(name);
-    if (readsPlainly(token)) {
+    token += decode_maxima_name(name);
+    if (reads_plainly(token)) {
         return token;
     }
     std::string quoted = "|";
@@ -78,7 +78,7 @@ std::string encodeWithSigil(char sigil, std::string_view name) {
     return quoted;
 }
 
-std::string encodeReal(double value) {
+std::string encode_real(double value) {
     // Always finite: Expr::real refuses NaN and turns an infinity into the
     // symbol inf or minf, which is encoded as any symbol is.
     char buffer[40];
@@ -103,7 +103,7 @@ std::string encodeReal(double value) {
 
 /// True when `text` is exactly one string literal: an opening quote, a
 /// closing quote, and no unescaped quote between them.
-bool isStringLiteral(std::string_view text) {
+bool is_string_literal(std::string_view text) {
     if (text.size() < 2 || text.front() != '"' || text.back() != '"') {
         return false;
     }
@@ -124,7 +124,7 @@ bool isStringLiteral(std::string_view text) {
 
 void render(const Expr &expr, std::string &out);
 
-void renderApplication(std::string_view head, const std::vector<Expr> &args,
+void render_application(std::string_view head, const std::vector<Expr> &args,
                        std::string &out) {
     out += "((";
     out += head;
@@ -136,7 +136,7 @@ void renderApplication(std::string_view head, const std::vector<Expr> &args,
     out.push_back(')');
 }
 
-std::string_view functionHead(const std::string &name, std::string &storage) {
+std::string_view function_head(const std::string &name, std::string &storage) {
     for (const auto &[display, internal] : kInternalHeads) {
         if (name == display) {
             return internal;
@@ -146,9 +146,9 @@ std::string_view functionHead(const std::string &name, std::string &storage) {
     // verb, which Maxima will evaluate — and, for its own functions, turn
     // into the noun itself.
     if (!name.empty() && name.front() == '\'') {
-        storage = encodeWithSigil('%', std::string_view(name).substr(1));
+        storage = encode_with_sigil('%', std::string_view(name).substr(1));
     } else {
-        storage = encodeWithSigil('$', name);
+        storage = encode_with_sigil('$', name);
     }
     return storage;
 }
@@ -156,7 +156,7 @@ std::string_view functionHead(const std::string &name, std::string &storage) {
 void render(const Expr &expr, std::string &out) {
     switch (expr.kind()) {
     case Kind::Integer:
-        out += expr.integerValue().toString();
+        out += expr.integer_value().to_string();
         return;
 
     case Kind::Rational:
@@ -164,58 +164,58 @@ void render(const Expr &expr, std::string &out) {
         // and handing it an unsimplified one is asking for trouble. A quotient
         // is what Maxima's own parser emits for `1/3`, and it simplifies to
         // the RAT form on arrival.
-        out += "((MQUOTIENT) " + expr.numerator().toString() + " "
-               + expr.denominator().toString() + ")";
+        out += "((MQUOTIENT) " + expr.numerator().to_string() + " "
+               + expr.denominator().to_string() + ")";
         return;
 
     case Kind::Real:
-        out += encodeReal(expr.realValue());
+        out += encode_real(expr.real_value());
         return;
 
     case Kind::Symbol: {
         const std::string &name = expr.name();
-        // Maxima's booleans are the Lisp ones, as fromMaxima already knows.
+        // Maxima's booleans are the Lisp ones, as from_maxima already knows.
         if (name == "true") {
             out += 'T';
         } else if (name == "false") {
             out += "NIL";
         } else {
-            out += encodeMaximaName(name);
+            out += encode_maxima_name(name);
         }
         return;
     }
 
     case Kind::Add:
-        renderApplication("MPLUS", expr.args(), out);
+        render_application("MPLUS", expr.args(), out);
         return;
     case Kind::Mul:
-        renderApplication("MTIMES", expr.args(), out);
+        render_application("MTIMES", expr.args(), out);
         return;
     case Kind::Pow:
-        renderApplication("MEXPT", expr.args(), out);
+        render_application("MEXPT", expr.args(), out);
         return;
 
     case Kind::Function: {
         std::string storage;
-        renderApplication(functionHead(expr.name(), storage), expr.args(), out);
+        render_application(function_head(expr.name(), storage), expr.args(), out);
         return;
     }
 
     case Kind::Relation:
-        renderApplication(relationHead(expr.relationOp()), expr.args(), out);
+        render_application(relation_head(expr.relation_op()), expr.args(), out);
         return;
 
     case Kind::Opaque: {
-        const std::string &text = expr.opaqueText();
-        // A string is a string: fromMaxima wraps Maxima strings as quoted
+        const std::string &text = expr.opaque_text();
+        // A string is a string: from_maxima wraps Maxima strings as quoted
         // Opaque text, and this sends them back as Lisp strings, which use
         // the same escapes. Anything else is Maxima source this library never
         // interpreted, so Maxima parses it — inside errcatch, where a read
         // error is an ordinary failure rather than a silence.
-        if (isStringLiteral(text)) {
+        if (is_string_literal(text)) {
             out += text;
         } else {
-            out += "(($EVAL_STRING) " + stringLiteral(text) + ")";
+            out += "(($EVAL_STRING) " + string_literal(text) + ")";
         }
         return;
     }
@@ -225,11 +225,11 @@ void render(const Expr &expr, std::string &out) {
 
 } // namespace
 
-std::string encodeMaximaName(std::string_view name) {
-    return encodeWithSigil('$', name);
+std::string encode_maxima_name(std::string_view name) {
+    return encode_with_sigil('$', name);
 }
 
-std::string stringLiteral(std::string_view text) {
+std::string string_literal(std::string_view text) {
     std::string out = "\"";
     for (const char c : text) {
         if (c == '"' || c == '\\') {
@@ -241,7 +241,7 @@ std::string stringLiteral(std::string_view text) {
     return out;
 }
 
-std::string toMaxima(const Expr &expr) {
+std::string to_maxima(const Expr &expr) {
     std::string out;
     render(expr, out);
     return out;

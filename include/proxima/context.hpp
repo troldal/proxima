@@ -51,7 +51,7 @@ enum class Feature {
 };
 
 /// Maxima's spelling of `feature`.
-std::string_view nameOf(Feature feature);
+std::string_view name_of(Feature feature);
 
 /// A scope of assumptions and declarations.
 ///
@@ -90,20 +90,20 @@ std::string_view nameOf(Feature feature);
 ///
 /// The same record is what keeps cached answers honest: a result computed under
 /// `x > 0` is not the same result as one computed without it, so any change
-/// here clears the reply cache, and Config::cacheDirectory keys each answer on
+/// here clears the reply cache, and Config::cache_directory keys each answer on
 /// the journal's contents. The assumptions are also kept in C++, so that
 /// assumptions() can list this scope's without asking Maxima.
 ///
 /// ## A Context that outlives its Kernel
 ///
 /// A Context refers to its Kernel, so the Kernel should outlive it. One that
-/// does not — a Context with static storage duration outliving sharedKernel()
+/// does not — a Context with static storage duration outliving shared_kernel()
 /// at exit, say — can tell: its operations throw proxima::KernelError, and its
 /// destructor has nothing left to tidy and does nothing.
 class Context {
 public:
     /// Opens a new Maxima context, nested inside whichever is currently active.
-    explicit Context(Kernel &kernel = sharedKernel());
+    explicit Context(Kernel &kernel = shared_kernel());
 
     /// Discards everything assumed or declared in this scope: at once, or, if
     /// a scope opened inside this one is still open, when the last of those
@@ -150,7 +150,7 @@ private:
 
     /// Expires when the Kernel does, which is how a Context that outlives it
     /// knows not to call into it.
-    std::weak_ptr<const int> kernelLifetime_;
+    std::weak_ptr<const int> kernel_lifetime_;
 
     std::string name_;
     std::string parent_;
@@ -160,7 +160,7 @@ private:
     /// torn down so that a later restart does not resurrect it. For a scope
     /// that ends while an inner one is open, that is later than destruction:
     /// the inner scope cannot be rebuilt without it.
-    std::vector<std::uint64_t> replayHandles_;
+    std::vector<std::uint64_t> replay_handles_;
 };
 
 } // namespace proxima

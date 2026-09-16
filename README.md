@@ -17,7 +17,7 @@ const proxima::Expr f = pow(proxima::Expr(x), 2) * proxima::sin(x);
 
 if (const auto integral = proxima::integrate(f, x)) {
     std::cout << integral->str() << '\n';                       // cos(x)*(2 - x^2) + 2*x*sin(x)
-    std::cout << proxima::evalNumeric(*integral, {{"x", 1.0}});      // 2.22324
+    std::cout << proxima::eval_numeric(*integral, {{"x", 1.0}});      // 2.22324
 }
 ```
 
@@ -75,11 +75,11 @@ produced them.
 | `sum(t, k, a, b)` `product(t, k, a, b)` | closed forms; a `Failure` when there is none |
 | `ode2(equation, y, x)` | first- and second-order ODEs, written with `derivative(y, x)` |
 | `is(predicate)` | `Truth::True`, `False` or `Unknown` under the assumptions in force |
-| `toFloat(f)` `nroots(p, a, b)` `realroots(p)` `findRoot(f, x, a, b)` | numbers from Maxima: floats, root counts, isolated and numeric roots |
+| `to_float(f)` `nroots(p, a, b)` `realroots(p)` `find_root(f, x, a, b)` | numbers from Maxima: floats, root counts, isolated and numeric roots |
 | `lhs(r)` `rhs(r)` | local, no kernel: the sides of a relation |
 | `parse(text)` | Maxima's own parser, for anything the offline one will not take |
 | `contains(e, x)` `replace(e, x, v)` | local, no kernel: find a symbol, or rewrite it (normalised, not evaluated) |
-| `visit(e, f)` `anyOf(e, p)` `transform(e, f)` | local, no kernel: walk every node, search, or rewrite bottom-up |
+| `visit(e, f)` `any_of(e, p)` `transform(e, f)` | local, no kernel: walk every node, search, or rewrite bottom-up |
 
 Builders for `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`,
 `asinh`, `acosh`, `atanh`, `log`, `abs`, `erf`, `floor`, `ceiling`, `signum`,
@@ -90,7 +90,7 @@ Relations are built by name — `eq`, `ne`, `lt`, `le`, `gt`, `ge` — so that `
 can keep its ordinary meaning.
 
 For the same reason there is no `<`: `x < 0` would compile and mean "sorts
-before". The canonical order the normaliser uses is `proxima::canonicalOrder` instead,
+before". The canonical order the normaliser uses is `proxima::canonical_order` instead,
 with `proxima::CanonicalLess` for sorting and for ordered containers:
 `std::set<Expr, proxima::CanonicalLess>`, `std::map<Expr, T, proxima::CanonicalLess>`.
 Two expressions are equivalent in that order exactly when they are `==`.
@@ -119,7 +119,7 @@ right-associative (`x^2^3` is `x^(2^3)`) and unary minus binds looser than it
 
 ### Rendering, including your own
 
-`str()` gives Maxima-compatible infix, `toTeX()` gives LaTeX, and `toMathML()`
+`str()` gives Maxima-compatible infix, `to_tex()` gives LaTeX, and `to_mathml()`
 gives Presentation MathML — a complete `<math>` element that browsers typeset
 natively, written in plain ASCII with character references for symbols like
 `&#x2212;` and `&#x3C0;`. All three are local — no kernel — and all three are
@@ -128,7 +128,7 @@ another.
 
 ```cpp
 std::cout << e;                         // (1 + x)/(x - 1)          also e.str()
-std::cout << std::format("{:tex}", e);  // \frac{1 + x}{x - 1}      also proxima::toTeX(e)
+std::cout << std::format("{:tex}", e);  // \frac{1 + x}{x - 1}      also proxima::to_tex(e)
 std::cout << std::format("{:mathml}", e); // <math ...><mfrac>...</mfrac></math>
 std::cout << proxima::render(e, MyOwn{});    // whatever you like
 ```
@@ -160,8 +160,8 @@ is a root of `a*x^2 + b*x + c = 0`, as Maxima solves it and the demo prints it:
 
 ```
   str()      ((b^2 - 4*a*c)^(1/2) - b)/(2*a)
-  toTeX()    \frac{\sqrt{b^{2} - 4 a c} - b}{2 a}
-  toMathML() <math xmlns="http://www.w3.org/1998/Math/MathML"><mfrac><mrow><msqrt><mrow><msup><mi>b</mi><mn>2</mn></msup><mo>&#x2212;</mo><mrow><mn>4</mn><mo>&#x2062;</mo><mi>a</mi><mo>&#x2062;</mo><mi>c</mi></mrow></mrow></msqrt><mo>&#x2212;</mo><mi>b</mi></mrow><mrow><mn>2</mn><mo>&#x2062;</mo><mi>a</mi></mrow></mfrac></math>
+  to_tex()    \frac{\sqrt{b^{2} - 4 a c} - b}{2 a}
+  to_mathml() <math xmlns="http://www.w3.org/1998/Math/MathML"><mfrac><mrow><msqrt><mrow><msup><mi>b</mi><mn>2</mn></msup><mo>&#x2212;</mo><mrow><mn>4</mn><mo>&#x2062;</mo><mi>a</mi><mo>&#x2062;</mo><mi>c</mi></mrow></mrow></msqrt><mo>&#x2212;</mo><mi>b</mi></mrow><mrow><mn>2</mn><mo>&#x2062;</mo><mi>a</mi></mrow></mfrac></math>
   text2d
         ___________
        /  2
@@ -176,7 +176,7 @@ defects in under two hundred lines — `x - 1` printing as `-1 + x`, `x/3` as a
 product containing a fraction, `1/x` as a negative power, `-(x+1)` as
 `(-1)*(1+x)` — every one a presentation decision rather than a question about
 TeX. They are made once, in a shared layer, and every renderer inherits them.
-Two optional hooks, `strengthOf` and `contextFor`, let you declare that your
+Two optional hooks, `strength_of` and `context_for`, let you declare that your
 notation delimits itself: that is the whole difference between
 `\frac{1+x}{x-1}` and `(1 + x)/(x - 1)`, from the same walk.
 
@@ -186,8 +186,8 @@ Once a closed form exists, turning it into numbers is ordinary arithmetic — no
 round trip per point.
 
 ```cpp
-proxima::evalNumeric(*integral, {{"x", 1.0}});        // 2.22324, one shot
-proxima::isEvaluable(e, bindings);                    // ask without catching
+proxima::eval_numeric(*integral, {{"x", 1.0}});        // 2.22324, one shot
+proxima::is_evaluable(e, bindings);                    // ask without catching
 ```
 
 For repeated evaluation — plotting, root-finding, quadrature — compile once:
@@ -196,12 +196,12 @@ For repeated evaluation — plotting, root-finding, quadrature — compile once:
 const proxima::Compiled f(*integral, x);
 for (int i = 0; i < points; ++i) { plot(f(i * step)); }
 
-const auto g = proxima::asFunction(*integral, x);     // same thing, as a std::function
+const auto g = proxima::as_function(*integral, x);     // same thing, as a std::function
 ```
 
 `Compiled` resolves every symbol to an argument slot and every function to a
 table index up front, and evaluates integer powers by squaring rather than
-`std::pow`. About **6× faster** than `evalNumeric` in a loop, and errors surface
+`std::pow`. About **6× faster** than `eval_numeric` in a loop, and errors surface
 when you compile rather than at every point. Thread-safe to share.
 
 `%pi` and friends are recognised; an explicit binding overrides them. An unknown
@@ -219,7 +219,7 @@ properties (`Increasing`, `OddFun`, …) and the operator ones (`Commutative`,
 
 ### The kernel
 
-- **Started on first use**, or constructed explicitly. `sharedKernel()` is the
+- **Started on first use**, or constructed explicitly. `shared_kernel()` is the
   process-wide one; every operation takes a `Kernel` defaulting to it.
 - **Serialised**, so a `Kernel` is safe to share between threads. For real
   parallelism, give each thread its own — Maxima is one process doing one thing.
@@ -232,33 +232,33 @@ properties (`Increasing`, `OddFun`, …) and the operator ones (`Commutative`,
   `$`, is simply a symbol or simply a question — nothing this library sends
   can be misread by Maxima's parser, and nothing Maxima *cannot* read (a
   malformed string given to `Kernel::eval`) costs more than one round trip
-  and a message. `Kernel::eval`, `evalPure` and `evalTracked` take an `Expr`
-  as well as text. `Kernel::evalExpr` evaluates and reads the reply back into
-  an `Expr` — `kernel.evalExpr("gcd(12, 18)")` is 6 — for a Maxima function
+  and a message. `Kernel::eval`, `eval_pure` and `eval_tracked` take an `Expr`
+  as well as text. `Kernel::eval_expr` evaluates and reads the reply back into
+  an `Expr` — `kernel.eval_expr("gcd(12, 18)")` is 6 — for a Maxima function
   this library does not wrap. Like `eval` it assumes the text changed
   something, so it empties the cache and stops persistence; for a pure
-  question, `proxima::toExpr(kernel.evalPure("gcd(12, 18)"))` keeps both.
+  question, `proxima::to_expr(kernel.eval_pure("gcd(12, 18)"))` keeps both.
 - **Remembers answers.** An LRU keyed on the request, discarded whenever
   anything might have changed it — any raw `eval`, any assumption added or
-  dropped. Bounded by `Config::cacheEntries` and `Config::cacheBytes` (64 MB);
+  dropped. Bounded by `Config::cache_entries` and `Config::cache_bytes` (64 MB);
   zero entries disables it.
-- **Optionally between runs.** Set `Config::cacheDirectory` and answers survive
+- **Optionally between runs.** Set `Config::cache_directory` and answers survive
   process exit and are shared with other processes using the same directory.
   Every key carries the Maxima version, this library's version *and* the
   assumption state, so an entry can only be read back under the conditions that
   produced it — `sqrt(x^2)` cached under `assume(x > 0)` is not visible to a
   process that never made the assumption. A raw `eval` may change Maxima in a
   way no key can describe, so it stops persistence for that kernel;
-  `Kernel::persistenceActive()` says so, and `Kernel::restart()` resumes it by
+  `Kernel::persistence_active()` says so, and `Kernel::restart()` resumes it by
   replaying the kernel's recorded state into a fresh Maxima.
 - **Cannot be deadlocked by a prompt.** Maxima asks the user for facts it lacks,
   and reads the answer from standard input; over a pipe that would block and
   then swallow the next request. Questions become errors instead — see *When
   Maxima needs a fact it has not been told*.
 
-`Config` covers `maximaRoot`, `timeout`, `startupTimeout`, `cacheEntries`,
-`cacheBytes`, `cacheDirectory`, `cacheDirectoryLimit` (256 MB by default, evicting the least
-recently used answers), `loadUserInit` and `userDir`. The user's own `maxima-init.mac` is **not** loaded
+`Config` covers `maxima_root`, `timeout`, `startup_timeout`, `cache_entries`,
+`cache_bytes`, `cache_directory`, `cache_directory_limit` (256 MB by default, evicting the least
+recently used answers), `load_user_init` and `user_dir`. The user's own `maxima-init.mac` is **not** loaded
 by default: a library should compute the same answer on every machine.
 
 ## Requirements
@@ -302,7 +302,7 @@ resolves Boost from that prefix — the same Boost this library was compiled
 against. Consumers who carry their own Boost should expect it to be found first
 only if their `CMAKE_PREFIX_PATH` says so.
 
-Discovery order: `Config::maximaRoot`, then `$MAXIMA_ROOT`, `$MAXIMA_PREFIX`,
+Discovery order: `Config::maxima_root`, then `$MAXIMA_ROOT`, `$MAXIMA_PREFIX`,
 the parent of any `$PATH` entry named `bin`, then the conventional install
 locations. A root given explicitly is authoritative: if it is wrong, that is an
 error rather than a reason to run some other installation.
@@ -384,6 +384,10 @@ because anything Maxima has to *parse* can fail outside the error trap; that
 there is exactly one canonicaliser,
 which is why no second symbolic engine is linked in; and that Maxima runs as a
 separate process, which is a licensing requirement and not merely a convenience.
+
+Naming follows the standard library: snake_case for functions, variables and
+members, PascalCase for types and enumerators, `kPascalCase` for constants.
+`.clang-tidy` enforces it.
 
 ## Licence
 

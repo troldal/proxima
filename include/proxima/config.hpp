@@ -11,11 +11,11 @@ namespace proxima {
 struct Config {
     /// Root of the Maxima installation, e.g. C:\maxima-5.50.0
     ///
-    /// Empty means "discover it": Config::maximaRoot, then $MAXIMA_ROOT, then
+    /// Empty means "discover it": Config::maxima_root, then $MAXIMA_ROOT, then
     /// $MAXIMA_PREFIX, then the parent of any $PATH entry named "bin", then the
     /// conventional install locations. A root given here is still validated;
     /// discovery throws KernelError naming everything it tried.
-    std::filesystem::path maximaRoot;
+    std::filesystem::path maxima_root;
 
     /// How long to wait for a single statement to produce its result before
     /// giving up on it.
@@ -26,7 +26,7 @@ struct Config {
     /// assumptions are replayed. Treat it as a backstop against a wedged child
     /// rather than as cancellation: Maxima cannot be interrupted short of ending
     /// the process, so every timeout also pays for a Maxima startup, bounded by
-    /// startupTimeout.
+    /// startup_timeout.
     std::chrono::milliseconds timeout{std::chrono::minutes{2}};
 
     /// How long to allow for starting Maxima and restoring session state.
@@ -36,7 +36,7 @@ struct Config {
     /// integrals should not thereby make the kernel unstartable — nor should a
     /// timeout leave recovery unable to run because the very deadline that was
     /// just exceeded also governs the restart.
-    std::chrono::milliseconds startupTimeout{std::chrono::seconds{30}};
+    std::chrono::milliseconds startup_timeout{std::chrono::seconds{30}};
 
     /// How many replies to remember.
     ///
@@ -44,7 +44,7 @@ struct Config {
     /// symbolic work asks the same questions repeatedly — the same derivative
     /// while searching, the same subexpression from two callers. Zero disables
     /// caching entirely.
-    std::size_t cacheEntries = 4096;
+    std::size_t cache_entries = 4096;
 
     /// The most memory the remembered replies may occupy, counting their text.
     ///
@@ -52,7 +52,7 @@ struct Config {
     /// to a megabyte (`expand((x+y+z)^120)`), and 4096 of those is gigabytes.
     /// The least recently used replies go first once either limit is reached,
     /// and a reply larger than this on its own is not remembered at all.
-    std::size_t cacheBytes = std::size_t{64} * 1024 * 1024;
+    std::size_t cache_bytes = std::size_t{64} * 1024 * 1024;
 
     /// Where to keep replies between runs. Empty means do not.
     ///
@@ -64,23 +64,23 @@ struct Config {
     /// the kernel's assumption state, so an entry can only ever be read back
     /// under the conditions that produced it. Persistence switches itself off
     /// for a kernel whose state has been changed by a raw Kernel::eval, since
-    /// that change is not part of the key; Kernel::persistenceActive says
+    /// that change is not part of the key; Kernel::persistence_active says
     /// whether that has happened, and Kernel::restart undoes it.
     ///
     /// Entries are trusted as they are read: nothing signs or checks them. So
     /// the directory must be writable only by people whose answers you would
     /// accept — anyone who can write a file there can make `integrate` return
     /// whatever they like.
-    std::filesystem::path cacheDirectory;
+    std::filesystem::path cache_directory;
 
-    /// The most cacheDirectory may hold, in bytes, before the least recently
+    /// The most cache_directory may hold, in bytes, before the least recently
     /// used answers are deleted. Zero means no limit.
     ///
     /// Recency is each entry's modification time, which reading it back
     /// refreshes when the recorded use is an hour old or more. Over the limit, entries are deleted oldest first until the
     /// directory is at three quarters of it. Each process enforces the limit on
     /// what it sees, so processes sharing a directory can overshoot it briefly.
-    std::uintmax_t cacheDirectoryLimit = std::uintmax_t{256} * 1024 * 1024;
+    std::uintmax_t cache_directory_limit = std::uintmax_t{256} * 1024 * 1024;
 
     /// Whether to let Maxima load the user's maxima-init.mac at startup.
     ///
@@ -89,25 +89,25 @@ struct Config {
     /// matter of course. Anything in it — a redefined function, a changed
     /// simplification flag — would silently alter this library's results on one
     /// machine and not another. A library should compute the same answer
-    /// everywhere, so the user directory is pointed at userDir instead.
+    /// everywhere, so the user directory is pointed at user_dir instead.
     ///
     /// Set true to opt back into the user's own Maxima configuration.
-    bool loadUserInit = false;
+    bool load_user_init = false;
 
-    /// Where Maxima keeps user state when loadUserInit is false.
+    /// Where Maxima keeps user state when load_user_init is false.
     ///
     /// Empty means a directory private to the current user under the system
     /// temporary directory, created on demand. On Unix that is
     /// `<tmp>/proxima-<uid>/userdir`, created with mode 0700; if it already
     /// exists but is a link, belongs to another user or is open to others, the
     /// kernel refuses to start rather than use it. Ignored entirely when
-    /// loadUserInit is true, in which case Maxima falls back to its own
+    /// load_user_init is true, in which case Maxima falls back to its own
     /// default.
     ///
     /// A directory given here is used as it is. Maxima executes the
     /// maxima-init.mac it finds in it, so it must not be writable by anyone
     /// you would not let run code as you.
-    std::filesystem::path userDir;
+    std::filesystem::path user_dir;
 };
 
 } // namespace proxima

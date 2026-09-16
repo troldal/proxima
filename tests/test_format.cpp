@@ -27,8 +27,8 @@ TEST_CASE("an expression prints with << and with std::format") {
     CHECK(std::format("{}", e) == e.str());
 
     SUBCASE("a format spec picks the notation") {
-        CHECK(std::format("{:tex}", e) == proxima::toTeX(e));
-        CHECK(std::format("{:mathml}", e) == proxima::toMathML(e));
+        CHECK(std::format("{:tex}", e) == proxima::to_tex(e));
+        CHECK(std::format("{:mathml}", e) == proxima::to_mathml(e));
     }
 
     SUBCASE("and the usual width and alignment still apply, with or without one") {
@@ -36,7 +36,7 @@ TEST_CASE("an expression prints with << and with std::format") {
         REQUIRE(plain.size() < 40);
         CHECK(std::format("{:>40}", e) == std::string(40 - plain.size(), ' ') + plain);
 
-        const std::string tex = proxima::toTeX(e);
+        const std::string tex = proxima::to_tex(e);
         REQUIRE(tex.size() < 40);
         CHECK(std::format("{:tex:*<40}", e) == tex + std::string(40 - tex.size(), '*'));
     }
@@ -51,16 +51,16 @@ TEST_CASE("an expression prints with << and with std::format") {
 
 TEST_CASE("a kind prints by name") {
     using proxima::Kind;
-    CHECK(proxima::kindName(Kind::Integer) == "Integer");
-    CHECK(proxima::kindName(Kind::Rational) == "Rational");
-    CHECK(proxima::kindName(Kind::Real) == "Real");
-    CHECK(proxima::kindName(Kind::Symbol) == "Symbol");
-    CHECK(proxima::kindName(Kind::Add) == "Add");
-    CHECK(proxima::kindName(Kind::Mul) == "Mul");
-    CHECK(proxima::kindName(Kind::Pow) == "Pow");
-    CHECK(proxima::kindName(Kind::Function) == "Function");
-    CHECK(proxima::kindName(Kind::Relation) == "Relation");
-    CHECK(proxima::kindName(Kind::Opaque) == "Opaque");
+    CHECK(proxima::kind_name(Kind::Integer) == "Integer");
+    CHECK(proxima::kind_name(Kind::Rational) == "Rational");
+    CHECK(proxima::kind_name(Kind::Real) == "Real");
+    CHECK(proxima::kind_name(Kind::Symbol) == "Symbol");
+    CHECK(proxima::kind_name(Kind::Add) == "Add");
+    CHECK(proxima::kind_name(Kind::Mul) == "Mul");
+    CHECK(proxima::kind_name(Kind::Pow) == "Pow");
+    CHECK(proxima::kind_name(Kind::Function) == "Function");
+    CHECK(proxima::kind_name(Kind::Relation) == "Relation");
+    CHECK(proxima::kind_name(Kind::Opaque) == "Opaque");
 
     CHECK(std::format("{}", Kind::Pow) == "Pow");
     CHECK(std::format("{:>8}", Kind::Pow) == "     Pow");
@@ -70,7 +70,7 @@ TEST_CASE("a kind prints by name") {
 
     SUBCASE("which is what an accessor on the wrong kind reports") {
         // It used to say "(kind 3)".
-        CHECK_THROWS_WITH_AS(static_cast<void>(Expr::symbol("x").integerValue()),
+        CHECK_THROWS_WITH_AS(static_cast<void>(Expr::symbol("x").integer_value()),
                              "expression is not an integer (its kind is Symbol)",
                              proxima::Error);
     }
@@ -81,7 +81,7 @@ TEST_CASE("symbols and integers print too") {
     std::ostringstream out;
     out << pi;
     CHECK(out.str() == Expr(pi).str());
-    CHECK(std::format("{:tex}", pi) == proxima::toTeX(pi));
+    CHECK(std::format("{:tex}", pi) == proxima::to_tex(pi));
 
     const proxima::Integer factorial30("265252859812191058636308480000000");
     std::ostringstream digits;

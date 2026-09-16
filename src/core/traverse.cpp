@@ -11,7 +11,7 @@
 namespace proxima {
 namespace {
 
-bool isIdentifierPart(char c) {
+bool is_identifier_part(char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
            || c == '_' || c == '%';
 }
@@ -29,11 +29,11 @@ bool isIdentifierPart(char c) {
 /// Where it errs, it errs towards "yes", which is the direction solve's guard
 /// needs: a false yes rejects a solution that was fine, a false no would
 /// accept one that is not.
-bool opaqueMentions(std::string_view text, std::string_view name) {
+bool opaque_mentions(std::string_view text, std::string_view name) {
     if (name.empty()) {
         return false;
     }
-    if (!std::all_of(name.begin(), name.end(), isIdentifierPart)) {
+    if (!std::all_of(name.begin(), name.end(), is_identifier_part)) {
         std::string unescaped;
         unescaped.reserve(text.size());
         for (std::size_t i = 0; i < text.size(); ++i) {
@@ -56,12 +56,12 @@ bool opaqueMentions(std::string_view text, std::string_view name) {
             ++at;
             continue;
         }
-        if (!isIdentifierPart(text[at])) {
+        if (!is_identifier_part(text[at])) {
             ++at;
             continue;
         }
         const std::size_t start = at;
-        while (at < text.size() && isIdentifierPart(text[at])) {
+        while (at < text.size() && is_identifier_part(text[at])) {
             ++at;
         }
         if (text.substr(start, at - start) == name) {
@@ -73,7 +73,7 @@ bool opaqueMentions(std::string_view text, std::string_view name) {
 
 } // namespace
 
-Expr detail::withOperands(const Expr &expr, std::vector<Expr> operands) {
+Expr detail::with_operands(const Expr &expr, std::vector<Expr> operands) {
     switch (expr.kind()) {
     case Kind::Add:
         return Expr::add(std::move(operands));
@@ -84,7 +84,7 @@ Expr detail::withOperands(const Expr &expr, std::vector<Expr> operands) {
     case Kind::Function:
         return Expr::function(expr.name(), std::move(operands));
     case Kind::Relation:
-        return Expr::relation(expr.relationOp(), std::move(operands.at(0)),
+        return Expr::relation(expr.relation_op(), std::move(operands.at(0)),
                               std::move(operands.at(1)));
     default:
         return expr; // A leaf has no operands to replace.
@@ -92,13 +92,13 @@ Expr detail::withOperands(const Expr &expr, std::vector<Expr> operands) {
 }
 
 bool contains(const Expr &expr, const Symbol &symbol) {
-    return anyOf(expr, [&symbol](const Expr &node) {
+    return any_of(expr, [&symbol](const Expr &node) {
         if (node.is(Kind::Symbol)) {
             return node.name() == symbol.name();
         }
         // Unmodelled text can still name the symbol, and solve's check that a
         // solution no longer mentions its unknown depends on seeing it there.
-        return node.is(Kind::Opaque) && opaqueMentions(node.opaqueText(), symbol.name());
+        return node.is(Kind::Opaque) && opaque_mentions(node.opaque_text(), symbol.name());
     });
 }
 
@@ -107,7 +107,7 @@ Expr replace(const Expr &expr, const Symbol &symbol, const Expr &value) {
         if (node.is(Kind::Symbol) && node.name() == symbol.name()) {
             return value;
         }
-        if (node.is(Kind::Opaque) && opaqueMentions(node.opaqueText(), symbol.name())) {
+        if (node.is(Kind::Opaque) && opaque_mentions(node.opaque_text(), symbol.name())) {
             throw Error("cannot replace " + symbol.name()
                         + " inside the unmodelled expression " + node.str()
                         + " without parsing it; proxima::subst has Maxima do it");

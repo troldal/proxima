@@ -92,7 +92,7 @@ namespace proxima::detail {
 class Payload {
 public:
     /// `cppread("<sexpr>")` — a Maxima internal form, to be read by the Lisp
-    /// helper and evaluated. What toMaxima produces.
+    /// helper and evaluated. What to_maxima produces.
     static Payload form(std::string_view sexpr);
 
     /// `eval_string("<source>")` — Maxima source text, parsed and evaluated
@@ -112,18 +112,18 @@ private:
 };
 
 /// A fresh frame key: sixteen hex digits from std::random_device.
-std::string randomFrameKey();
+std::string random_frame_key();
 
 /// Creates `dir` accessible to its owner only, or accepts it if it already
 /// exists as a directory — not a link — owned by this user and closed to
 /// everyone else; otherwise throws KernelError. On Windows, only creates it.
-void ensurePrivateDirectory(const std::filesystem::path &dir);
+void ensure_private_directory(const std::filesystem::path &dir);
 
-/// The user directory Maxima is given when Config::userDir is empty: a
+/// The user directory Maxima is given when Config::user_dir is empty: a
 /// per-user private directory under the system temporary directory, checked
-/// with ensurePrivateDirectory, since Maxima executes the maxima-init.mac it
+/// with ensure_private_directory, since Maxima executes the maxima-init.mac it
 /// finds there.
-std::filesystem::path defaultUserDir();
+std::filesystem::path default_user_dir();
 
 class MaximaSession {
 public:
@@ -131,19 +131,19 @@ public:
     /// factory rather than a transport is what makes restarting possible.
     using TransportFactory = std::function<std::unique_ptr<ITransport>()>;
 
-    /// Discovers Maxima under `config.maximaRoot` and launches it.
+    /// Discovers Maxima under `config.maxima_root` and launches it.
     explicit MaximaSession(Config config);
 
     /// Drives transports from `factory`, which is called again on restart.
-    /// For tests, which pass a fixed `frameKey` so that scripted replies can
+    /// For tests, which pass a fixed `frame_key` so that scripted replies can
     /// be written in advance.
     MaximaSession(TransportFactory factory, Config config,
-                  std::string frameKey = randomFrameKey());
+                  std::string frame_key = random_frame_key());
 
     /// Drives one already-constructed transport, with no way to make another,
-    /// so a death is final. For tests; `frameKey` as above.
+    /// so a death is final. For tests; `frame_key` as above.
     MaximaSession(std::unique_ptr<ITransport> transport, Config config,
-                  std::string frameKey = randomFrameKey());
+                  std::string frame_key = random_frame_key());
 
     ~MaximaSession();
 
@@ -160,24 +160,24 @@ public:
     /// first, so only this call is lost.
     ///
     /// Serialised: concurrent callers take turns rather than interleaving
-    /// requests on one pipe. Calls that only touch bookkeeping — cacheStats,
-    /// setTimeout, remember, forget, invalidateCache, persistenceActive — do
+    /// requests on one pipe. Calls that only touch bookkeeping — cache_stats,
+    /// set_timeout, remember, forget, invalidate_cache, persistence_active — do
     /// not take that turn, and never wait behind a computation.
     Reply eval(const Payload &payload);
 
     /// Evaluates a pure expression, consulting and filling the reply cache.
     /// The caller guarantees the expression changes nothing in Maxima.
-    Reply evalPure(const Payload &payload);
+    Reply eval_pure(const Payload &payload);
 
     /// Evaluates a state-changing statement the journal accounts for.
-    Reply evalTracked(const Payload &payload);
+    Reply eval_tracked(const Payload &payload);
 
     /// The requests a caller has to keep together, available only inside
-    /// converseAtomically: a change to Maxima's state and the journal's record
+    /// converse_atomically: a change to Maxima's state and the journal's record
     /// of it.
     class Conversation {
     public:
-        Reply evalTracked(const Payload &payload);
+        Reply eval_tracked(const Payload &payload);
         std::uint64_t remember(Payload payload);
         void forget(std::uint64_t handle);
 
@@ -190,23 +190,23 @@ public:
     /// Runs `steps` as one conversation: no other caller's request reaches
     /// Maxima until it returns.
     ///
-    /// What a statement and its record need. Made separately — evalTracked,
-    /// then remember — another thread's evalPure can run between the two,
+    /// What a statement and its record need. Made separately — eval_tracked,
+    /// then remember — another thread's eval_pure can run between the two,
     /// compute under Maxima's new state, and file its answer under the
     /// journal's old one, where a persistent cache keeps it beyond this
     /// process. proxima::Context makes every change this way.
-    void converseAtomically(const std::function<void(Conversation &)> &steps);
+    void converse_atomically(const std::function<void(Conversation &)> &steps);
 
     /// Discards every cached reply.
-    void invalidateCache();
+    void invalidate_cache();
 
     struct CacheStats {
         std::size_t hits = 0;
         std::size_t misses = 0;
         std::size_t entries = 0;
-        std::size_t persistentHits = 0;
+        std::size_t persistent_hits = 0;
     };
-    CacheStats cacheStats() const;
+    CacheStats cache_stats() const;
 
     /// Records a statement to replay after a restart, and returns a handle for
     /// removing it again.
@@ -222,13 +222,13 @@ public:
 
     /// Changes the per-call deadline, for a call already waiting as well as
     /// for later ones: it takes effect within one poll. Does not affect
-    /// Config::startupTimeout.
-    void setTimeout(std::chrono::milliseconds timeout);
+    /// Config::startup_timeout.
+    void set_timeout(std::chrono::milliseconds timeout);
 
-    /// True while answers are read from and written to Config::cacheDirectory:
+    /// True while answers are read from and written to Config::cache_directory:
     /// a directory was configured, and nothing has changed Maxima's state
     /// without the journal recording it.
-    bool persistenceActive() const;
+    bool persistence_active() const;
 
     /// Replaces Maxima with a fresh process and replays the journal, which
     /// returns the session to exactly the state the journal describes: every
@@ -240,32 +240,32 @@ public:
     /// Builds the argv used to launch Maxima's SBCL image for `install`, with
     /// its paths in UTF-8. Exposed for testing; touches no filesystem and
     /// starts nothing.
-    static std::vector<std::string> launchCommand(const MaximaInstall &install);
+    static std::vector<std::string> launch_command(const MaximaInstall &install);
 
     /// Builds the environment overrides layered over the parent's environment,
     /// with its paths in UTF-8 and forward slashes. Exposed for testing; may
-    /// create Config::userDir, or the default user directory, but starts
+    /// create Config::user_dir, or the default user directory, but starts
     /// nothing. Throws KernelError if the default directory exists and is not
-    /// private to this user (see defaultUserDir).
-    static std::vector<EnvOverride> launchEnvironment(const MaximaInstall &install,
+    /// private to this user (see default_user_dir).
+    static std::vector<EnvOverride> launch_environment(const MaximaInstall &install,
                                                       const Config &config);
 
     /// The statements sent once at startup to make the session machine-readable
     /// and deterministic. Exposed so tests can script a transport that expects
     /// exactly these.
-    static std::vector<std::string> setupStatements();
+    static std::vector<std::string> setup_statements();
 
     /// Wraps `payload` in the framed, error-trapping call sent to Maxima, for
     /// request `id` of the session whose frame key is `key`. Exposed for
     /// testing.
-    static std::string requestFor(std::string_view key, std::uint64_t id,
+    static std::string request_for(std::string_view key, std::uint64_t id,
                                   const Payload &payload);
 
     /// Frame delimiters for request `id` under frame key `key`. Exposed so
     /// tests can script replies in the same shape Maxima produces.
-    static std::string frameBegin(std::string_view key, std::uint64_t id);
-    static std::string frameSeparator(std::string_view key, std::uint64_t id);
-    static std::string frameEnd(std::string_view key, std::uint64_t id);
+    static std::string frame_begin(std::string_view key, std::uint64_t id);
+    static std::string frame_separator(std::string_view key, std::uint64_t id);
+    static std::string frame_end(std::string_view key, std::uint64_t id);
 
     /// The most a single reply may occupy before it is abandoned as a broken
     /// conversation. Without a limit, a child that streamed without ever
@@ -284,41 +284,41 @@ private:
     enum class Deadline { Call, Startup };
 
     /// Sends one request and reads its frame. The pipe lock must be held.
-    Reply evalLocked(const Payload &payload, Deadline deadline);
+    Reply eval_locked(const Payload &payload, Deadline deadline);
 
-    /// evalTracked's body. The pipe lock must be held.
-    Reply evalTrackedLocked(const Payload &payload);
+    /// eval_tracked's body. The pipe lock must be held.
+    Reply eval_tracked_locked(const Payload &payload);
 
-    /// evalLocked on the call deadline, restarting the session if the
+    /// eval_locked on the call deadline, restarting the session if the
     /// conversation breaks down. The pipe lock must be held.
     Reply converse(const Payload &payload);
 
     /// The timeout `deadline` currently stands for.
-    std::chrono::milliseconds timeoutFor(Deadline deadline) const;
+    std::chrono::milliseconds timeout_for(Deadline deadline) const;
 
     /// Discards the dead transport, builds another, and restores the session:
     /// handshake, then every remembered statement in the order it was made.
     void recover();
 
     void handshake();
-    void writeLine(std::string_view line);
+    void write_line(std::string_view line);
 
     /// Everything a persistent key has to be qualified by: the two versions
     /// and the assumption state, in a form that changes whenever any of them
     /// does.
-    std::string persistenceStamp() const;
+    std::string persistence_stamp() const;
 
     /// True when a persistent entry would describe this session honestly.
-    bool usingPersistence() const;
+    bool using_persistence() const;
 
     /// Rebuilds the persistent cache's stamp after the journal changed, so
     /// later entries are keyed on the new assumption state rather than the old.
-    void restampPersistence();
+    void restamp_persistence();
 
     /// Reads until the frame belonging to `id` is complete, discarding
     /// everything before it: banners, prompts, and any stale frame left over
     /// from an earlier request.
-    Reply readFrame(std::uint64_t id, Deadline deadline);
+    Reply read_frame(std::uint64_t id, Deadline deadline);
 
     /// Two locks, always taken in this order when both are needed.
     ///
@@ -328,35 +328,35 @@ private:
     /// the journal, the persistence flags and the per-call timeout. There used
     /// to be one lock for both, so reading a statistic or changing the timeout
     /// waited behind a computation for as long as Config::timeout.
-    std::mutex pipeMutex_;
-    mutable std::mutex stateMutex_;
+    std::mutex pipe_mutex_;
+    mutable std::mutex state_mutex_;
 
     /// Bumped by every change to Maxima's state or to the journal. An answer
     /// is only cached if it was unchanged throughout the computation: with the
     /// journal no longer waiting for the pipe, it can change mid-computation.
-    std::uint64_t stateGeneration_ = 0;
+    std::uint64_t state_generation_ = 0;
 
     Config config_;
     TransportFactory factory_;
     std::unique_ptr<ITransport> transport_;
-    std::uint64_t nextRequestId_ = 0;
-    std::string frameKey_ = randomFrameKey();
+    std::uint64_t next_request_id_ = 0;
+    std::string frame_key_ = random_frame_key();
 
     ReplyCache cache_;
 
-    /// Set up once the Maxima version is known and Config::cacheDirectory is
+    /// Set up once the Maxima version is known and Config::cache_directory is
     /// set. Absent means answers are remembered only for this process.
     std::unique_ptr<PersistentCache> persistent_;
-    std::string maximaVersion_;
-    std::size_t persistentHits_ = 0;
+    std::string maxima_version_;
+    std::size_t persistent_hits_ = 0;
 
     /// False once something has changed Maxima's state without the journal
     /// recording it, which makes a persistent key unable to describe the
     /// session it was computed in.
-    bool stateAccounted_ = true;
+    bool state_accounted_ = true;
 
     std::vector<JournalEntry> journal_;
-    std::uint64_t nextJournalHandle_ = 0;
+    std::uint64_t next_journal_handle_ = 0;
 
     /// Set while recovering, so that a failure during the handshake or replay
     /// does not set off another recovery inside the first.

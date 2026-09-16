@@ -23,7 +23,7 @@ using Conversation = detail::MaximaSession::Conversation;
 
 /// Names have to be unique within the Maxima process, and a Context may be
 /// created in any order or nesting, so they are simply counted.
-std::string nextContextName() {
+std::string next_context_name() {
     static std::atomic<unsigned long long> counter{0};
     return "proxima_ctx_" + std::to_string(++counter);
 }
@@ -34,12 +34,12 @@ struct Scope {
     Kernel *kernel = nullptr;
 
     /// Expired once the kernel is gone, when there is no Maxima left to tidy.
-    std::weak_ptr<const int> kernelLifetime;
+    std::weak_ptr<const int> kernel_lifetime;
 
     /// Scopes opened inside this one that have not been torn down. While any
     /// remain, this one stays in Maxima even after its Context has ended:
     /// they were opened inheriting its facts.
-    std::size_t openChildren = 0;
+    std::size_t open_children = 0;
 
     /// True once the Context object has been destroyed.
     bool ended = false;
@@ -48,7 +48,7 @@ struct Scope {
     /// happens, so a restart in the meantime still rebuilds this scope — the
     /// scopes opened inside it are subcontexts of it and cannot be rebuilt
     /// without it.
-    std::vector<std::uint64_t> replayHandles;
+    std::vector<std::uint64_t> replay_handles;
 };
 
 /// Every context this library has opened and not yet torn down, by name.
@@ -76,8 +76,8 @@ constexpr std::string_view kBuiltInContext = "global";
 ///
 /// A Context refers to its Kernel by pointer, and nothing stops the Kernel
 /// being destroyed first — a Context with static storage duration outlives
-/// sharedKernel() at exit. It used to call into the destroyed object.
-Kernel &liveKernel(Kernel *kernel, const std::weak_ptr<const int> &lifetime) {
+/// shared_kernel() at exit. It used to call into the destroyed object.
+Kernel &live_kernel(Kernel *kernel, const std::weak_ptr<const int> &lifetime) {
     if (lifetime.expired()) {
         throw KernelError("the Kernel this Context was opened on no longer exists");
     }
@@ -85,13 +85,13 @@ Kernel &liveKernel(Kernel *kernel, const std::weak_ptr<const int> &lifetime) {
 }
 
 /// An expression as a request payload: its internal form, sent as structure.
-/// The same payload Kernel::evalTracked and Kernel::remember build from an Expr.
-detail::Payload formOf(const Expr &expr) {
-    return detail::Payload::form(detail::toMaxima(expr));
+/// The same payload Kernel::eval_tracked and Kernel::remember build from an Expr.
+detail::Payload form_of(const Expr &expr) {
+    return detail::Payload::form(detail::to_maxima(expr));
 }
 
-Expr replyOrThrow(const Reply &reply) {
-    auto result = toExpr(reply);
+Expr reply_or_throw(const Reply &reply) {
+    auto result = to_expr(reply);
     if (!result) {
         throw MaximaError(result.error().message);
     }
@@ -100,18 +100,18 @@ Expr replyOrThrow(const Reply &reply) {
 
 /// Every statement a Context issues changes Maxima's state in a way the
 /// kernel's journal accounts for — either recorded here, or undoing something
-/// that was. evalTracked says so, which is what keeps a persistent cache usable
+/// that was. eval_tracked says so, which is what keeps a persistent cache usable
 /// for a kernel that uses assumptions.
 ///
 /// Sent as a form, not text: the predicate is the user's, and travelling as
 /// structure is what guarantees it cannot be misread on the far side.
-Expr evaluateOrThrow(Conversation &conversation, const Expr &form) {
-    return replyOrThrow(conversation.evalTracked(formOf(form)));
+Expr evaluate_or_throw(Conversation &conversation, const Expr &form) {
+    return reply_or_throw(conversation.eval_tracked(form_of(form)));
 }
 
 /// The same, outside a conversation, for questions that change nothing.
-Expr evaluateOrThrow(Kernel &kernel, const Expr &form) {
-    return replyOrThrow(kernel.evalTracked(form));
+Expr evaluate_or_throw(Kernel &kernel, const Expr &form) {
+    return reply_or_throw(kernel.eval_tracked(form));
 }
 
 Expr call(std::string head, std::vector<Expr> args) {
@@ -120,8 +120,8 @@ Expr call(std::string head, std::vector<Expr> args) {
 
 /// True when Maxima's reply contains the symbol `name` — how it reports
 /// `redundant` and `inconsistent` from an assume.
-bool mentionsSymbol(const Expr &expr, std::string_view name) {
-    return anyOf(expr, [name](const Expr &node) {
+bool mentions_symbol(const Expr &expr, std::string_view name) {
+    return any_of(expr, [name](const Expr &node) {
         return node.is(Kind::Symbol) && node.name() == name;
     });
 }
@@ -130,33 +130,33 @@ bool mentionsSymbol(const Expr &expr, std::string_view name) {
 /// carried out after it is released, so no lock is held across a round trip.
 struct Teardown {
     Kernel *kernel;
-    std::weak_ptr<const int> kernelLifetime;
+    std::weak_ptr<const int> kernel_lifetime;
     std::string name;
     std::string parent;
-    std::vector<std::uint64_t> replayHandles;
+    std::vector<std::uint64_t> replay_handles;
 };
 
-void carryOut(detail::MaximaSession &session, const Teardown &step) {
+void carry_out(detail::MaximaSession &session, const Teardown &step) {
     // One conversation: the journal forgets the scope and Maxima drops it with
     // no other request in between, so no answer can be computed in one state
     // and filed under the other.
-    session.converseAtomically([&step](Conversation &conversation) {
+    session.converse_atomically([&step](Conversation &conversation) {
         // Drop the replay entries first: a restart triggered by the teardown
         // itself must not rebuild a scope that is ending.
-        for (auto handle = step.replayHandles.rbegin();
-             handle != step.replayHandles.rend(); ++handle) {
+        for (auto handle = step.replay_handles.rbegin();
+             handle != step.replay_handles.rend(); ++handle) {
             conversation.forget(*handle);
         }
         // An assignment has no Expr, so this one line stays as text. Both
         // names are this library's own or Maxima's, never the user's.
-        conversation.evalTracked(detail::Payload::text("context: " + step.parent));
-        conversation.evalTracked(formOf(call("killcontext", {Expr::symbol(step.name)})));
+        conversation.eval_tracked(detail::Payload::text("context: " + step.parent));
+        conversation.eval_tracked(form_of(call("killcontext", {Expr::symbol(step.name)})));
     });
 }
 
 } // namespace
 
-std::string_view nameOf(Feature feature) {
+std::string_view name_of(Feature feature) {
     switch (feature) {
     case Feature::Integer:
         return "integer";
@@ -208,36 +208,36 @@ std::string_view nameOf(Feature feature) {
 
 // Every change a Context makes to Maxima is one conversation with the change's
 // record in the journal. They used to be separate calls — the statement, then
-// remember() — and another thread's evalPure could run in between, compute
+// remember() — and another thread's eval_pure could run in between, compute
 // under Maxima's new state and file the answer under the journal's old one,
-// in the in-memory cache and in Config::cacheDirectory alike.
+// in the in-memory cache and in Config::cache_directory alike.
 
 Context::Context(Kernel &kernel)
-    : kernel_(&kernel), kernelLifetime_(kernel.lifetime_),
-      name_(nextContextName()) {
-    kernel.session().converseAtomically([this](Conversation &conversation) {
+    : kernel_(&kernel), kernel_lifetime_(kernel.lifetime_),
+      name_(next_context_name()) {
+    kernel.session().converse_atomically([this](Conversation &conversation) {
         // Whatever is active now becomes this context's parent, which is what
         // makes nesting inherit rather than shadow. Read in the same
         // conversation, so it is still the active context when this one opens.
-        const Expr current = evaluateOrThrow(conversation, Expr::symbol("context"));
+        const Expr current = evaluate_or_throw(conversation, Expr::symbol("context"));
         parent_ = current.is(Kind::Symbol) ? current.name() : "initial";
 
         // supcontext rather than newcontext: newcontext would parent the new
         // context on `initial` and so lose the enclosing scope's assumptions.
         const Expr create
             = call("supcontext", {Expr::symbol(name_), Expr::symbol(parent_)});
-        evaluateOrThrow(conversation, create);
-        replayHandles_.push_back(conversation.remember(formOf(create)));
+        evaluate_or_throw(conversation, create);
+        replay_handles_.push_back(conversation.remember(form_of(create)));
     });
 
     const std::lock_guard lock(registry().mutex);
     Scope &scope = registry().scopes[name_];
     scope.parent = parent_;
     scope.kernel = kernel_;
-    scope.kernelLifetime = kernelLifetime_;
+    scope.kernel_lifetime = kernel_lifetime_;
     if (const auto enclosing = registry().scopes.find(parent_);
         enclosing != registry().scopes.end()) {
-        ++enclosing->second.openChildren;
+        ++enclosing->second.open_children;
     }
 }
 
@@ -260,10 +260,10 @@ Context::~Context() {
             const auto self = scopes.find(name_);
             if (self == scopes.end()) {
                 steps.push_back(
-                    {kernel_, kernelLifetime_, name_, parent_, replayHandles_});
+                    {kernel_, kernel_lifetime_, name_, parent_, replay_handles_});
             } else {
                 self->second.ended = true;
-                self->second.replayHandles = replayHandles_;
+                self->second.replay_handles = replay_handles_;
 
                 // Innermost first: this scope, then each enclosing scope that
                 // had already ended and was only waiting for this one.
@@ -271,20 +271,20 @@ Context::~Context() {
                 for (;;) {
                     const auto found = scopes.find(next);
                     if (found == scopes.end() || !found->second.ended
-                        || found->second.openChildren > 0) {
+                        || found->second.open_children > 0) {
                         break;
                     }
                     Scope scope = std::move(found->second);
                     scopes.erase(found);
-                    steps.push_back({scope.kernel, std::move(scope.kernelLifetime),
+                    steps.push_back({scope.kernel, std::move(scope.kernel_lifetime),
                                      next, scope.parent,
-                                     std::move(scope.replayHandles)});
+                                     std::move(scope.replay_handles)});
 
                     const auto enclosing = scopes.find(scope.parent);
                     if (enclosing == scopes.end()) {
                         break;
                     }
-                    --enclosing->second.openChildren;
+                    --enclosing->second.open_children;
                     next = scope.parent;
                 }
             }
@@ -293,29 +293,29 @@ Context::~Context() {
             // A kernel that is already gone took its Maxima, and every context
             // in it, with it. There is nothing to tidy, and nothing safe to
             // call.
-            if (step.kernelLifetime.expired()) {
+            if (step.kernel_lifetime.expired()) {
                 continue;
             }
-            carryOut(step.kernel->session(), step);
+            carry_out(step.kernel->session(), step);
         }
     } catch (...) {
     }
 }
 
 void Context::assume(const Expr &predicate) {
-    Kernel &kernel = liveKernel(kernel_, kernelLifetime_);
+    Kernel &kernel = live_kernel(kernel_, kernel_lifetime_);
     const Expr statement = call("assume", {predicate});
 
     bool inconsistent = false;
-    kernel.session().converseAtomically([&](Conversation &conversation) {
-        const Expr result = evaluateOrThrow(conversation, statement);
+    kernel.session().converse_atomically([&](Conversation &conversation) {
+        const Expr result = evaluate_or_throw(conversation, statement);
         // Maxima answers with a list describing what it did. `inconsistent`
         // means this contradicts something already in force, and Maxima did
         // not add it, so there is nothing to record. `redundant` is harmless:
         // the fact was already implied.
-        inconsistent = mentionsSymbol(result, "inconsistent");
+        inconsistent = mentions_symbol(result, "inconsistent");
         if (!inconsistent) {
-            replayHandles_.push_back(conversation.remember(formOf(statement)));
+            replay_handles_.push_back(conversation.remember(form_of(statement)));
         }
     });
 
@@ -329,17 +329,17 @@ void Context::assume(const Expr &predicate) {
 }
 
 void Context::declare(const Symbol &symbol, Feature feature) {
-    Kernel &kernel = liveKernel(kernel_, kernelLifetime_);
+    Kernel &kernel = live_kernel(kernel_, kernel_lifetime_);
     const Expr statement
-        = call("declare", {symbol, Expr::symbol(std::string(nameOf(feature)))});
-    kernel.session().converseAtomically([&](Conversation &conversation) {
-        evaluateOrThrow(conversation, statement);
-        replayHandles_.push_back(conversation.remember(formOf(statement)));
+        = call("declare", {symbol, Expr::symbol(std::string(name_of(feature)))});
+    kernel.session().converse_atomically([&](Conversation &conversation) {
+        evaluate_or_throw(conversation, statement);
+        replay_handles_.push_back(conversation.remember(form_of(statement)));
     });
 }
 
 std::vector<Expr> Context::facts() const {
-    Kernel &kernel = liveKernel(kernel_, kernelLifetime_);
+    Kernel &kernel = live_kernel(kernel_, kernel_lifetime_);
 
     // Maxima's facts(name) lists the facts of that one context, not its
     // ancestors'; and a bare facts() lists whichever context happens to be
@@ -367,7 +367,7 @@ std::vector<Expr> Context::facts() const {
     std::vector<Expr> all;
     for (const std::string &name : chain) {
         const Expr result
-            = evaluateOrThrow(kernel, call("facts", {Expr::symbol(name)}));
+            = evaluate_or_throw(kernel, call("facts", {Expr::symbol(name)}));
         if (result.is(Kind::Function) && result.name() == "list") {
             all.insert(all.end(), result.args().begin(), result.args().end());
         }

@@ -11,15 +11,15 @@ namespace proxima::detail {
 /// terms folded into one, a zero dropped, and the rest ordered.
 ///
 /// May return zero or one term, so the caller still collapses those cases.
-std::vector<Expr> normalizeSum(std::vector<Expr> terms);
+std::vector<Expr> normalize_sum(std::vector<Expr> terms);
 
 /// The same for a product, with one extra rule: any zero factor collapses the
 /// whole product to zero.
-std::vector<Expr> normalizeProduct(std::vector<Expr> factors);
+std::vector<Expr> normalize_product(std::vector<Expr> factors);
 
 /// The identities of exponentiation, when one applies: `x^1` is `x`, `x^0` is
 /// 1, `1^n` is 1. Returns nullopt when the power must stand as written.
-std::optional<Expr> normalizePower(const Expr &base, const Expr &exponent);
+std::optional<Expr> normalize_power(const Expr &base, const Expr &exponent);
 
 /// A total order over expressions: negative, zero or positive.
 ///
@@ -32,6 +32,6 @@ std::optional<Expr> normalizePower(const Expr &base, const Expr &exponent);
 /// internal representation uses: `x + 1` arrives as `((MPLUS SIMP) 1 $X)`. That
 /// makes normalisation a no-op on anything mapped back from Maxima, rather than
 /// a reshuffle that obscures diffs.
-int compareExpr(const Expr &lhs, const Expr &rhs);
+int compare_expr(const Expr &lhs, const Expr &rhs);
 
 } // namespace proxima::detail

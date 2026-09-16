@@ -25,28 +25,28 @@ namespace proxima::detail {
 /// A path as UTF-8.
 ///
 /// Throws for a Windows path that is not valid Unicode — NTFS allows a name
-/// holding a lone UTF-16 surrogate. Use tryToUtf8 where such a path can turn
+/// holding a lone UTF-16 surrogate. Use try_to_utf8 where such a path can turn
 /// up, for instance while listing a directory someone else owns.
-inline std::string toUtf8(const std::filesystem::path &path) {
+inline std::string to_utf8(const std::filesystem::path &path) {
     const std::u8string text = path.u8string();
     return std::string(text.begin(), text.end());
 }
 
 /// The path named by UTF-8 text. Throws if the text is not valid UTF-8 and the
 /// platform has to transcode it.
-inline std::filesystem::path pathFromUtf8(std::string_view text) {
+inline std::filesystem::path path_from_utf8(std::string_view text) {
     return std::filesystem::path(std::u8string(text.begin(), text.end()));
 }
 
-/// toUtf8, or nothing when the path cannot be represented.
+/// to_utf8, or nothing when the path cannot be represented.
 ///
 /// What the standard library throws for that differs between implementations —
 /// std::system_error from some, std::range_error from others — so anything but
 /// running out of memory counts.
 inline std::optional<std::string>
-tryToUtf8(const std::filesystem::path &path) {
+try_to_utf8(const std::filesystem::path &path) {
     try {
-        return toUtf8(path);
+        return to_utf8(path);
     } catch (const std::bad_alloc &) {
         throw;
     } catch (const std::exception &) {
@@ -54,11 +54,11 @@ tryToUtf8(const std::filesystem::path &path) {
     }
 }
 
-/// pathFromUtf8, or nothing when the text is not valid UTF-8.
+/// path_from_utf8, or nothing when the text is not valid UTF-8.
 inline std::optional<std::filesystem::path>
-tryPathFromUtf8(std::string_view text) {
+try_path_from_utf8(std::string_view text) {
     try {
-        return pathFromUtf8(text);
+        return path_from_utf8(text);
     } catch (const std::bad_alloc &) {
         throw;
     } catch (const std::exception &) {
@@ -68,8 +68,8 @@ tryPathFromUtf8(std::string_view text) {
 
 /// A path for an error message: UTF-8, and never an exception of its own in
 /// place of the error being reported.
-inline std::string describePath(const std::filesystem::path &path) {
-    return tryToUtf8(path).value_or("<a path that is not valid Unicode>");
+inline std::string describe_path(const std::filesystem::path &path) {
+    return try_to_utf8(path).value_or("<a path that is not valid Unicode>");
 }
 
 } // namespace proxima::detail

@@ -15,11 +15,11 @@ std::ostream &operator<<(std::ostream &out, const Expr &expr) {
 }
 
 std::ostream &operator<<(std::ostream &out, const Integer &value) {
-    return out << value.toString();
+    return out << value.to_string();
 }
 
 std::ostream &operator<<(std::ostream &out, Kind kind) {
-    return out << kindName(kind);
+    return out << kind_name(kind);
 }
 
 namespace detail {
@@ -27,9 +27,9 @@ namespace detail {
 std::string notate(const Expr &expr, Notation notation) {
     switch (notation) {
     case Notation::TeX:
-        return toTeX(expr);
+        return to_tex(expr);
     case Notation::MathML:
-        return toMathML(expr);
+        return to_mathml(expr);
     case Notation::Infix:
         break;
     }

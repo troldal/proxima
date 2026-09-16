@@ -202,7 +202,7 @@ pimpl, so `<windows.h>` disappears from every header.
 ### Step 5. Real discovery
 
 Replace `findFile`'s recursive walk with an ordered strategy: explicit
-`Config::maximaRoot` -> `MAXIMA_ROOT` env -> known install paths / registry ->
+`Config::maxima_root` -> `MAXIMA_ROOT` env -> known install paths / registry ->
 `PATH`. Within the chosen root, look for `bin/sbcl.exe` and glob
 `lib/maxima/*/binary-sbcl/maxima.core` directly.
 
@@ -221,7 +221,7 @@ The measurement did turn up a real hazard: Maxima loads `maxima-init.mac` from
 `$MAXIMA_USERDIR` (default `~/maxima`) at startup, and wxMaxima creates that file
 as a matter of course. Anything in it silently changes this library's results on
 one machine and not another. A library must compute the same answer everywhere,
-so `Config::loadUserInit` defaults to false and the user directory is pointed at
+so `Config::load_user_init` defaults to false and the user directory is pointed at
 a controlled location. Setting it true opts back in.
 
 - *Verify:* startup is visibly faster; a bogus root produces a clear error
@@ -229,7 +229,7 @@ a controlled location. Setting it true opts back in.
   reflects the configured value, which makes the whole environment path
   observable end to end.
 
-**Explicit configuration is authoritative.** If `Config::maximaRoot` is set but
+**Explicit configuration is authoritative.** If `Config::maxima_root` is set but
 unusable, discovery throws rather than searching on. Falling through would
 silently run a different installation than the caller asked for, turning a
 mistyped path into surprising results instead of a diagnosable error. (Caught by
@@ -326,7 +326,7 @@ literals, the recorded golden file, and live Maxima replies.
 **Integers are stored as digits, not as an integer type.** `30!` is
 `265252859812191058636308480000000`, so the reader cannot pick a fixed width
 without losing values. Keeping the text makes the reader lossless and leaves the
-numeric-representation choice to step 8, which is where it belongs; `asInt64()`
+numeric-representation choice to step 8, which is where it belongs; `as_int64()`
 returns `nullopt` rather than wrapping when the value does not fit.
 
 **Deliberate rejections.** Dotted pairs throw rather than being read as a symbol
@@ -470,7 +470,7 @@ rational rather than a bfloat. Verified with `is(equal(…, bfloat(%pi)))`.
   of the value. Maxima's own `integrate` leaves `RATSIMP` behind where
   re-reading the same expression from source does not, so requiring the flags to
   match would fail on a correct round trip. The test strips them by walking the
-  s-expression directly rather than going through `fromMaxima`, so it is not
+  s-expression directly rather than going through `from_maxima`, so it is not
   comparing the mapping with itself.
 
 ## Phase 3 — Public API
@@ -521,7 +521,7 @@ display-only concession — a *negative* leading constant is moved to the end, s
 ### Step 11. Operations and shared kernel
 
 `include/proxima/ops.hpp` and `include/proxima/functions.hpp`. A lazily-started
-`sharedKernel()` is the default last argument of every operation, so the common
+`shared_kernel()` is the default last argument of every operation, so the common
 case needs no ceremony and an explicit kernel is still available.
 
 **The failure split, as implemented.** Three outcomes, not two:
@@ -665,12 +665,12 @@ recovery can undo. It is a *toplevel* option, not a runtime one; placed among
 the runtime options SBCL refuses to start at all. `errcatch` is unaffected: it
 handles the error long before the debugger would see it.
 
-**Two timeouts, not one.** `Config::startupTimeout` (30s) governs launching and
+**Two timeouts, not one.** `Config::startup_timeout` (30s) governs launching and
 restoring; `Config::timeout` (2 min) governs one computation. Separating them is
 not tidiness — with a single value, asking for a one-second deadline on
 integrals would make the kernel unstartable, and worse, the deadline that had
 just been exceeded would also govern the restart meant to answer it.
-`Kernel::setTimeout` adjusts the per-call deadline on a running kernel.
+`Kernel::set_timeout` adjusts the per-call deadline on a running kernel.
 
 **A real bug found while testing.** The deadline was only checked when a read
 came back empty, so a reply arriving as a slow but unbroken trickle would never
@@ -697,7 +697,7 @@ deadline, so the thread would buy no cancellation either.
 
 ### Step 14. Memo cache
 
-An LRU of replies, sized by `Config::cacheEntries` (4096; zero disables). A
+An LRU of replies, sized by `Config::cache_entries` (4096; zero disables). A
 round trip costs milliseconds and a hit costs nanoseconds, and symbolic work
 asks the same questions repeatedly.
 
@@ -716,7 +716,7 @@ eagerly is merely slower. So the rule is to assume the worst:
 - **Any `Kernel::eval` discards the cache.** That entry point can evaluate
   anything, and nothing in the text of `a: 7` marks it as an instruction rather
   than a question.
-- **`Kernel::evalPure` is the cached path**, and carries an explicit promise:
+- **`Kernel::eval_pure` is the cached path**, and carries an explicit promise:
   the expression only asks. Every operation in `ops.hpp` satisfies it.
 - **Adding or dropping an assumption discards the cache**, through the same
   `remember`/`forget` calls `proxima::Context` already made for the replay journal.
@@ -742,11 +742,11 @@ transport tests, for nothing. Anyone persisting this cache must add it.
 
 ### Step 15. Numeric evaluation and packaging
 
-**`proxima::evalNumeric`** walks the tree, entirely locally. That is the point: once
+**`proxima::eval_numeric`** walks the tree, entirely locally. That is the point: once
 Maxima has produced a closed form, turning it into numbers is ordinary
 arithmetic, and paying a millisecond round trip per point would make plotting it
-or integrating it numerically absurd. `asFunction` binds one variable for
-repeated use; `isEvaluable` asks without catching.
+or integrating it numerically absurd. `as_function` binds one variable for
+repeated use; `is_evaluable` asks without catching.
 
 Named constants are recognised as Maxima spells them (`%pi`, `%e`, `inf`,
 `minf`), with an explicit binding winning over them.
@@ -854,7 +854,7 @@ it is `#ifdef`-ed to Windows and a test asserts its absence on Unix.
 - A failed `exec` is reported synchronously through a close-on-exec status pipe,
   matching `CreateProcess`'s behaviour, rather than surfacing later as a child
   that mysteriously exits with 127.
-- Environment merging moved to `mergeEnvironment`, shared but **not** uniform:
+- Environment merging moved to `merge_environment`, shared but **not** uniform:
   case-insensitive name matching on Windows, case-sensitive on POSIX, because
   that is how the two platforms actually compare variable names.
 - Discovery gained `lib64`, the platform's PATH separator, `sbcl` vs
@@ -888,7 +888,7 @@ quoting and environment-block tests), 7 integration on both.
    parser over a subset of Maxima's grammar, needing no kernel. `proxima::parse`
    remains for anything outside that subset. See below.
 6. ~~**A persistent cache**~~ — built after step 15, via
-   `Config::cacheDirectory`. See below; the version stamp turned out to be the
+   `Config::cache_directory`. See below; the version stamp turned out to be the
    smaller half of the problem.
 7. ~~**Repeated numeric evaluation**~~ — built after step 15 as `proxima::Compiled`,
    without the third-party evaluator this item had assumed. See below.
@@ -919,7 +919,7 @@ Nothing outstanding.
 
 ### The persistent cache, and what its key has to contain
 
-`Config::cacheDirectory` keeps replies between runs, one file per entry. Off by
+`Config::cache_directory` keeps replies between runs, one file per entry. Off by
 default: a library should not start writing files somewhere unasked.
 
 Step 14 noted that persisting would need a **Maxima version stamp**. Building it
@@ -944,7 +944,7 @@ already records exactly the statements that constitute it. That also decides
 what happens after a raw `Kernel::eval`: nothing in its text says whether it
 changed Maxima's state, so the journal can no longer be trusted to describe the
 session, and persistence switches itself off for that kernel. `proxima::Context` uses
-`Kernel::evalTracked` instead, which promises the change *is* in the journal.
+`Kernel::eval_tracked` instead, which promises the change *is* in the journal.
 
 Entries are written to a temporary and renamed into place, so a reader never
 sees a half-written file and two writers race only to produce identical content.
@@ -953,7 +953,7 @@ is detected rather than silently answered wrongly. The hash is FNV-1a rather
 than `std::hash`, which varies between standard libraries — a cache on disk
 outlives the build that wrote it.
 
-`Kernel::cacheStats().persistentHits` counts answers that came from disk.
+`Kernel::cache_stats().persistent_hits` counts answers that came from disk.
 Without it the tests could not tell a disk hit from a fresh computation, since
 both end up in the in-memory cache.
 
@@ -962,7 +962,7 @@ both end up in the in-memory cache.
 This item assumed the answer was to print the expression and hand it to ExprTk
 or muParser. Measuring first showed a better one, and a dependency-free one.
 
-`evalNumeric` cost ~1.6 µs per point on a middling expression — around 330 ms to
+`eval_numeric` cost ~1.6 µs per point on a middling expression — around 330 ms to
 plot 200,000 points. Most of that was not arithmetic: every symbol *occurrence*
 did a `std::map<std::string, double>` lookup, and every function application a
 linear search by name.
@@ -984,7 +984,7 @@ and *every division* is a power of -1.
 The working stack is thread-local, so one `Compiled` can be shared between
 threads without synchronisation.
 
-`evalNumeric` keeps its direct tree walk rather than being routed through
+`eval_numeric` keeps its direct tree walk rather than being routed through
 `Compiled`: compiling costs a traversal and several allocations, which for a
 single evaluation is more work than the evaluation. The two share one function
 table, so they cannot disagree about what `log` means.
@@ -1142,7 +1142,7 @@ request spliced it raw into `cppsend(id, errcatch(ratdisrep(<text>)))$`. So
 the printer was part of the protocol, and anything Maxima's *reader* disliked
 — a `$` in an Opaque, a space in a symbol name, an unbalanced paren in
 `Kernel::eval` — failed before `errcatch` was ever entered. No frame arrived,
-`readFrame` waited out the full `Config::timeout` (two minutes by default),
+`read_frame` waited out the full `Config::timeout` (two minutes by default),
 and `recover()` then killed and restarted the kernel. Measured before the
 change: `eval("1$ 2")`, `eval("x; 3")` and `diff(Expr::opaque("x$ 0"), x)`
 each cost 120 s and a restart. The last reached the stall through a *typed*
@@ -1151,7 +1151,7 @@ public operation.
 Now both directions are structure. `wire/to_maxima.cpp` is the mirror of
 `from_maxima.cpp`: it renders an `Expr` as `((MPLUS) 1 $X)`, heads without
 `SIMP` flags so Maxima simplifies what it is handed, symbols case-inverted
-and bar-quoted exactly as `decodeMaximaName` expects them back. The session
+and bar-quoted exactly as `decode_maxima_name` expects them back. The session
 sends it as
 
     cppsend(<id>, errcatch(ratdisrep(cppread("((MPLUS) 1 $X)"))))$
@@ -1226,7 +1226,7 @@ Three layers, in `include/proxima/render.hpp` and `src/core/render.cpp`:
    coefficient is dismantled so `x/3` is a fraction containing `x`; negative sum
    terms carry a flag instead of a `-1` factor.
 2. **Grouping.** Computed over the display tree from two queries the renderer
-   may override — `strengthOf(Construct)` and `contextFor(Slot)`. Both matter:
+   may override — `strength_of(Construct)` and `context_for(Slot)`. Both matter:
    the first says a `\frac{}{}` needs no brackets *around* it, the second that it
    needs none *inside* it. Declaring them is the entire difference between the
    TeX renderer and the infix one.
@@ -1301,7 +1301,7 @@ Measured, per round trip to a real Maxima, before → after:
 
 | | Windows | Linux |
 |---|---|---|
-| trivial `evalPure` | 15.5 ms → 0.04 ms | 0.05 ms → 0.07 ms |
+| trivial `eval_pure` | 15.5 ms → 0.04 ms | 0.05 ms → 0.07 ms |
 | `expand` | 15.6 ms → 1.5 ms | 1.1 ms → 1.1 ms |
 | kernel start to handshake | ~131 ms → ~75 ms | 15–62 ms → 14–15 ms |
 | teardown | 11–12 ms → 4–23 ms | 2.4–3.4 ms → 2.2 ms |
@@ -1323,7 +1323,7 @@ output with overlapped I/O, so every one of its writes posted a completion to
 the *parent's* port, carrying an `OVERLAPPED` address from SBCL's address
 space, which Asio took for one of its own operations. The result was memory
 corruption during Maxima's startup, showing up as a crash in
-`MaximaSession::readFrame`. Windows only, Maxima only: cmd.exe does not use
+`MaximaSession::read_frame`. Windows only, Maxima only: cmd.exe does not use
 overlapped writes, so the transport's own tests passed, and Linux has no
 completion ports. The pipe is now made from raw handles with
 `asio::detail::create_pipe` and only the parent's read end is bound — which is
@@ -1362,25 +1362,25 @@ code page. The two disagreed at every place a path became a string, and a
 Maxima under `C:\Programmer\mæxima` was mangled on its way to SBCL.
 
 **The conversions are the standard library's.** `src/util/utf8.hpp` holds
-`toUtf8` and `pathFromUtf8`, which go through `path::u8string()` and a `path`
+`to_utf8` and `path_from_utf8`, which go through `path::u8string()` and a `path`
 built from `std::u8string`; the functions only move bytes between `char8_t`
 and `char`. No UTF-8 library was added. A library would only have changed
 what happens to input that is not valid Unicode — a Windows file name with a
 lone surrogate, which NTFS permits — and the right response to that here is
-to skip the entry, which `tryToUtf8` and `tryPathFromUtf8` do. What the
+to skip the entry, which `try_to_utf8` and `try_path_from_utf8` do. What the
 standard library throws for it differs by implementation (`std::system_error`,
 `std::range_error`), so they catch anything but `std::bad_alloc`.
 
 Places that changed:
 
-- `launchCommand` and the environment paths use `toUtf8`.
-- The transport builds the executable path with `pathFromUtf8`; it had been
+- `launch_command` and the environment paths use `to_utf8`.
+- The transport builds the executable path with `path_from_utf8`; it had been
   reading `argv[0]` as ANSI while Boost.Process read the arguments as UTF-8.
 - Discovery reads `MAXIMA_ROOT`, `MAXIMA_PREFIX` and `PATH` through
   Boost.Process's wide environment instead of `std::getenv`, which on Windows
   replaces anything outside the code page with `?`. It compares directory
   names in native encoding, so an unconvertible neighbour of `C:\maxima-*` is
-  not an exception, and its messages go through `describePath`.
+  not an exception, and its messages go through `describe_path`.
 - The persistent cache names its temporaries with `path +=` rather than
   `target.string() + ".tmp"`.
 
@@ -1398,14 +1398,14 @@ shipped with Maxima 5.50) one variable at a time:
 SBCL's C runtime reads its command line through the ANSI API; everything Lisp
 reads afterwards is Unicode-clean, and its default external format is UTF-8,
 so replies come back over the pipe as UTF-8 too. The command line is the one
-place a C++ fix cannot reach. `sbclReadablePath` (`src/kernel/sbcl_path.cpp`)
+place a C++ fix cannot reach. `sbcl_readable_path` (`src/kernel/sbcl_path.cpp`)
 therefore hands SBCL the 8.3 short form of the executable and the core when
 their paths are not ASCII — short names are ASCII — and leaves them alone
 otherwise, so ordinary installs keep readable names. The environment keeps the
 long UTF-8 paths, so `maxima_userdir` is the directory the user configured.
 
 The limit: a volume with 8.3 name generation turned off has no short names,
-and there `sbclReadablePath` returns the long path and SBCL fails as before.
+and there `sbcl_readable_path` returns the long path and SBCL fails as before.
 The system drive normally has them; other volumes often do not. The fix
 belongs in SBCL — reading the command line with `GetCommandLineW` — and is
 worth reporting upstream.
@@ -1414,7 +1414,7 @@ Tests: conversions checked against spelled-out UTF-8 bytes; the real
 environment read back after `_wputenv_s`/`setenv`; candidate roots and the
 launch recipe with a non-ASCII install; the transport launching a shell copied
 into a non-ASCII directory, and comparing a non-ASCII argument with a
-non-ASCII environment value inside the child; `sbclReadablePath` on a real
+non-ASCII environment value inside the child; `sbcl_readable_path` on a real
 directory; and an integration test that starts the machine's own Maxima
 through a non-ASCII junction (a symlink on Linux) with a non-ASCII user
 directory, and checks `maxima_userdir` comes back byte for byte.

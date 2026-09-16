@@ -12,14 +12,14 @@
 namespace proxima::detail {
 namespace {
 
-bool isUpper(unsigned char c) {
+bool is_upper(unsigned char c) {
     return std::isupper(c) != 0;
 }
-bool isLower(unsigned char c) {
+bool is_lower(unsigned char c) {
     return std::islower(c) != 0;
 }
 
-std::string toLower(std::string_view text) {
+std::string to_lower(std::string_view text) {
     std::string out(text);
     for (char &c : out) {
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -27,7 +27,7 @@ std::string toLower(std::string_view text) {
     return out;
 }
 
-std::string toUpper(std::string_view text) {
+std::string to_upper(std::string_view text) {
     std::string out(text);
     for (char &c : out) {
         c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
@@ -37,7 +37,7 @@ std::string toUpper(std::string_view text) {
 
 /// Renders a Maxima string literal, escaping what Maxima's reader would
 /// otherwise interpret.
-std::string quoteString(std::string_view text) {
+std::string quote_string(std::string_view text) {
     std::string out = "\"";
     for (const char c : text) {
         if (c == '"' || c == '\\') {
@@ -61,7 +61,7 @@ std::string quoteString(std::string_view text) {
 ///
 /// Only heads with a `name(args...)` spelling belong here. Maxima's infix
 /// operators (MAND, MOR, MNCTIMES) have none, and are handled by the note at
-/// the fallback in fromMaxima.
+/// the fallback in from_maxima.
 constexpr std::pair<std::string_view, std::string_view> kDisplayNames[] = {
     {"%DERIVATIVE", "'diff"},
     {"MABS", "abs"},
@@ -75,7 +75,7 @@ constexpr std::pair<std::string_view, std::string_view> kDisplayNames[] = {
 /// operators and nouns, `$` for user-defined names — and neither sigil is part
 /// of the name. Note that a *symbol* keeps any `%`: the constant `%pi` really
 /// is called that, and arrives as `$%PI`.
-std::string decodeHead(std::string_view raw) {
+std::string decode_head(std::string_view raw) {
     for (const auto &[internal, display] : kDisplayNames) {
         if (raw == internal) {
             return std::string(display);
@@ -84,12 +84,12 @@ std::string decodeHead(std::string_view raw) {
     if (!raw.empty() && (raw.front() == '%' || raw.front() == '$')) {
         raw.remove_prefix(1);
     }
-    return decodeMaximaName(raw);
+    return decode_maxima_name(raw);
 }
 
 /// The value of an Integer atom, of any size: proxima::Integer is unbounded, so a
 /// factorial arrives as a number rather than as a blob of text.
-Integer integerOf(const SExpr &form) {
+Integer integer_of(const SExpr &form) {
     // The reader makes an Integer only of an optional sign and digits, so this
     // parses. It throws rather than falling back to Opaque text, which is what
     // it once did, so that a broken reader could never pass for an answer.
@@ -100,23 +100,23 @@ Integer integerOf(const SExpr &form) {
     return std::move(*value);
 }
 
-Expr mapInteger(const SExpr &form) {
-    return Expr::integer(integerOf(form));
+Expr map_integer(const SExpr &form) {
+    return Expr::integer(integer_of(form));
 }
 
 /// Maxima's `(RAT numerator denominator)`: two integers, the denominator not
 /// zero. Anything else is not a term Maxima produces, and is refused rather
 /// than kept as Opaque text such as "(1/0)" that would look like an answer.
-Expr mapRational(const SExpr &form) {
-    if (form.size() != 3 || !form.at(1).isInteger() || !form.at(2).isInteger()) {
-        throw ParseError("malformed rational " + form.toString() + " in a Maxima reply");
+Expr map_rational(const SExpr &form) {
+    if (form.size() != 3 || !form.at(1).is_integer() || !form.at(2).is_integer()) {
+        throw ParseError("malformed rational " + form.to_string() + " in a Maxima reply");
     }
-    Integer denominator = integerOf(form.at(2));
-    if (denominator.isZero()) {
-        throw ParseError("rational with a zero denominator " + form.toString()
+    Integer denominator = integer_of(form.at(2));
+    if (denominator.is_zero()) {
+        throw ParseError("rational with a zero denominator " + form.to_string()
                          + " in a Maxima reply");
     }
-    return Expr::rational(integerOf(form.at(1)), std::move(denominator));
+    return Expr::rational(integer_of(form.at(1)), std::move(denominator));
 }
 
 /// A Maxima bigfloat is mantissa * 2^(exponent - bits(mantissa)).
@@ -126,14 +126,14 @@ Expr mapRational(const SExpr &form) {
 /// nothing is rounded — but its bigfloat-ness is not: sending it back gives an
 /// exact rational rather than a bfloat. That is the honest trade for not
 /// carrying a multiprecision float type.
-Expr mapBigfloat(const SExpr &form) {
-    const auto mantissa = form.at(1).asInt64();
-    const auto exponent = form.at(2).asInt64();
+Expr map_bigfloat(const SExpr &form) {
+    const auto mantissa = form.at(1).as_int64();
+    const auto exponent = form.at(2).as_int64();
     if (!mantissa || !exponent) {
         // Mantissa past int64 means an fpprec far above the default. Kept
         // structurally; this one does not round-trip.
         return Expr::function("bigfloat",
-                              {fromMaxima(form.at(1)), fromMaxima(form.at(2))});
+                              {from_maxima(form.at(1)), from_maxima(form.at(2))});
     }
 
     const auto magnitude = static_cast<std::uint64_t>(
@@ -148,52 +148,52 @@ Expr mapBigfloat(const SExpr &form) {
     return Expr::opaque("(" + digits + "/2^" + std::to_string(-shift) + ")");
 }
 
-std::vector<Expr> mapArguments(const SExpr &form) {
+std::vector<Expr> map_arguments(const SExpr &form) {
     std::vector<Expr> args;
     args.reserve(form.size() - 1);
     for (std::size_t i = 1; i < form.size(); ++i) {
-        args.push_back(fromMaxima(form.at(i)));
+        args.push_back(from_maxima(form.at(i)));
     }
     return args;
 }
 
 } // namespace
 
-std::string decodeMaximaName(std::string_view raw) {
-    bool sawUpper = false;
-    bool sawLower = false;
+std::string decode_maxima_name(std::string_view raw) {
+    bool saw_upper = false;
+    bool saw_lower = false;
     for (const char c : raw) {
         const auto uc = static_cast<unsigned char>(c);
-        sawUpper = sawUpper || isUpper(uc);
-        sawLower = sawLower || isLower(uc);
+        saw_upper = saw_upper || is_upper(uc);
+        saw_lower = saw_lower || is_lower(uc);
     }
 
     // Uniformly cased names were inverted on the way in; mixed-case names
     // reached Maxima through bar quoting and were left alone.
-    if (sawUpper && !sawLower) {
-        return toLower(raw);
+    if (saw_upper && !saw_lower) {
+        return to_lower(raw);
     }
-    if (sawLower && !sawUpper) {
-        return toUpper(raw);
+    if (saw_lower && !saw_upper) {
+        return to_upper(raw);
     }
     return std::string(raw);
 }
 
-Expr fromMaxima(const SExpr &form) {
+Expr from_maxima(const SExpr &form) {
     switch (form.kind()) {
     case SExpr::Kind::Integer:
-        return mapInteger(form);
+        return map_integer(form);
 
     case SExpr::Kind::Real:
-        return Expr::real(form.realValue());
+        return Expr::real(form.real_value());
 
     case SExpr::Kind::String:
         // Maxima strings have no typed node; they become source text, which is
         // exactly what Opaque is for.
-        return Expr::opaque(quoteString(form.stringValue()));
+        return Expr::opaque(quote_string(form.string_value()));
 
     case SExpr::Kind::Symbol: {
-        const std::string &name = form.symbolName();
+        const std::string &name = form.symbol_name();
         // Maxima's booleans are the Lisp ones, not $TRUE/$FALSE.
         if (name == "T") {
             return Expr::symbol("true");
@@ -205,7 +205,7 @@ Expr fromMaxima(const SExpr &form) {
         if (!bare.empty() && bare.front() == '$') {
             bare.remove_prefix(1);
         }
-        return Expr::symbol(decodeMaximaName(bare));
+        return Expr::symbol(decode_maxima_name(bare));
     }
 
     case SExpr::Kind::List:
@@ -220,51 +220,51 @@ Expr fromMaxima(const SExpr &form) {
     // flags — and there can be more than SIMP, as in (MEXPT SIMP RATSIMP) — so
     // only its first element names the operator.
     const SExpr &head = form.at(0);
-    const SExpr &operatorName = head.isList() ? head.at(0) : head;
-    if (!operatorName.isSymbol()) {
+    const SExpr &operator_name = head.is_list() ? head.at(0) : head;
+    if (!operator_name.is_symbol()) {
         throw ParseError("Maxima term head is not a symbol");
     }
-    const std::string &raw = operatorName.symbolName();
+    const std::string &raw = operator_name.symbol_name();
 
     if (raw == "MPLUS") {
-        return Expr::add(mapArguments(form));
+        return Expr::add(map_arguments(form));
     }
     if (raw == "MTIMES") {
-        return Expr::mul(mapArguments(form));
+        return Expr::mul(map_arguments(form));
     }
     if (raw == "MEXPT") {
-        return Expr::pow(fromMaxima(form.at(1)), fromMaxima(form.at(2)));
+        return Expr::pow(from_maxima(form.at(1)), from_maxima(form.at(2)));
     }
     if (raw == "RAT") {
-        return mapRational(form);
+        return map_rational(form);
     }
     if (raw == "BIGFLOAT") {
-        return mapBigfloat(form);
+        return map_bigfloat(form);
     }
 
     if (raw == "MEQUAL") {
-        return Expr::relation(RelOp::Equal, fromMaxima(form.at(1)),
-                              fromMaxima(form.at(2)));
+        return Expr::relation(RelOp::Equal, from_maxima(form.at(1)),
+                              from_maxima(form.at(2)));
     }
     if (raw == "MNOTEQUAL") {
-        return Expr::relation(RelOp::NotEqual, fromMaxima(form.at(1)),
-                              fromMaxima(form.at(2)));
+        return Expr::relation(RelOp::NotEqual, from_maxima(form.at(1)),
+                              from_maxima(form.at(2)));
     }
     if (raw == "MLESSP") {
-        return Expr::relation(RelOp::Less, fromMaxima(form.at(1)),
-                              fromMaxima(form.at(2)));
+        return Expr::relation(RelOp::Less, from_maxima(form.at(1)),
+                              from_maxima(form.at(2)));
     }
     if (raw == "MLEQP") {
-        return Expr::relation(RelOp::LessEqual, fromMaxima(form.at(1)),
-                              fromMaxima(form.at(2)));
+        return Expr::relation(RelOp::LessEqual, from_maxima(form.at(1)),
+                              from_maxima(form.at(2)));
     }
     if (raw == "MGREATERP") {
-        return Expr::relation(RelOp::Greater, fromMaxima(form.at(1)),
-                              fromMaxima(form.at(2)));
+        return Expr::relation(RelOp::Greater, from_maxima(form.at(1)),
+                              from_maxima(form.at(2)));
     }
     if (raw == "MGEQP") {
-        return Expr::relation(RelOp::GreaterEqual, fromMaxima(form.at(1)),
-                              fromMaxima(form.at(2)));
+        return Expr::relation(RelOp::GreaterEqual, from_maxima(form.at(1)),
+                              from_maxima(form.at(2)));
     }
 
     // Operators whose structure maps onto a typed node rather than a name.
@@ -272,16 +272,16 @@ Expr fromMaxima(const SExpr &form) {
     // MTIMES with -1, division becomes MEXPT with -1 — but unsimplified input
     // can still carry them.
     if (raw == "MMINUS" && form.size() == 2) {
-        return -fromMaxima(form.at(1));
+        return -from_maxima(form.at(1));
     }
     if (raw == "MQUOTIENT" && form.size() == 3) {
-        return fromMaxima(form.at(1)) / fromMaxima(form.at(2));
+        return from_maxima(form.at(1)) / from_maxima(form.at(2));
     }
 
     if (raw == "MLIST") {
         // Maxima has no textual `list(...)` constructor — `[a, b]` is the only
         // spelling — so the printer knows this one head by name.
-        return Expr::function("list", mapArguments(form));
+        return Expr::function("list", map_arguments(form));
     }
 
     // Everything else is an uninterpreted application. This is the escape hatch
@@ -293,8 +293,8 @@ Expr fromMaxima(const SExpr &form) {
     // like MAND, say — will map faithfully but print as a function call that
     // Maxima would not read back the same way. Maxima's simplifier does not
     // produce those in the expressions this library asks for; if one turns up,
-    // it needs an entry beside 'diff in displayNameFor or a typed node here.
-    return Expr::function(decodeHead(raw), mapArguments(form));
+    // it needs an entry beside 'diff in display_name_for or a typed node here.
+    return Expr::function(decode_head(raw), map_arguments(form));
 }
 
 } // namespace proxima::detail

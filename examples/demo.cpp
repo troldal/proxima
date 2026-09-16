@@ -41,11 +41,11 @@ std::string indented(const std::string &block, std::size_t by) {
 }
 
 /// One expression, in each of the four renderers.
-void showRendered(const char *label, const proxima::Expr &expr) {
+void show_rendered(const char *label, const proxima::Expr &expr) {
     std::cout << '\n' << label << '\n'
               << "  str()      " << expr.str() << '\n'
-              << "  toTeX()    " << proxima::toTeX(expr) << '\n'
-              << "  toMathML() " << proxima::toMathML(expr) << '\n'
+              << "  to_tex()    " << proxima::to_tex(expr) << '\n'
+              << "  to_mathml() " << proxima::to_mathml(expr) << '\n'
               << "  text2d\n" << indented(text2d::draw(expr), 4) << '\n';
 }
 
@@ -58,11 +58,11 @@ int main() {
         // Two ways to build an expression: with operators, or from text.
         // Expr::parse needs no running Maxima.
         const proxima::Expr f = pow(proxima::Expr(x), 2) + 3 * x + 2;
-        const proxima::Expr fromText = proxima::Expr::parse("x^2 + 3*x + 2");
+        const proxima::Expr from_text = proxima::Expr::parse("x^2 + 3*x + 2");
 
         std::cout << "f                = " << f.str() << '\n';
-        std::cout << "  from text      = " << fromText.str() << "   "
-                  << (fromText == f ? "(the same expression)"
+        std::cout << "  from text      = " << from_text.str() << "   "
+                  << (from_text == f ? "(the same expression)"
                                     : "(a different one!)")
                   << '\n';
         std::cout << "f'               = " << proxima::diff(f, x).str() << '\n';
@@ -125,9 +125,9 @@ int main() {
         if (const auto quadratic
                 = proxima::solve(eq(a * pow(proxima::Expr(x), 2) + b * x + c, proxima::Expr(0)), x);
             quadratic && !quadratic->empty()) {
-            showRendered("a root of a*x^2 + b*x + c = 0:", quadratic->back());
+            show_rendered("a root of a*x^2 + b*x + c = 0:", quadratic->back());
         }
-        showRendered("d/dx sin(x)/x:", proxima::diff(proxima::sin(x) / x, x));
+        show_rendered("d/dx sin(x)/x:", proxima::diff(proxima::sin(x) / x, x));
         std::cout << '\n';
 
         // The other parser hands the text to Maxima itself, which accepts
@@ -135,8 +135,8 @@ int main() {
         // two answer differently.
         std::cout << "Expr::parse(5!)  = " << proxima::Expr::parse("5!").str()
                   << "   (parsed, not evaluated)\n";
-        if (const auto viaMaxima = proxima::parse("5!")) {
-            std::cout << "proxima::parse(5!)    = " << viaMaxima->str()
+        if (const auto via_maxima = proxima::parse("5!")) {
+            std::cout << "proxima::parse(5!)    = " << via_maxima->str()
                       << "            (Maxima evaluates as it parses)\n";
         }
 
@@ -169,7 +169,7 @@ int main() {
         // Once a closed form exists, turning it into numbers is ordinary
         // arithmetic. No further round trips, so this is usable in a loop.
         if (const auto antiderivative = proxima::integrate(integrand, x)) {
-            const auto F = proxima::asFunction(*antiderivative, x);
+            const auto F = proxima::as_function(*antiderivative, x);
             std::cout << "F(1) - F(0)      = " << F(1.0) - F(0.0) << '\n';
         }
     } catch (const std::exception &e) {

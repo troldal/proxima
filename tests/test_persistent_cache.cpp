@@ -43,7 +43,7 @@ proxima::Reply valued(const std::string &value) {
     return reply;
 }
 
-std::size_t fileCount(const std::filesystem::path &directory) {
+std::size_t file_count(const std::filesystem::path &directory) {
     std::error_code ec;
     std::size_t count = 0;
     for (const auto &entry : std::filesystem::directory_iterator(directory, ec)) {
@@ -96,17 +96,17 @@ TEST_CASE("a different stamp is a different cache") {
     // visible, because it was computed under conditions that no longer hold.
     const auto directory = scratch("stamp");
 
-    const PersistentCache underOne(directory, "maxima=5.50");
-    underOne.insert("sqrt(x^2)", valued("abs(x)"));
-    REQUIRE(underOne.find("sqrt(x^2)").has_value());
+    const PersistentCache under_one(directory, "maxima=5.50");
+    under_one.insert("sqrt(x^2)", valued("abs(x)"));
+    REQUIRE(under_one.find("sqrt(x^2)").has_value());
 
-    const PersistentCache underAnother(directory, "maxima=5.51");
-    CHECK_FALSE(underAnother.find("sqrt(x^2)").has_value());
+    const PersistentCache under_another(directory, "maxima=5.51");
+    CHECK_FALSE(under_another.find("sqrt(x^2)").has_value());
 
     // And they coexist rather than overwriting one another.
-    underAnother.insert("sqrt(x^2)", valued("x"));
-    CHECK(underOne.find("sqrt(x^2)")->value == "abs(x)");
-    CHECK(underAnother.find("sqrt(x^2)")->value == "x");
+    under_another.insert("sqrt(x^2)", valued("x"));
+    CHECK(under_one.find("sqrt(x^2)")->value == "abs(x)");
+    CHECK(under_another.find("sqrt(x^2)")->value == "x");
 }
 
 TEST_CASE("a corrupt or truncated entry is ignored, not misread") {
@@ -125,12 +125,12 @@ TEST_CASE("a corrupt or truncated entry is ignored, not misread") {
 TEST_CASE("a length larger than the file is a miss, not an exception") {
     // Fields are length-prefixed, and the length used to be trusted: a corrupt
     // or hostile entry claiming 18446744073709551615 bytes made the reader try
-    // to allocate that much, and std::length_error escaped evalPure — not an
+    // to allocate that much, and std::length_error escaped eval_pure — not an
     // proxima::Error, and not a cache miss.
     const auto directory = scratch("huge_length");
     const PersistentCache cache(directory, "stamp");
     cache.insert("q", valued("42"));
-    REQUIRE(fileCount(directory) == 1);
+    REQUIRE(file_count(directory) == 1);
     const std::filesystem::path entry
         = std::filesystem::directory_iterator(directory)->path();
 
@@ -174,8 +174,8 @@ TEST_CASE("a temporary is named for its writer, not only its order") {
     // could be renamed into place. The name now carries a per-process token.
     const std::filesystem::path target
         = std::filesystem::path("somewhere") / "0123456789abcdef.reply";
-    const std::filesystem::path first = proxima::detail::temporaryPathFor(target);
-    const std::filesystem::path second = proxima::detail::temporaryPathFor(target);
+    const std::filesystem::path first = proxima::detail::temporary_path_for(target);
+    const std::filesystem::path second = proxima::detail::temporary_path_for(target);
 
     CHECK(first != second);
     CHECK(first.parent_path() == target.parent_path());
@@ -207,7 +207,7 @@ TEST_CASE("another writer's temporaries are left alone") {
     const auto directory = scratch("collide");
     const PersistentCache cache(directory, "stamp");
     cache.insert("q", valued("42"));
-    REQUIRE(fileCount(directory) == 1);
+    REQUIRE(file_count(directory) == 1);
     const std::filesystem::path entry
         = std::filesystem::directory_iterator(directory)->path();
     std::filesystem::remove(entry);
@@ -235,13 +235,13 @@ TEST_CASE("another writer's temporaries are left alone") {
     REQUIRE(cache.find("q").has_value());
     CHECK(cache.find("q")->value == "42");
     // The entry and the three foreign files: no temporary of ours left behind.
-    CHECK(fileCount(directory) == 4);
+    CHECK(file_count(directory) == 4);
 }
 
 namespace {
 
 /// Total size of the entries in `directory`, temporaries excluded.
-std::uintmax_t entryBytes(const std::filesystem::path &directory) {
+std::uintmax_t entry_bytes(const std::filesystem::path &directory) {
     std::uintmax_t total = 0;
     for (const auto &entry : std::filesystem::directory_iterator(directory)) {
         if (entry.path().extension() == ".reply") {
@@ -254,7 +254,7 @@ std::uintmax_t entryBytes(const std::filesystem::path &directory) {
 /// Sets an entry's modification time `minutes` into the past, standing in for
 /// the passage of time without waiting for it.
 void age(const PersistentCache &cache, const std::string &source, int minutes) {
-    std::filesystem::last_write_time(cache.entryPath(source),
+    std::filesystem::last_write_time(cache.entry_path(source),
                                      std::filesystem::file_time_type::clock::now()
                                          - std::chrono::minutes{minutes});
 }
@@ -273,7 +273,7 @@ TEST_CASE("the cache directory is held under its limit, oldest entries first") {
         age(cache, source, 30 - i); // Each written a minute after the last.
     }
 
-    CHECK(entryBytes(directory) <= 10'000);
+    CHECK(entry_bytes(directory) <= 10'000);
     CHECK(cache.find("q29").has_value());
     CHECK(cache.find("q28").has_value());
     CHECK_FALSE(cache.find("q0").has_value());
@@ -287,10 +287,10 @@ TEST_CASE("reading a recently used entry does not write to it") {
     const PersistentCache cache(directory, "stamp", 1'000'000);
     cache.insert("q", valued("42"));
     age(cache, "q", 5);
-    const auto before = std::filesystem::last_write_time(cache.entryPath("q"));
+    const auto before = std::filesystem::last_write_time(cache.entry_path("q"));
 
     REQUIRE(cache.find("q").has_value());
-    CHECK(std::filesystem::last_write_time(cache.entryPath("q")) == before);
+    CHECK(std::filesystem::last_write_time(cache.entry_path("q")) == before);
 }
 
 TEST_CASE("reading an entry back keeps it from eviction") {
@@ -307,7 +307,7 @@ TEST_CASE("reading an entry back keeps it from eviction") {
         // last use is an hour old or more. a oldest, d newest.
         age(cache, sources[i], 60 * (10 - static_cast<int>(i)));
     }
-    REQUIRE(fileCount(directory) == 4);
+    REQUIRE(file_count(directory) == 4);
 
     // a is the oldest write, but the most recent read.
     REQUIRE(cache.find("a").has_value());
@@ -347,17 +347,17 @@ TEST_CASE("a limit of zero keeps everything") {
     for (int i = 0; i < 20; ++i) {
         cache.insert("q" + std::to_string(i), valued(payload));
     }
-    CHECK(fileCount(directory) == 20);
+    CHECK(file_count(directory) == 20);
 }
 
 TEST_CASE("the hash is stable, and not std::hash") {
     // A cache on disk outlives the build that wrote it, and
     // std::hash<std::string> differs between standard libraries. These values
     // are FNV-1a and must not drift.
-    CHECK(proxima::detail::stableHash("") == "cbf29ce484222325");
-    CHECK(proxima::detail::stableHash("a") == "af63dc4c8601ec8c");
-    CHECK(proxima::detail::stableHash("foobar") == "85944171f73967e8");
-    CHECK(proxima::detail::stableHash("a").size() == 16);
+    CHECK(proxima::detail::stable_hash("") == "cbf29ce484222325");
+    CHECK(proxima::detail::stable_hash("a") == "af63dc4c8601ec8c");
+    CHECK(proxima::detail::stable_hash("foobar") == "85944171f73967e8");
+    CHECK(proxima::detail::stable_hash("a").size() == 16);
 }
 
 // --- Against a real kernel -------------------------------------------------
@@ -367,7 +367,7 @@ TEST_SUITE("maxima") {
 TEST_CASE("an answer survives the kernel that computed it") {
     const auto directory = scratch("across_kernels");
     proxima::Config config;
-    config.cacheDirectory = directory;
+    config.cache_directory = directory;
 
     const Symbol x("x");
     const Expr question = pow(Expr(x) + 1, 12);
@@ -375,7 +375,7 @@ TEST_CASE("an answer survives the kernel that computed it") {
     {
         proxima::Kernel first(config);
         proxima::expand(question, first);
-        CHECK(fileCount(directory) > 0);
+        CHECK(file_count(directory) > 0);
     }
 
     // A second kernel, a fresh Maxima process, and an empty in-memory cache.
@@ -384,8 +384,8 @@ TEST_CASE("an answer survives the kernel that computed it") {
 
     // The count is what makes this conclusive: an answer computed afresh would
     // land in the in-memory cache too, so the presence of an entry proves
-    // nothing on its own. Only persistentHits distinguishes the two.
-    CHECK(second.cacheStats().persistentHits == 1);
+    // nothing on its own. Only persistent_hits distinguishes the two.
+    CHECK(second.cache_stats().persistent_hits == 1);
     CHECK(answer == proxima::expand(question, second));
 }
 
@@ -397,7 +397,7 @@ TEST_CASE("an assumption is part of the key, not an afterthought") {
     // process could be told to discard anything.
     const auto directory = scratch("assumption_key");
     proxima::Config config;
-    config.cacheDirectory = directory;
+    config.cache_directory = directory;
 
     const Symbol x("assumption_key_probe");
     const Expr root = proxima::sqrt(pow(Expr(x), 2));
@@ -421,42 +421,42 @@ TEST_CASE("a raw eval switches persistence off for that kernel") {
     // journal is what the key is built from.
     const auto directory = scratch("raw_eval");
     proxima::Config config;
-    config.cacheDirectory = directory;
+    config.cache_directory = directory;
 
     proxima::Kernel kernel(config);
     const Symbol x("x");
 
     proxima::expand(pow(Expr(x) + 1, 5), kernel);
-    const std::size_t before = fileCount(directory);
+    const std::size_t before = file_count(directory);
     CHECK(before > 0);
-    CHECK(kernel.persistenceActive());
+    CHECK(kernel.persistence_active());
 
     kernel.eval("raw_eval_probe: 7");
-    CHECK_FALSE(kernel.persistenceActive());
+    CHECK_FALSE(kernel.persistence_active());
     proxima::expand(pow(Expr(x) + 1, 6), kernel);
 
     // Still working, just no longer writing entries it could not honestly key.
-    CHECK(fileCount(directory) == before);
+    CHECK(file_count(directory) == before);
 
     // And no longer reading them either: asking again for something already on
     // disk goes to Maxima rather than to a key that no longer describes this
     // session.
     proxima::expand(pow(Expr(x) + 1, 5), kernel);
-    CHECK(kernel.cacheStats().persistentHits == 0);
+    CHECK(kernel.cache_stats().persistent_hits == 0);
 
     SUBCASE("until a restart discards the unrecorded change") {
         // There used to be no way back short of a new Kernel.
         kernel.restart();
-        CHECK(kernel.persistenceActive());
+        CHECK(kernel.persistence_active());
         // The raw eval's binding went with the old process, which is exactly
         // what makes the disk answers trustworthy again.
         CHECK(kernel.eval("is(raw_eval_probe = 7)").value != "T");
         // That check was a raw eval as well, and switched persistence off in
         // turn — so restart once more before reading from disk.
-        CHECK_FALSE(kernel.persistenceActive());
+        CHECK_FALSE(kernel.persistence_active());
         kernel.restart();
         proxima::expand(pow(Expr(x) + 1, 5), kernel);
-        CHECK(kernel.cacheStats().persistentHits == 1);
+        CHECK(kernel.cache_stats().persistent_hits == 1);
     }
 }
 
@@ -466,20 +466,20 @@ TEST_CASE("a kernel restarted after dying resumes persistence") {
     // regardless.
     const auto directory = scratch("recovered");
     proxima::Config config;
-    config.cacheDirectory = directory;
+    config.cache_directory = directory;
 
     proxima::Kernel kernel(config);
     kernel.eval("recovered_probe: 7");
-    REQUIRE_FALSE(kernel.persistenceActive());
+    REQUIRE_FALSE(kernel.persistence_active());
 
     CHECK_THROWS_AS(kernel.eval("quit()"), proxima::KernelError);
-    CHECK(kernel.persistenceActive());
+    CHECK(kernel.persistence_active());
 }
 
 TEST_CASE("persistence is off unless a directory is asked for") {
     // A library should not start writing files somewhere on its own.
     proxima::Config config;
-    CHECK(config.cacheDirectory.empty());
+    CHECK(config.cache_directory.empty());
 
     proxima::Kernel kernel(config);
     const Symbol x("x");

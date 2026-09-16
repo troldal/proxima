@@ -29,19 +29,19 @@
 namespace {
 
 /// Rewrites every head to just its operator, dropping the simplification flags
-/// that follow it. Written against SExpr rather than going through fromMaxima,
+/// that follow it. Written against SExpr rather than going through from_maxima,
 /// so that the round-trip test is not comparing the mapping with itself.
-proxima::detail::SExpr stripSimplificationFlags(const proxima::detail::SExpr &form) {
-    if (!form.isList() || form.empty()) {
+proxima::detail::SExpr strip_simplification_flags(const proxima::detail::SExpr &form) {
+    if (!form.is_list() || form.empty()) {
         return form;
     }
     std::vector<proxima::detail::SExpr> items;
     items.reserve(form.size());
 
     const proxima::detail::SExpr &head = form.at(0);
-    items.push_back(head.isList() && !head.empty() ? head.at(0) : head);
+    items.push_back(head.is_list() && !head.empty() ? head.at(0) : head);
     for (std::size_t i = 1; i < form.size(); ++i) {
-        items.push_back(stripSimplificationFlags(form.at(i)));
+        items.push_back(strip_simplification_flags(form.at(i)));
     }
     return proxima::detail::SExpr::list(std::move(items));
 }
@@ -49,17 +49,17 @@ proxima::detail::SExpr stripSimplificationFlags(const proxima::detail::SExpr &fo
 } // namespace
 
 // No Maxima needed: a Reply is plain data.
-TEST_CASE("toExpr reads a reply into an expression, or into its failure") {
-    const auto read = proxima::toExpr(proxima::Reply{true, "((MPLUS SIMP) 1 $X)", ""});
+TEST_CASE("to_expr reads a reply into an expression, or into its failure") {
+    const auto read = proxima::to_expr(proxima::Reply{true, "((MPLUS SIMP) 1 $X)", ""});
     REQUIRE(read.has_value());
     CHECK(*read == proxima::Expr::symbol("x") + 1);
 
-    const auto failed = proxima::toExpr(proxima::Reply{false, "", "expt: undefined: 0 to a negative exponent."});
+    const auto failed = proxima::to_expr(proxima::Reply{false, "", "expt: undefined: 0 to a negative exponent."});
     REQUIRE_FALSE(failed.has_value());
     CHECK(failed.error().message == "expt: undefined: 0 to a negative exponent.");
 
     // Not a Maxima term at all: the protocol failing, not the mathematics.
-    CHECK_THROWS_AS(static_cast<void>(proxima::toExpr(proxima::Reply{true, "((MPLUS", ""})),
+    CHECK_THROWS_AS(static_cast<void>(proxima::to_expr(proxima::Reply{true, "((MPLUS", ""})),
                     proxima::ParseError);
 }
 
@@ -142,8 +142,8 @@ TEST_CASE("the launch environment reaches the child process") {
     // makes the whole environment-block path observable end to end. It is also
     // what keeps the user's own maxima-init.mac out of the picture.
     proxima::Config config;
-    config.userDir = std::filesystem::temp_directory_path() / "proxima_test_userdir";
-    const std::string expected = "\"" + config.userDir.generic_string() + "\"";
+    config.user_dir = std::filesystem::temp_directory_path() / "proxima_test_userdir";
+    const std::string expected = "\"" + config.user_dir.generic_string() + "\"";
 
     proxima::Kernel maxima(config);
     CHECK(maxima.eval("maxima_userdir").value == expected);
@@ -151,7 +151,7 @@ TEST_CASE("the launch environment reaches the child process") {
 
 TEST_CASE("an explicitly wrong Maxima root fails loudly") {
     proxima::Config config;
-    config.maximaRoot
+    config.maxima_root
         = std::filesystem::temp_directory_path() / "no_such_maxima_install";
     CHECK_THROWS_AS(proxima::Kernel{config}, proxima::KernelError);
 }
@@ -177,22 +177,22 @@ TEST_CASE("live replies parse as s-expressions") {
         REQUIRE(reply.ok);
 
         proxima::detail::SExpr parsed;
-        REQUIRE_NOTHROW(parsed = proxima::detail::parseSExpr(reply.value));
+        REQUIRE_NOTHROW(parsed = proxima::detail::parse_sexpr(reply.value));
         // Re-rendering must read back identically, which catches a reader that
         // accepts input but quietly loses part of it.
-        CHECK(proxima::detail::parseSExpr(parsed.toString()) == parsed);
+        CHECK(proxima::detail::parse_sexpr(parsed.to_string()) == parsed);
     }
 }
 
 TEST_CASE("a live rational keeps its exact numerator and denominator") {
     proxima::Kernel maxima;
     const proxima::detail::SExpr rational
-        = proxima::detail::parseSExpr(maxima.eval("1/3 + 2/5").value);
+        = proxima::detail::parse_sexpr(maxima.eval("1/3 + 2/5").value);
 
-    REQUIRE(rational.isList());
-    CHECK(rational.at(0).at(0).isSymbol("RAT"));
-    CHECK(rational.at(1).asInt64() == 11);
-    CHECK(rational.at(2).asInt64() == 15);
+    REQUIRE(rational.is_list());
+    CHECK(rational.at(0).at(0).is_symbol("RAT"));
+    CHECK(rational.at(1).as_int64() == 11);
+    CHECK(rational.at(2).as_int64() == 15);
 }
 
 TEST_CASE("a live bignum survives as digits") {
@@ -200,11 +200,11 @@ TEST_CASE("a live bignum survives as digits") {
     // wrap or truncate.
     proxima::Kernel maxima;
     const proxima::detail::SExpr value
-        = proxima::detail::parseSExpr(maxima.eval("30!").value);
+        = proxima::detail::parse_sexpr(maxima.eval("30!").value);
 
-    REQUIRE(value.isInteger());
+    REQUIRE(value.is_integer());
     CHECK(value.digits() == "265252859812191058636308480000000");
-    CHECK_FALSE(value.asInt64().has_value());
+    CHECK_FALSE(value.as_int64().has_value());
 }
 
 TEST_CASE("printed expressions are valid Maxima meaning the same thing") {
@@ -215,7 +215,7 @@ TEST_CASE("printed expressions are valid Maxima meaning the same thing") {
     const proxima::Symbol x("x");
     const proxima::Symbol y("y");
 
-    const auto agreesWith = [&maxima](const proxima::Expr &expr,
+    const auto agrees_with = [&maxima](const proxima::Expr &expr,
                                       const std::string &reference) {
         const proxima::Reply printed = maxima.eval("ratsimp(" + expr.str() + ")");
         const proxima::Reply expected = maxima.eval("ratsimp(" + reference + ")");
@@ -225,23 +225,23 @@ TEST_CASE("printed expressions are valid Maxima meaning the same thing") {
     };
 
     // -3^2 is -9 in Maxima; the base needs its own parentheses.
-    CHECK(agreesWith(pow(proxima::Expr(-3), 2), "9"));
+    CHECK(agrees_with(pow(proxima::Expr(-3), 2), "9"));
     // 3/2^2 is 3/4; (3/2)^2 is 9/4.
-    CHECK(agreesWith(pow(proxima::Expr::rational(3, 2), 2), "9/4"));
+    CHECK(agrees_with(pow(proxima::Expr::rational(3, 2), 2), "9/4"));
     // ^ is right-associative, so x^2^3 is x^8.
-    CHECK(agreesWith(pow(pow(proxima::Expr(x), 2), 3), "x^6"));
+    CHECK(agrees_with(pow(pow(proxima::Expr(x), 2), 3), "x^6"));
     // x+1*y is x+y.
-    CHECK(agreesWith((proxima::Expr(x) + 1) * proxima::Expr(y), "(x+1)*y"));
+    CHECK(agrees_with((proxima::Expr(x) + 1) * proxima::Expr(y), "(x+1)*y"));
     // x*-2 is not valid Maxima at all, so this one tests that it parses.
-    CHECK(agreesWith(proxima::Expr::mul({proxima::Expr(x), proxima::Expr(-2)}), "-2*x"));
+    CHECK(agrees_with(proxima::Expr::mul({proxima::Expr(x), proxima::Expr(-2)}), "-2*x"));
     // A leading negative factor needs no parentheses, and must not gain any
     // that change its meaning.
-    CHECK(agreesWith(-proxima::Expr(x) + 1, "1-x"));
-    CHECK(agreesWith(proxima::Expr(x) - 3 * proxima::Expr(x), "-2*x"));
+    CHECK(agrees_with(-proxima::Expr(x) + 1, "1-x"));
+    CHECK(agrees_with(proxima::Expr(x) - 3 * proxima::Expr(x), "-2*x"));
     // Exact division stays exact rather than becoming a float.
-    CHECK(agreesWith(proxima::Expr(1) / proxima::Expr(3), "1/3"));
+    CHECK(agrees_with(proxima::Expr(1) / proxima::Expr(3), "1/3"));
     // Relations and uninterpreted applications survive the trip.
-    CHECK(agreesWith(proxima::Expr::function("bessel_j", {proxima::Expr(0), proxima::Expr(x)}),
+    CHECK(agrees_with(proxima::Expr::function("bessel_j", {proxima::Expr(0), proxima::Expr(x)}),
                      "bessel_j(0, x)"));
 }
 
@@ -296,9 +296,9 @@ TEST_CASE("every recorded expression survives a full round trip") {
         const proxima::Reply first = maxima.eval(expression);
         REQUIRE(first.ok);
 
-        const proxima::Expr roundTripped
-            = proxima::detail::fromMaxima(proxima::detail::parseSExpr(first.value));
-        const std::string printed = roundTripped.str();
+        const proxima::Expr round_tripped
+            = proxima::detail::from_maxima(proxima::detail::parse_sexpr(first.value));
+        const std::string printed = round_tripped.str();
         CAPTURE(printed);
 
         const proxima::Reply second = maxima.eval(printed);
@@ -310,8 +310,8 @@ TEST_CASE("every recorded expression survives a full round trip") {
         // reached, not part of the value. Maxima's own integrate leaves RATSIMP
         // behind where re-reading the same expression from source does not, so
         // requiring the flags to match would fail on a correct round trip.
-        CHECK(stripSimplificationFlags(proxima::detail::parseSExpr(second.value))
-              == stripSimplificationFlags(proxima::detail::parseSExpr(first.value)));
+        CHECK(strip_simplification_flags(proxima::detail::parse_sexpr(second.value))
+              == strip_simplification_flags(proxima::detail::parse_sexpr(first.value)));
         ++cases;
     }
     CHECK(cases >= 30);
@@ -325,11 +325,11 @@ TEST_CASE("a bigfloat keeps its value exactly, though not its type") {
 
     const proxima::Reply original = maxima.eval("bfloat(%pi)");
     REQUIRE(original.ok);
-    const proxima::Expr asRational
-        = proxima::detail::fromMaxima(proxima::detail::parseSExpr(original.value));
+    const proxima::Expr as_rational
+        = proxima::detail::from_maxima(proxima::detail::parse_sexpr(original.value));
 
     const proxima::Reply same
-        = maxima.eval("is(equal(" + asRational.str() + ", bfloat(%pi)))");
+        = maxima.eval("is(equal(" + as_rational.str() + ", bfloat(%pi)))");
     REQUIRE(same.ok);
     CHECK(same.value == "T");
 }
@@ -345,7 +345,7 @@ TEST_CASE("symbol case survives the round trip in both directions") {
         REQUIRE(reply.ok);
 
         const proxima::Expr mapped
-            = proxima::detail::fromMaxima(proxima::detail::parseSExpr(reply.value));
+            = proxima::detail::from_maxima(proxima::detail::parse_sexpr(reply.value));
         CHECK(mapped.kind() == proxima::Kind::Symbol);
         CHECK(mapped.name() == std::string(name));
     }
@@ -368,7 +368,7 @@ TEST_CASE("a Maxima reached through a non-ASCII path starts and answers") {
     // they are given.
     namespace fs = std::filesystem;
     const proxima::detail::MaximaInstall real
-        = proxima::detail::discoverMaxima(proxima::Config{}, proxima::detail::systemEnv());
+        = proxima::detail::discover_maxima(proxima::Config{}, proxima::detail::system_env());
 
     const std::string name
         = std::string("mx_") + "m" "\xC3\xA6" "xima_" "\xE4\xB8\xAD" "\xE6\x96\x87";
@@ -380,8 +380,8 @@ TEST_CASE("a Maxima reached through a non-ASCII path starts and answers") {
         = fs::temp_directory_path()
           / ("proxima_unicode_test_"
              + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-    const fs::path link = base / proxima::detail::pathFromUtf8(name);
-    const fs::path userDir = base / proxima::detail::pathFromUtf8(name + "_userdir");
+    const fs::path link = base / proxima::detail::path_from_utf8(name);
+    const fs::path user_dir = base / proxima::detail::path_from_utf8(name + "_userdir");
 
     // Never remove_all on `link`: it could follow the link into the real
     // installation. fs::remove takes away the link and nothing behind it.
@@ -410,8 +410,8 @@ TEST_CASE("a Maxima reached through a non-ASCII path starts and answers") {
 
     {
         proxima::Config config;
-        config.maximaRoot = link;
-        config.userDir = userDir;
+        config.maxima_root = link;
+        config.user_dir = user_dir;
         proxima::Kernel maxima(config);
 
         const proxima::Reply sum = maxima.eval("1 + 1");
@@ -428,7 +428,7 @@ TEST_CASE("a Maxima reached through a non-ASCII path starts and answers") {
     }
 
     fs::remove(link, ec);
-    fs::remove_all(userDir, ec);
+    fs::remove_all(user_dir, ec);
     fs::remove(base, ec);
 }
 
@@ -442,8 +442,8 @@ TEST_CASE("a moved-from kernel reports it rather than dereferencing nothing") {
     CHECK(moved.eval("1 + 1").value == "2");
     // NOLINTBEGIN(bugprone-use-after-move): the point of the test.
     CHECK_THROWS_AS(original.eval("1 + 1"), proxima::KernelError);
-    CHECK_THROWS_AS(original.evalPure("1 + 1"), proxima::KernelError);
-    CHECK_THROWS_AS(static_cast<void>(original.cacheStats()), proxima::KernelError);
+    CHECK_THROWS_AS(original.eval_pure("1 + 1"), proxima::KernelError);
+    CHECK_THROWS_AS(static_cast<void>(original.cache_stats()), proxima::KernelError);
     CHECK_THROWS_AS(original.restart(), proxima::KernelError);
 
     SUBCASE("and so does one moved from by assignment") {
@@ -462,10 +462,10 @@ TEST_CASE("a large reply arrives whole") {
     // symbol. The result was a wrong answer that looked like a right one.
     proxima::Kernel kernel;
 
-    const proxima::Reply wide = kernel.evalPure("expand((x+y+z)^40)");
+    const proxima::Reply wide = kernel.eval_pure("expand((x+y+z)^40)");
     REQUIRE(wide.ok);
     CHECK(wide.value.find("...") == std::string::npos);
-    const proxima::Expr sum = proxima::detail::fromMaxima(proxima::detail::parseSExpr(wide.value));
+    const proxima::Expr sum = proxima::detail::from_maxima(proxima::detail::parse_sexpr(wide.value));
     CHECK(sum.kind() == proxima::Kind::Add);
     CHECK(sum.arity() == 861);
 
@@ -475,34 +475,34 @@ TEST_CASE("a large reply arrives whole") {
         for (int depth = 0; depth < 20; ++depth) {
             nested = proxima::Expr::function("f", {nested});
         }
-        const proxima::Reply deep = kernel.evalPure(nested);
+        const proxima::Reply deep = kernel.eval_pure(nested);
         REQUIRE(deep.ok);
-        CHECK(proxima::detail::fromMaxima(proxima::detail::parseSExpr(deep.value)) == nested);
+        CHECK(proxima::detail::from_maxima(proxima::detail::parse_sexpr(deep.value)) == nested);
     }
 }
 
-TEST_CASE("evalExpr answers an unwrapped function with an expression") {
+TEST_CASE("eval_expr answers an unwrapped function with an expression") {
     proxima::Kernel kernel;
 
-    const auto gcd = kernel.evalExpr("gcd(12, 18)");
+    const auto gcd = kernel.eval_expr("gcd(12, 18)");
     REQUIRE(gcd.has_value());
     CHECK(*gcd == proxima::Expr(6));
 
     SUBCASE("sent as structure too") {
         const proxima::Expr x = proxima::Expr::symbol("x");
         const auto derivative
-            = kernel.evalExpr(proxima::Expr::function("diff", {pow(x, proxima::Expr(3)), x}));
+            = kernel.eval_expr(proxima::Expr::function("diff", {pow(x, proxima::Expr(3)), x}));
         REQUIRE(derivative.has_value());
         CHECK(*derivative == 3 * pow(x, proxima::Expr(2)));
     }
 
     SUBCASE("a Maxima error is the Failure, with Maxima's message") {
-        const auto failed = kernel.evalExpr("1/0");
+        const auto failed = kernel.eval_expr("1/0");
         REQUIRE_FALSE(failed.has_value());
         CHECK_FALSE(failed.error().message.empty());
 
         // Unparseable text too: read inside the error trap, so no stall.
-        CHECK_FALSE(kernel.evalExpr("(1").has_value());
+        CHECK_FALSE(kernel.eval_expr("(1").has_value());
     }
 }
 
@@ -512,31 +512,31 @@ TEST_CASE("one Kernel shared between threads gives every caller its own answer")
     // FakeTransport; this is the promise itself, against Maxima. Every question
     // is distinct, so an answer handed to the wrong caller cannot pass.
     proxima::Kernel kernel;
-    constexpr int threads = 4;
-    constexpr int calls = 25;
+    constexpr int kThreads = 4;
+    constexpr int kCalls = 25;
 
     std::atomic<int> wrong{0};
-    std::mutex firstFailureMutex;
-    std::string firstFailure;
+    std::mutex first_failure_mutex;
+    std::string first_failure;
     const auto fail = [&](const std::string &what) {
         ++wrong;
-        const std::lock_guard<std::mutex> lock(firstFailureMutex);
-        if (firstFailure.empty()) {
-            firstFailure = what;
+        const std::lock_guard<std::mutex> lock(first_failure_mutex);
+        if (first_failure.empty()) {
+            first_failure = what;
         }
     };
 
     std::vector<std::thread> workers;
-    for (int t = 0; t < threads; ++t) {
+    for (int t = 0; t < kThreads; ++t) {
         workers.emplace_back([&, t] {
             try {
-                for (int i = 0; i < calls; ++i) {
+                for (int i = 0; i < kCalls; ++i) {
                     const int n = t * 1000 + i;
                     // A cached question and a raw eval, which clears the cache:
                     // both paths through the session's state, interleaved.
-                    const proxima::Reply pure = kernel.evalPure(std::to_string(n) + " + 1");
+                    const proxima::Reply pure = kernel.eval_pure(std::to_string(n) + " + 1");
                     if (!pure.ok || pure.value != std::to_string(n + 1)) {
-                        fail("evalPure " + std::to_string(n) + " + 1 gave " + pure.value);
+                        fail("eval_pure " + std::to_string(n) + " + 1 gave " + pure.value);
                     }
                     const proxima::Reply raw = kernel.eval(std::to_string(n) + " * 2");
                     if (!raw.ok || raw.value != std::to_string(2 * n)) {
@@ -552,7 +552,7 @@ TEST_CASE("one Kernel shared between threads gives every caller its own answer")
         worker.join();
     }
 
-    INFO("first failure: ", firstFailure);
+    INFO("first failure: ", first_failure);
     CHECK(wrong.load() == 0);
     // And the kernel is still one working session afterwards.
     CHECK(kernel.eval("1 + 1").value == "2");

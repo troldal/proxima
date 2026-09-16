@@ -23,6 +23,6 @@ namespace proxima {
 /// Written as an ordinary user of proxima/render.hpp — a plain struct, inheriting
 /// nothing — so src/core/tex.cpp doubles as a worked example of supplying your
 /// own renderer.
-std::string toTeX(const Expr &expr);
+std::string to_tex(const Expr &expr);
 
 } // namespace proxima

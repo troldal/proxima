@@ -40,47 +40,47 @@ Reply Kernel::eval(std::string_view expression) {
 }
 
 Reply Kernel::eval(const Expr &form) {
-    return session().eval(detail::Payload::form(detail::toMaxima(form)));
+    return session().eval(detail::Payload::form(detail::to_maxima(form)));
 }
 
-Reply Kernel::evalPure(std::string_view expression) {
-    return session().evalPure(detail::Payload::text(expression));
+Reply Kernel::eval_pure(std::string_view expression) {
+    return session().eval_pure(detail::Payload::text(expression));
 }
 
-Reply Kernel::evalPure(const Expr &form) {
-    return session().evalPure(detail::Payload::form(detail::toMaxima(form)));
+Reply Kernel::eval_pure(const Expr &form) {
+    return session().eval_pure(detail::Payload::form(detail::to_maxima(form)));
 }
 
-Reply Kernel::evalTracked(std::string_view statement) {
-    return session().evalTracked(detail::Payload::text(statement));
+Reply Kernel::eval_tracked(std::string_view statement) {
+    return session().eval_tracked(detail::Payload::text(statement));
 }
 
-Reply Kernel::evalTracked(const Expr &form) {
-    return session().evalTracked(detail::Payload::form(detail::toMaxima(form)));
+Reply Kernel::eval_tracked(const Expr &form) {
+    return session().eval_tracked(detail::Payload::form(detail::to_maxima(form)));
 }
 
-std::expected<Expr, Failure> Kernel::evalExpr(std::string_view expression) {
-    return toExpr(eval(expression));
+std::expected<Expr, Failure> Kernel::eval_expr(std::string_view expression) {
+    return to_expr(eval(expression));
 }
 
-std::expected<Expr, Failure> Kernel::evalExpr(const Expr &form) {
-    return toExpr(eval(form));
+std::expected<Expr, Failure> Kernel::eval_expr(const Expr &form) {
+    return to_expr(eval(form));
 }
 
-std::expected<Expr, Failure> toExpr(const Reply &reply) {
+std::expected<Expr, Failure> to_expr(const Reply &reply) {
     if (!reply.ok) {
         return std::unexpected(Failure{reply.reason});
     }
-    return detail::fromMaxima(detail::parseSExpr(reply.value));
+    return detail::from_maxima(detail::parse_sexpr(reply.value));
 }
 
-void Kernel::invalidateCache() {
-    session().invalidateCache();
+void Kernel::invalidate_cache() {
+    session().invalidate_cache();
 }
 
-Kernel::CacheStats Kernel::cacheStats() const {
-    const detail::MaximaSession::CacheStats stats = session().cacheStats();
-    return {stats.hits, stats.misses, stats.entries, stats.persistentHits};
+Kernel::CacheStats Kernel::cache_stats() const {
+    const detail::MaximaSession::CacheStats stats = session().cache_stats();
+    return {stats.hits, stats.misses, stats.entries, stats.persistent_hits};
 }
 
 std::uint64_t Kernel::remember(std::string_view statement) {
@@ -88,19 +88,19 @@ std::uint64_t Kernel::remember(std::string_view statement) {
 }
 
 std::uint64_t Kernel::remember(const Expr &form) {
-    return session().remember(detail::Payload::form(detail::toMaxima(form)));
+    return session().remember(detail::Payload::form(detail::to_maxima(form)));
 }
 
 void Kernel::forget(std::uint64_t handle) {
     session().forget(handle);
 }
 
-void Kernel::setTimeout(std::chrono::milliseconds timeout) {
-    session().setTimeout(timeout);
+void Kernel::set_timeout(std::chrono::milliseconds timeout) {
+    session().set_timeout(timeout);
 }
 
-bool Kernel::persistenceActive() const {
-    return session().persistenceActive();
+bool Kernel::persistence_active() const {
+    return session().persistence_active();
 }
 
 void Kernel::restart() {

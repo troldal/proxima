@@ -71,20 +71,20 @@ struct Token {
 
     Kind kind = Kind::End;
     std::string text;
-    bool isInteger = false;
+    bool is_integer = false;
     std::size_t at = 0;
 };
 
-bool isSymbolStart(char c) {
+bool is_symbol_start(char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
            || c == '%';
 }
 
-bool isSymbolPart(char c) {
-    return isSymbolStart(c) || (c >= '0' && c <= '9');
+bool is_symbol_part(char c) {
+    return is_symbol_start(c) || (c >= '0' && c <= '9');
 }
 
-bool isDigit(char c) {
+bool is_digit(char c) {
     return c >= '0' && c <= '9';
 }
 
@@ -104,12 +104,12 @@ public:
 
         const char c = source_[at_];
 
-        if (isDigit(c) || (c == '.' && at_ + 1 < source_.size()
-                           && isDigit(source_[at_ + 1]))) {
+        if (is_digit(c) || (c == '.' && at_ + 1 < source_.size()
+                           && is_digit(source_[at_ + 1]))) {
             return number(start);
         }
-        if (isSymbolStart(c)) {
-            while (at_ < source_.size() && isSymbolPart(source_[at_])) {
+        if (is_symbol_start(c)) {
+            while (at_ < source_.size() && is_symbol_part(source_[at_])) {
                 ++at_;
             }
             return {Token::Kind::Symbol,
@@ -167,14 +167,14 @@ public:
 
 private:
     Token number(std::size_t start) {
-        bool isInteger = true;
-        while (at_ < source_.size() && isDigit(source_[at_])) {
+        bool is_integer = true;
+        while (at_ < source_.size() && is_digit(source_[at_])) {
             ++at_;
         }
         if (at_ < source_.size() && source_[at_] == '.') {
-            isInteger = false;
+            is_integer = false;
             ++at_;
-            while (at_ < source_.size() && isDigit(source_[at_])) {
+            while (at_ < source_.size() && is_digit(source_[at_])) {
                 ++at_;
             }
         }
@@ -184,9 +184,9 @@ private:
             if (at_ < source_.size() && (source_[at_] == '+' || source_[at_] == '-')) {
                 ++at_;
             }
-            if (at_ < source_.size() && isDigit(source_[at_])) {
-                isInteger = false;
-                while (at_ < source_.size() && isDigit(source_[at_])) {
+            if (at_ < source_.size() && is_digit(source_[at_])) {
+                is_integer = false;
+                while (at_ < source_.size() && is_digit(source_[at_])) {
                     ++at_;
                 }
             } else {
@@ -196,7 +196,7 @@ private:
             }
         }
         return {Token::Kind::Number,
-                std::string(source_.substr(start, at_ - start)), isInteger, start};
+                std::string(source_.substr(start, at_ - start)), is_integer, start};
     }
 
     Token string(std::size_t start) {
@@ -220,7 +220,7 @@ private:
     std::size_t at_ = 0;
 };
 
-int leftBindingPower(Token::Kind kind) {
+int left_binding_power(Token::Kind kind) {
     switch (kind) {
     case Token::Kind::Equal:
     case Token::Kind::NotEqual:
@@ -245,7 +245,7 @@ int leftBindingPower(Token::Kind kind) {
     }
 }
 
-RelOp relationFor(Token::Kind kind) {
+RelOp relation_for(Token::Kind kind) {
     switch (kind) {
     case Token::Kind::NotEqual:
         return RelOp::NotEqual;
@@ -262,7 +262,7 @@ RelOp relationFor(Token::Kind kind) {
     }
 }
 
-std::string quoteString(std::string_view text) {
+std::string quote_string(std::string_view text) {
     std::string out = "\"";
     for (const char c : text) {
         if (c == '"' || c == '\\') {
@@ -290,7 +290,7 @@ constexpr std::uintptr_t kParseStackBudget = std::uintptr_t{256} * 1024;
 
 /// An address inside the current stack frame: the real stack, even under
 /// AddressSanitizer, which can move locals off it.
-inline std::uintptr_t stackAddress() {
+inline std::uintptr_t stack_address() {
 #if defined(_MSC_VER)
     return reinterpret_cast<std::uintptr_t>(_AddressOfReturnAddress());
 #else
@@ -314,7 +314,7 @@ private:
     std::size_t depth_ = 0;
 
     /// Where the stack stood when parsing began, to measure its use from.
-    std::uintptr_t stackBase_ = stackAddress();
+    std::uintptr_t stack_base_ = stack_address();
 
     void advance() {
         current_ = lexer_.next();
@@ -340,14 +340,14 @@ private:
 
     /// The Pratt loop: parse a prefix, then keep absorbing infix and postfix
     /// operators that bind more tightly than the caller allows.
-    Expr expression(int minimumPower) {
+    Expr expression(int minimum_power) {
         // Every way to nest — parentheses, a unary sign, the right of `^` or a
         // relation, a function's arguments — comes back through here, so this
         // is the one place to guard. Unguarded, 200,000 opening parentheses
         // overflowed the stack and killed the process. The stack grows down on
         // every platform this builds for, but the distance is taken either way.
-        const std::uintptr_t here = stackAddress();
-        const std::uintptr_t used = here < stackBase_ ? stackBase_ - here : here - stackBase_;
+        const std::uintptr_t here = stack_address();
+        const std::uintptr_t used = here < stack_base_ ? stack_base_ - here : here - stack_base_;
         if (depth_ >= kMaxParseDepth || used > kParseStackBudget) {
             throw ParseError("expression nested too deep at offset "
                              + std::to_string(current_.at));
@@ -359,7 +359,7 @@ private:
         } leave{depth_};
 
         Expr left = prefix();
-        while (leftBindingPower(current_.kind) > minimumPower) {
+        while (left_binding_power(current_.kind) > minimum_power) {
             switch (current_.kind) {
             case Token::Kind::Plus:
             case Token::Kind::Minus:
@@ -423,7 +423,7 @@ private:
             // No string node, so it becomes source text — the same choice the
             // Maxima mapping makes.
             advance();
-            return Expr::opaque(quoteString(token.text));
+            return Expr::opaque(quote_string(token.text));
 
         case Token::Kind::Symbol: {
             advance();
@@ -487,7 +487,7 @@ private:
             break;
         }
         Expr right = expression(kRelation);
-        if (leftBindingPower(current_.kind) == kRelation) {
+        if (left_binding_power(current_.kind) == kRelation) {
             // a < b < c. Maxima refuses it — a relation is not something to
             // compare — and accepting it as (a < b) < c would give text a
             // meaning Maxima never gives it. Parenthesised, it is legal in both,
@@ -496,7 +496,7 @@ private:
                              + "' at offset " + std::to_string(current_.at)
                              + ": parenthesise one side");
         }
-        return Expr::relation(relationFor(token.kind), std::move(left),
+        return Expr::relation(relation_for(token.kind), std::move(left),
                               std::move(right));
     }
 
@@ -518,7 +518,7 @@ private:
     }
 
     static Expr number(const Token &token) {
-        if (token.isInteger) {
+        if (token.is_integer) {
             // Any size: proxima::Integer is unbounded, so a literal factorial reads
             // as a number rather than as opaque text.
             if (auto value = Integer::parse(token.text)) {

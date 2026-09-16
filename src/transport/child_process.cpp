@@ -77,7 +77,7 @@ struct ChildProcessTransport::Impl {
     /// Where each read lands. 64 KB, where it used to be 4 KB on the stack: a
     /// megabyte of reply was 256 reads, each a trip round the io_context, and
     /// the session searching the text after every one.
-    std::array<char, std::size_t{64} * 1024> readBuffer{};
+    std::array<char, std::size_t{64} * 1024> read_buffer{};
 };
 
 ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &argv,
@@ -117,7 +117,7 @@ ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &arg
     // is running it holds its own copy, and keeping the parent's open would stop
     // the pipe ever reporting end of file: a dead child would look like a silent
     // one.
-    const PipeEndCloser childEnd{ends[1]};
+    const PipeEndCloser child_end{ends[1]};
 
 #if !defined(_WIN32)
     // Keep the parent's end out of the child, as Boost.Process's own binding
@@ -140,14 +140,14 @@ ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &arg
     // Merged over the inherited environment rather than replacing it, so the
     // child keeps PATH and the rest. Must outlive the launch: on POSIX the
     // launcher points straight into these strings.
-    const std::vector<std::string> environment = mergeEnvironment(env);
+    const std::vector<std::string> environment = merge_environment(env);
     const std::vector<std::string> arguments(argv.begin() + 1, argv.end());
 
     // The arguments and the environment are UTF-8, and Boost.Process converts
     // them as such; the executable has to be read the same way. Constructing
     // the path straight from the std::string would read it as the ANSI code
     // page on Windows and launch a different — most likely no — file.
-    const auto executable = tryPathFromUtf8(argv.front());
+    const auto executable = try_path_from_utf8(argv.front());
     if (!executable) {
         throw KernelError("Failed to start child process: the executable path "
                           "is not valid UTF-8");
@@ -207,7 +207,7 @@ std::string ChildProcessTransport::receive(std::chrono::milliseconds timeout) {
     bool finished = false;
 
     impl_->output.async_read_some(
-        asio::buffer(impl_->readBuffer),
+        asio::buffer(impl_->read_buffer),
         [&](const boost::system::error_code &ec, std::size_t count) {
             result = ec;
             received = count;
@@ -233,7 +233,7 @@ std::string ChildProcessTransport::receive(std::chrono::milliseconds timeout) {
         // End of file, or a broken pipe: either way the child has exited.
         impl_->closed = true;
     }
-    return std::string(impl_->readBuffer.data(), received);
+    return std::string(impl_->read_buffer.data(), received);
 }
 
 bool ChildProcessTransport::alive() const {

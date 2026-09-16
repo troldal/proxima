@@ -89,7 +89,7 @@ TEST_CASE("the byte limit evicts as well as the entry limit") {
 
     cache.insert("c", valued(large));
     CHECK(cache.size() == 2);
-    CHECK(cache.bytes() <= cache.byteLimit());
+    CHECK(cache.bytes() <= cache.byte_limit());
     CHECK(cache.find("a") == nullptr);
     CHECK(cache.find("b") != nullptr);
     CHECK(cache.find("c") != nullptr);
@@ -141,14 +141,14 @@ TEST_CASE("an answer already given is not asked for again") {
     const Symbol x("x");
 
     const Expr first = proxima::diff(pow(Expr(x), 10), x, 1, kernel);
-    const auto afterFirst = kernel.cacheStats();
+    const auto after_first = kernel.cache_stats();
 
     const Expr second = proxima::diff(pow(Expr(x), 10), x, 1, kernel);
-    const auto afterSecond = kernel.cacheStats();
+    const auto after_second = kernel.cache_stats();
 
     CHECK(first == second);
-    CHECK(afterSecond.hits == afterFirst.hits + 1);
-    CHECK(afterSecond.misses == afterFirst.misses);
+    CHECK(after_second.hits == after_first.hits + 1);
+    CHECK(after_second.misses == after_first.misses);
 }
 
 TEST_CASE("a failure is cached too") {
@@ -158,10 +158,10 @@ TEST_CASE("a failure is cached too") {
     const Symbol x("x");
 
     REQUIRE_FALSE(proxima::integrate(proxima::exp(proxima::sin(Expr(x))), x, kernel).has_value());
-    const auto before = kernel.cacheStats();
+    const auto before = kernel.cache_stats();
     REQUIRE_FALSE(proxima::integrate(proxima::exp(proxima::sin(Expr(x))), x, kernel).has_value());
 
-    CHECK(kernel.cacheStats().hits == before.hits + 1);
+    CHECK(kernel.cache_stats().hits == before.hits + 1);
 }
 
 TEST_CASE("an assumption invalidates answers computed without it") {
@@ -189,10 +189,10 @@ TEST_CASE("a raw eval discards the cache, since it could have changed anything")
     const Symbol x("x");
 
     proxima::diff(pow(Expr(x), 3), x, 1, kernel);
-    REQUIRE(kernel.cacheStats().entries > 0);
+    REQUIRE(kernel.cache_stats().entries > 0);
 
     kernel.eval("2 + 2");
-    CHECK(kernel.cacheStats().entries == 0);
+    CHECK(kernel.cache_stats().entries == 0);
 }
 
 TEST_CASE("a binding made through eval cannot leave a stale answer behind") {
@@ -215,7 +215,7 @@ TEST_CASE("a binding made through eval cannot leave a stale answer behind") {
 
 TEST_CASE("caching can be turned off") {
     proxima::Config config;
-    config.cacheEntries = 0;
+    config.cache_entries = 0;
 
     proxima::Kernel kernel(config);
     const Symbol x("x");
@@ -223,8 +223,8 @@ TEST_CASE("caching can be turned off") {
     proxima::diff(pow(Expr(x), 4), x, 1, kernel);
     proxima::diff(pow(Expr(x), 4), x, 1, kernel);
 
-    CHECK(kernel.cacheStats().entries == 0);
-    CHECK(kernel.cacheStats().hits == 0);
+    CHECK(kernel.cache_stats().entries == 0);
+    CHECK(kernel.cache_stats().hits == 0);
 }
 
 TEST_CASE("a cached answer is worth having") {

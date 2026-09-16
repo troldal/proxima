@@ -21,15 +21,15 @@ namespace proxima::detail {
 /// two different callers.
 ///
 /// Holds no opinion about *when* an entry stops being true — see
-/// Kernel::evalPure and Kernel::invalidateCache for that, which is the part
+/// Kernel::eval_pure and Kernel::invalidate_cache for that, which is the part
 /// that has to be right.
 class ReplyCache {
 public:
-    /// Holds at most `capacity` replies occupying at most `byteLimit` bytes
+    /// Holds at most `capacity` replies occupying at most `byte_limit` bytes
     /// (see footprint), evicting the least recently used to stay within both.
     explicit ReplyCache(std::size_t capacity,
-                        std::size_t byteLimit = static_cast<std::size_t>(-1))
-        : capacity_(capacity), byteLimit_(byteLimit) {}
+                        std::size_t byte_limit = static_cast<std::size_t>(-1))
+        : capacity_(capacity), byte_limit_(byte_limit) {}
 
     /// The cached reply for `key`, or nullptr. A hit is promoted to most
     /// recently used, and the pointer is valid until the next insert.
@@ -45,7 +45,7 @@ public:
     std::size_t capacity() const { return capacity_; }
     /// The summed footprint of every entry held.
     std::size_t bytes() const { return bytes_; }
-    std::size_t byteLimit() const { return byteLimit_; }
+    std::size_t byte_limit() const { return byte_limit_; }
 
     /// What an entry is charged against the byte limit: its text — the key
     /// twice, since the index holds a copy — plus a fixed allowance for the
@@ -62,7 +62,7 @@ private:
     void evict();
 
     std::size_t capacity_;
-    std::size_t byteLimit_;
+    std::size_t byte_limit_;
     std::size_t bytes_ = 0;
     /// Most recently used at the front.
     std::list<Entry> entries_;

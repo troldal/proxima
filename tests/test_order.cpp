@@ -18,7 +18,7 @@
 
 using proxima::Expr;
 using proxima::Symbol;
-using proxima::detail::compareExpr;
+using proxima::detail::compare_expr;
 
 TEST_CASE("the order tells apart numbers that a double cannot") {
     // Numbers used to be compared through double, so two integers that round
@@ -27,15 +27,15 @@ TEST_CASE("the order tells apart numbers that a double cannot") {
     const Expr big(proxima::Integer("1267650600228229401496703205376"));    // 2^100
     const Expr bigger(proxima::Integer("1267650600228229401496703205377")); // 2^100 + 1
     REQUIRE_FALSE(big == bigger);
-    CHECK(compareExpr(big, bigger) < 0);
-    CHECK(compareExpr(bigger, big) > 0);
+    CHECK(compare_expr(big, bigger) < 0);
+    CHECK(compare_expr(bigger, big) > 0);
 
     const Expr third = Expr::rational(proxima::Integer("1267650600228229401496703205376"),
                                       proxima::Integer(3));
-    const Expr thirdAndABit = Expr::rational(
+    const Expr third_and_a_bit = Expr::rational(
         proxima::Integer("1267650600228229401496703205377"), proxima::Integer(3));
-    REQUIRE_FALSE(third == thirdAndABit);
-    CHECK(compareExpr(third, thirdAndABit) < 0);
+    REQUIRE_FALSE(third == third_and_a_bit);
+    CHECK(compare_expr(third, third_and_a_bit) < 0);
 }
 
 TEST_CASE("comparing equal means being equal, across every kind") {
@@ -57,8 +57,8 @@ TEST_CASE("comparing equal means being equal, across every kind") {
         for (const Expr &b : corpus) {
             CAPTURE(a.str());
             CAPTURE(b.str());
-            CHECK((compareExpr(a, b) == 0) == (a == b));
-            CHECK((compareExpr(a, b) < 0) == (compareExpr(b, a) > 0));
+            CHECK((compare_expr(a, b) == 0) == (a == b));
+            CHECK((compare_expr(a, b) < 0) == (compare_expr(b, a) > 0));
         }
     }
 }
@@ -94,7 +94,7 @@ TEST_CASE("expressions are keys of ordered containers, under CanonicalLess") {
     }
 
     SUBCASE("where 0.0 and -0.0, being equal, are equivalent") {
-        CHECK(proxima::canonicalOrder(Expr(0.0), Expr(-0.0)) == std::weak_ordering::equivalent);
-        CHECK(proxima::canonicalOrder(Expr(1), Expr(1.0)) == std::weak_ordering::less);
+        CHECK(proxima::canonical_order(Expr(0.0), Expr(-0.0)) == std::weak_ordering::equivalent);
+        CHECK(proxima::canonical_order(Expr(1), Expr(1.0)) == std::weak_ordering::less);
     }
 }

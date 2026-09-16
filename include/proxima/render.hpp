@@ -47,7 +47,7 @@ enum class Construct {
 };
 
 /// The positions a rendered child can occupy. A renderer overrides
-/// `contextFor` to say that one of these needs no grouping — which is what
+/// `context_for` to say that one of these needs no grouping — which is what
 /// self-delimiting notation buys: TeX writes `\frac{1+x}{x-1}` where infix
 /// text has to write `(1+x)/(x-1)`.
 enum class Slot {
@@ -68,7 +68,7 @@ enum class Slot {
 
 /// Binding strength for an infix notation with no delimiters of its own. The
 /// starting point a renderer adjusts rather than replaces.
-constexpr Strength defaultStrength(Construct construct) {
+constexpr Strength default_strength(Construct construct) {
     switch (construct) {
     case Construct::Sum:
         return Strength::Sum;
@@ -94,7 +94,7 @@ constexpr Strength defaultStrength(Construct construct) {
 }
 
 /// Likewise for the context a child is rendered in.
-constexpr Strength defaultContext(Slot slot) {
+constexpr Strength default_context(Slot slot) {
     switch (slot) {
     case Slot::SumTerm:
         return Strength::Sum;
@@ -196,12 +196,12 @@ concept RendersNegation = requires(R &r, const T &a) {
 
 template <typename R>
 concept DeclaresStrength = requires(R &r) {
-    { r.strengthOf(Construct::Sum) } -> std::same_as<Strength>;
+    { r.strength_of(Construct::Sum) } -> std::same_as<Strength>;
 };
 
 template <typename R>
 concept DeclaresContext = requires(R &r) {
-    { r.contextFor(Slot::Numerator) } -> std::same_as<Strength>;
+    { r.context_for(Slot::Numerator) } -> std::same_as<Strength>;
 };
 
 namespace detail {
@@ -258,7 +258,7 @@ struct DisplayNode {
     double real = 0.0;
     /// Symbol name, Call head, or Verbatim source.
     std::string text;
-    RelOp relOp = RelOp::Equal;
+    RelOp rel_op = RelOp::Equal;
     /// Index of a Root: 2 for a square root.
     unsigned index = 0;
     std::vector<DisplayNode> children;
@@ -267,9 +267,9 @@ struct DisplayNode {
 };
 
 /// Expr -> display form. Layer one, and the part every renderer shares.
-DisplayNode toDisplay(const Expr &expr);
+DisplayNode to_display(const Expr &expr);
 
-constexpr Construct constructOf(DisplayKind kind) {
+constexpr Construct construct_of(DisplayKind kind) {
     switch (kind) {
     case DisplayKind::Integer:
         return Construct::Integer;
@@ -326,15 +326,15 @@ struct RendererVTable {
     T (*relation)(void *, RelOp, const T &, const T &);
     T (*group)(void *, const T &);
     T (*negate)(void *, const T &);
-    Strength (*strengthOf)(void *, Construct);
-    Strength (*contextFor)(void *, Slot);
+    Strength (*strength_of)(void *, Construct);
+    Strength (*context_for)(void *, Slot);
     void (*destroy)(void *) noexcept;
     /// Moves the held renderer into `destination`, returning where it landed.
     void *(*relocate)(void *source, void *destination) noexcept;
 };
 
 /// How a held renderer is stored and reached. The specialisation is what
-/// makes `std::ref(myRenderer)` work: a reference wrapper stores a pointer
+/// makes `std::ref(my_renderer)` work: a reference wrapper stores a pointer
 /// and owns nothing, so a renderer accumulating state stays reachable.
 template <typename R>
 struct Model {
@@ -376,7 +376,7 @@ inline constexpr std::size_t kRendererStorage = 6 * sizeof(void *);
 ///
 ///     TeXRenderer tex;
 ///     const std::string out = proxima::render(expr, std::ref(tex));
-///     for (const std::string &package : tex.packagesUsed()) { ... }
+///     for (const std::string &package : tex.packages_used()) { ... }
 template <typename T>
 class Renderer {
 public:
@@ -435,7 +435,7 @@ public:
     T power(const T &base, const T &exponent) {
         return vtable_->power(object_, base, exponent);
     }
-    /// Only for a renderer that defines root() — see rendersRoots(). One that
+    /// Only for a renderer that defines root() — see renders_roots(). One that
     /// does not has its roots rendered as powers by the walk itself, which is
     /// the only place the grouping of both base and exponent can be decided.
     T root(const T &radicand, unsigned index) {
@@ -443,7 +443,7 @@ public:
     }
 
     /// Whether the held renderer defines root().
-    bool rendersRoots() const { return vtable_->root != nullptr; }
+    bool renders_roots() const { return vtable_->root != nullptr; }
     T call(std::string_view head, std::span<const T> args) {
         return vtable_->call(object_, head, args);
     }
@@ -454,10 +454,10 @@ public:
     T group(const T &inner) { return vtable_->group(object_, inner); }
     T negate(const T &inner) { return vtable_->negate(object_, inner); }
 
-    Strength strengthOf(Construct construct) {
-        return vtable_->strengthOf(object_, construct);
+    Strength strength_of(Construct construct) {
+        return vtable_->strength_of(object_, construct);
     }
-    Strength contextFor(Slot slot) { return vtable_->contextFor(object_, slot); }
+    Strength context_for(Slot slot) { return vtable_->context_for(object_, slot); }
 
 private:
     template <typename R>
@@ -483,13 +483,13 @@ private:
                       "the renderer is missing group(), which says how to "
                       "parenthesise");
 
-        constexpr bool inlineStorage
+        constexpr bool kInlineStorage
             = sizeof(Stored) <= detail::kRendererStorage
               && alignof(Stored) <= alignof(std::max_align_t)
               && std::is_nothrow_move_constructible_v<Stored>;
 
-        vtable_ = &vtableFor<Bare, inlineStorage>();
-        if constexpr (inlineStorage) {
+        vtable_ = &vtable_for<Bare, kInlineStorage>();
+        if constexpr (kInlineStorage) {
             M::put(storage_, std::forward<R>(renderer));
             object_ = storage_;
         } else {
@@ -501,22 +501,22 @@ private:
     }
 
     template <typename Actual>
-    static Strength strengthOfIn(Actual &renderer, Construct construct) {
+    static Strength strength_of_in(Actual &renderer, Construct construct) {
         if constexpr (DeclaresStrength<Actual>) {
-            return renderer.strengthOf(construct);
+            return renderer.strength_of(construct);
         } else {
             static_cast<void>(renderer);
-            return defaultStrength(construct);
+            return default_strength(construct);
         }
     }
 
     template <typename Actual>
-    static Strength contextForIn(Actual &renderer, Slot slot) {
+    static Strength context_for_in(Actual &renderer, Slot slot) {
         if constexpr (DeclaresContext<Actual>) {
-            return renderer.contextFor(slot);
+            return renderer.context_for(slot);
         } else {
             static_cast<void>(renderer);
-            return defaultContext(slot);
+            return default_context(slot);
         }
     }
 
@@ -527,13 +527,13 @@ private:
     /// branch calling root() must not even be instantiated for a renderer
     /// that lacks it.
     template <typename R>
-    static constexpr RootFn rootSlot() {
+    static constexpr RootFn root_slot() {
         return nullptr;
     }
 
     template <typename R>
         requires RendersRoot<typename detail::Unwrap<R>::type, T>
-    static constexpr RootFn rootSlot() {
+    static constexpr RootFn root_slot() {
         return [](void *p, const T &radicand, unsigned index) -> T {
             return detail::Model<R>::get(p).root(radicand, index);
         };
@@ -547,12 +547,12 @@ private:
     /// operations it does have. A renderer that never heard of roots still
     /// renders them, through its own power().
     template <typename R, bool Inline>
-    static const detail::RendererVTable<T> &vtableFor() {
+    static const detail::RendererVTable<T> &vtable_for() {
         using M = detail::Model<R>;
         using Stored = typename M::Stored;
         using Actual = typename detail::Unwrap<R>::type;
 
-        static constexpr detail::RendererVTable<T> table = {
+        static constexpr detail::RendererVTable<T> kTable = {
             [](void *p, const Integer &v) { return M::get(p).integer(v); },
             [](void *p, double v) { return M::get(p).real(v); },
             [](void *p, std::string_view n) { return M::get(p).symbol(n); },
@@ -565,8 +565,8 @@ private:
             [](void *p, const T &b, const T &e) {
                 return M::get(p).power(b, e);
             },
-            // Not synthesised here: see rootAsPower.
-            rootSlot<R>(),
+            // Not synthesised here: see root_as_power.
+            root_slot<R>(),
             [](void *p, std::string_view head, std::span<const T> args) {
                 return M::get(p).call(head, args);
             },
@@ -591,8 +591,8 @@ private:
                     return M::get(p).sum(std::span<const Term<T>>(&single, 1));
                 }
             },
-            [](void *p, Construct c) { return strengthOfIn(M::get(p), c); },
-            [](void *p, Slot s) { return contextForIn(M::get(p), s); },
+            [](void *p, Construct c) { return strength_of_in(M::get(p), c); },
+            [](void *p, Slot s) { return context_for_in(M::get(p), s); },
             [](void *p) noexcept {
                 static_cast<Stored *>(p)->~Stored();
                 if constexpr (!Inline) {
@@ -611,7 +611,7 @@ private:
                 }
             },
         };
-        return table;
+        return kTable;
     }
 
     alignas(std::max_align_t) std::byte storage_[detail::kRendererStorage]{};
@@ -628,7 +628,7 @@ namespace detail {
 /// text, which is the whole point. Text cannot say whether the radicand needs
 /// brackets as a power base; an earlier version that tried printed
 /// `sqrt(1 - x^2)` as `1 - x^2^(1/2)`, which is a different expression.
-inline DisplayNode rootAsPower(const DisplayNode &root) {
+inline DisplayNode root_as_power(const DisplayNode &root) {
     DisplayNode one;
     one.kind = DisplayKind::Integer;
     one.integer = Integer(1);
@@ -655,13 +655,13 @@ inline DisplayNode rootAsPower(const DisplayNode &root) {
 /// an interface fixed to std::string would foreclose exactly the renderer
 /// that needs it most.
 template <typename T>
-T renderNode(const DisplayNode &node, Strength context, Renderer<T> &renderer) {
-    if (node.kind == DisplayKind::Root && !renderer.rendersRoots()) {
-        return renderNode(rootAsPower(node), context, renderer);
+T render_node(const DisplayNode &node, Strength context, Renderer<T> &renderer) {
+    if (node.kind == DisplayKind::Root && !renderer.renders_roots()) {
+        return render_node(root_as_power(node), context, renderer);
     }
 
     const auto child = [&](const DisplayNode &operand, Slot slot) {
-        return renderNode(operand, renderer.contextFor(slot), renderer);
+        return render_node(operand, renderer.context_for(slot), renderer);
     };
     const auto children = [&](Slot slot) {
         std::vector<T> rendered;
@@ -728,7 +728,7 @@ T renderNode(const DisplayNode &node, Strength context, Renderer<T> &renderer) {
         }
 
         case DisplayKind::Relation:
-            return renderer.relation(node.relOp,
+            return renderer.relation(node.rel_op,
                                      child(node.children[0], Slot::RelationSide),
                                      child(node.children[1],
                                            Slot::RelationSide));
@@ -736,7 +736,7 @@ T renderNode(const DisplayNode &node, Strength context, Renderer<T> &renderer) {
         return renderer.verbatim("");
     }();
 
-    if (renderer.strengthOf(constructOf(node.kind)) < context) {
+    if (renderer.strength_of(construct_of(node.kind)) < context) {
         return renderer.group(value);
     }
     return value;
@@ -747,7 +747,7 @@ T renderNode(const DisplayNode &node, Strength context, Renderer<T> &renderer) {
 /// Renders `expr` with an already-erased renderer.
 template <typename T>
 T render(const Expr &expr, Renderer<T> &renderer) {
-    return detail::renderNode(detail::toDisplay(expr), Strength::Loosest,
+    return detail::render_node(detail::to_display(expr), Strength::Loosest,
                               renderer);
 }
 

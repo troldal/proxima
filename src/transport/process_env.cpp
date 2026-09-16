@@ -9,7 +9,7 @@
 namespace proxima::detail {
 namespace {
 
-bool namesMatch(std::string_view a, std::string_view b) {
+bool names_match(std::string_view a, std::string_view b) {
 #ifdef _WIN32
     if (a.size() != b.size()) {
         return false;
@@ -30,7 +30,7 @@ bool namesMatch(std::string_view a, std::string_view b) {
 } // namespace
 
 std::vector<std::string>
-mergeEnvironment(const std::vector<EnvOverride> &overrides) {
+merge_environment(const std::vector<EnvOverride> &overrides) {
     namespace environment = boost::process::v2::environment;
 
     std::vector<std::string> entries;
@@ -53,7 +53,7 @@ mergeEnvironment(const std::vector<EnvOverride> &overrides) {
 
         const auto match = std::find_if(
             overrides.begin(), overrides.end(),
-            [&name](const EnvOverride &o) { return namesMatch(o.first, name); });
+            [&name](const EnvOverride &o) { return names_match(o.first, name); });
 
         if (match == overrides.end()) {
             entries.push_back(text);

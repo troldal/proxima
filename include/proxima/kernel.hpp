@@ -68,13 +68,13 @@ public:
     /// assumption, a redefined function — and there is no way to tell from the
     /// text which. Assuming the worst is the only safe default: a cache that
     /// returns a stale answer is a correctness bug, and a needlessly emptied
-    /// cache is merely slower. Use evalPure for anything known to be a
+    /// cache is merely slower. Use eval_pure for anything known to be a
     /// question rather than an instruction.
     ///
-    /// **Stops Config::cacheDirectory for this kernel,** for the same reason: a
+    /// **Stops Config::cache_directory for this kernel,** for the same reason: a
     /// persistent answer is keyed on the state this kernel has recorded, and an
     /// eval may have changed Maxima in a way nothing recorded. It stays off
-    /// until restart(); persistenceActive() says which way things stand.
+    /// until restart(); persistence_active() says which way things stand.
     Reply eval(std::string_view expression);
     Reply eval(const Expr &form);
 
@@ -88,8 +88,8 @@ public:
     /// Cached answers are still answers to *this* kernel's current state. The
     /// cache is discarded whenever that state might have changed: any eval(),
     /// any assumption added or dropped through proxima::Context.
-    Reply evalPure(std::string_view expression);
-    Reply evalPure(const Expr &form);
+    Reply eval_pure(std::string_view expression);
+    Reply eval_pure(const Expr &form);
 
     /// Evaluates a statement that changes Maxima's state in a way this
     /// kernel's replay journal accounts for.
@@ -97,32 +97,32 @@ public:
     /// The caller promises that the change is either being recorded through
     /// remember(), or is undoing something that was. On that promise the
     /// kernel's state stays fully described by its journal, which is what keeps
-    /// Config::cacheDirectory usable — a persistent entry is keyed on that
+    /// Config::cache_directory usable — a persistent entry is keyed on that
     /// state, so an unrecorded change would make the key a lie.
     ///
     /// proxima::Context is the intended caller; there is rarely a reason to use this
     /// directly. Use eval() for anything else, which assumes the worst.
-    Reply evalTracked(std::string_view statement);
-    Reply evalTracked(const Expr &form);
+    Reply eval_tracked(std::string_view statement);
+    Reply eval_tracked(const Expr &form);
 
     /// eval, with the reply read into an expression: the way to call a Maxima
     /// function this library has not wrapped without reading s-expressions.
-    /// `kernel.evalExpr("gcd(12, 18)")` is 6.
+    /// `kernel.eval_expr("gcd(12, 18)")` is 6.
     ///
     /// A Maxima error is the Failure, carrying Maxima's message.
     ///
     /// **This is a statement, not a query.** Like eval, every call discards the
-    /// reply cache and switches Config::cacheDirectory off for this kernel
+    /// reply cache and switches Config::cache_directory off for this kernel
     /// until restart(), because the text might have changed anything. For a
     /// question known to change nothing — `gcd(12, 18)` is one — read an
-    /// evalPure reply with proxima::toExpr instead, which keeps both.
-    std::expected<Expr, Failure> evalExpr(std::string_view expression);
-    std::expected<Expr, Failure> evalExpr(const Expr &form);
+    /// eval_pure reply with proxima::to_expr instead, which keeps both.
+    std::expected<Expr, Failure> eval_expr(std::string_view expression);
+    std::expected<Expr, Failure> eval_expr(const Expr &form);
 
     /// Forgets every cached reply. Rarely needed directly — state changes made
     /// through this library already do it — but the escape hatch if Maxima has
     /// been changed some other way.
-    void invalidateCache();
+    void invalidate_cache();
 
     /// Hits, misses and current size, for tuning and for tests. Does not
     /// wait for a call in progress.
@@ -130,11 +130,11 @@ public:
         std::size_t hits = 0;
         std::size_t misses = 0;
         std::size_t entries = 0;
-        /// Answers that came from Config::cacheDirectory rather than from
+        /// Answers that came from Config::cache_directory rather than from
         /// Maxima — that is, from a previous run or another process.
-        std::size_t persistentHits = 0;
+        std::size_t persistent_hits = 0;
     };
-    CacheStats cacheStats() const;
+    CacheStats cache_stats() const;
 
     /// Records a statement to replay if the kernel has to be restarted, and
     /// returns a handle for removing it again.
@@ -152,18 +152,18 @@ public:
 
     /// Changes the per-call deadline for this kernel — including for a call
     /// already waiting on Maxima, which is held to the new deadline within one
-    /// poll. Does not wait for that call. Config::startupTimeout, which governs
+    /// poll. Does not wait for that call. Config::startup_timeout, which governs
     /// launching and restarting, is unaffected.
-    void setTimeout(std::chrono::milliseconds timeout);
+    void set_timeout(std::chrono::milliseconds timeout);
 
-    /// True while answers are read from and written to Config::cacheDirectory.
+    /// True while answers are read from and written to Config::cache_directory.
     ///
     /// False when no directory was configured, and also after a raw eval():
     /// that call may have changed Maxima's state in a way nothing recorded,
     /// and a persistent answer is keyed on the recorded state, so persistence
     /// stops rather than file answers under conditions that may not hold.
     /// restart() brings it back.
-    bool persistenceActive() const;
+    bool persistence_active() const;
 
     /// Replaces Maxima with a fresh process and replays what this kernel
     /// remembers — every proxima::Context's assumptions and declarations — so the
@@ -184,7 +184,7 @@ private:
 
     /// Alive exactly as long as this kernel's session, and moved along with
     /// it. A Context keeps a weak reference, so one that outlives the kernel —
-    /// a static Context at exit, after sharedKernel() has been destroyed —
+    /// a static Context at exit, after shared_kernel() has been destroyed —
     /// can tell, instead of calling into a destroyed object. Declared after
     /// session_, so it expires first.
     std::shared_ptr<const int> lifetime_ = std::make_shared<const int>(0);
@@ -192,10 +192,10 @@ private:
 
 /// A reply read into an expression: its value when `ok`, and a Failure
 /// carrying the reason when not. How every operation in proxima/ops.hpp reads its
-/// reply, and how to read one from evalPure or evalTracked.
+/// reply, and how to read one from eval_pure or eval_tracked.
 ///
 /// Throws proxima::ParseError if the value is not a Maxima term. No reply from a
 /// kernel should be one: it would mean the protocol itself had failed.
-std::expected<Expr, Failure> toExpr(const Reply &reply);
+std::expected<Expr, Failure> to_expr(const Reply &reply);
 
 } // namespace proxima

@@ -74,7 +74,7 @@ std::string mrow(std::string_view content) { return element("mrow", content); }
 
 /// Names with a glyph of their own: Maxima's constants, and the Greek letters,
 /// which Maxima spells out and a typeset formula shows as letters.
-std::string_view glyphFor(std::string_view name) {
+std::string_view glyph_for(std::string_view name) {
     static constexpr std::pair<std::string_view, std::string_view> kGlyphs[] = {
         {"%pi", "&#x3C0;"},   {"%e", "e"},          {"%i", "i"},
         {"%gamma", "&#x3B3;"}, {"%phi", "&#x3C6;"}, {"inf", "&#x221E;"},
@@ -93,7 +93,7 @@ std::string_view glyphFor(std::string_view name) {
     return {};
 }
 
-std::string renderReal(double value) {
+std::string render_real(double value) {
     // Always finite: Expr::real refuses NaN and turns an infinity into the
     // symbol inf or minf, which renders as the infinity sign.
     const bool negative = std::signbit(value);
@@ -108,20 +108,20 @@ std::string renderReal(double value) {
         // 1e+300 is 1 x 10^300, set as such.
         // to_chars pads the exponent (1e-07); a formula shows 10^-7.
         std::string exponent = text.substr(marker + 1);
-        const bool negativeExponent = exponent.front() == '-';
+        const bool negative_exponent = exponent.front() == '-';
         exponent.erase(0, exponent.find_first_not_of("+-0"));
         if (exponent.empty()) {
             exponent = "0";
         }
-        if (negativeExponent) {
+        if (negative_exponent) {
             exponent.insert(exponent.begin(), '-');
         }
-        std::string exponentElement
+        std::string exponent_element
             = exponent.front() == '-'
                   ? mrow(mo(kMinus) + element("mn", exponent.substr(1)))
                   : element("mn", exponent);
         body = mrow(element("mn", text.substr(0, marker)) + mo(kTimes)
-                    + element("msup", element("mn", "10") + exponentElement));
+                    + element("msup", element("mn", "10") + exponent_element));
     } else {
         // Keep an inexact whole number recognisable as inexact.
         if (text.find('.') == std::string::npos) {
@@ -136,19 +136,19 @@ struct MathMLRenderer {
     std::string integer(const Integer &value) {
         // The presentation layer hands over magnitudes, with signs carried
         // separately, but nothing is lost by coping with a negative anyway.
-        if (value.isNegative()) {
-            return mrow(mo(kMinus) + element("mn", (-value).toString()));
+        if (value.is_negative()) {
+            return mrow(mo(kMinus) + element("mn", (-value).to_string()));
         }
-        return element("mn", value.toString());
+        return element("mn", value.to_string());
     }
 
-    std::string real(double value) { return renderReal(value); }
+    std::string real(double value) { return render_real(value); }
 
     std::string symbol(std::string_view name) {
         if (name == "minf") {
             return mrow(mo(kMinus) + element("mi", kInfinity));
         }
-        if (const std::string_view glyph = glyphFor(name); !glyph.empty()) {
+        if (const std::string_view glyph = glyph_for(name); !glyph.empty()) {
             return element("mi", glyph);
         }
         return element("mi", escaped(name));
@@ -163,14 +163,14 @@ struct MathMLRenderer {
     std::string sum(std::span<const Term<std::string>> terms) {
         // minf is the one leaf that carries a sign of its own. As a term, the
         // sign joins the sum's operator: `a - infinity`, not `a + -infinity`.
-        const std::string minusInfinity = symbol("minf");
+        const std::string minus_infinity = symbol("minf");
         const std::string infinity = element("mi", kInfinity);
 
         std::string content;
         for (std::size_t i = 0; i < terms.size(); ++i) {
             bool negated = terms[i].negated;
             std::string_view value = terms[i].value;
-            if (value == minusInfinity) {
+            if (value == minus_infinity) {
                 negated = !negated;
                 value = infinity;
             }
@@ -276,15 +276,15 @@ struct MathMLRenderer {
 
     // --- where the layout delimits itself -----------------------------------
 
-    Strength strengthOf(Construct construct) {
+    Strength strength_of(Construct construct) {
         // A fraction bar and a radical sign both show plainly where they end.
         if (construct == Construct::Fraction || construct == Construct::Root) {
             return Strength::Atom;
         }
-        return defaultStrength(construct);
+        return default_strength(construct);
     }
 
-    Strength contextFor(Slot slot) {
+    Strength context_for(Slot slot) {
         switch (slot) {
         case Slot::Numerator:
         case Slot::Denominator:
@@ -295,14 +295,14 @@ struct MathMLRenderer {
             // whether the 2 applies to the whole sum.
             return Strength::Loosest;
         default:
-            return defaultContext(slot);
+            return default_context(slot);
         }
     }
 };
 
 } // namespace
 
-std::string toMathML(const Expr &expr) {
+std::string to_mathml(const Expr &expr) {
     return R"(<math xmlns="http://www.w3.org/1998/Math/MathML">)"
            + render(expr, MathMLRenderer{}) + "</math>";
 }

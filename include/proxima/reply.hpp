@@ -19,8 +19,8 @@ struct Reply {
     /// "((MTIMES SIMP) 2 $X ((%SIN SIMP) $X))". Empty when `ok` is false.
     ///
     /// Raw by design: this is the kernel's escape hatch, for a caller who
-    /// wants the wire form itself. proxima::toExpr reads it into an proxima::Expr, and
-    /// Kernel::evalExpr evaluates and reads in one step.
+    /// wants the wire form itself. proxima::to_expr reads it into an proxima::Expr, and
+    /// Kernel::eval_expr evaluates and reads in one step.
     std::string value;
 
     /// Maxima's own rendered message when `ok` is false, e.g.
