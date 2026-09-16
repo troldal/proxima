@@ -9,10 +9,20 @@
 #include <proxima/version.hpp>
 
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
 #include <exception>
 #include <filesystem>
+#include <format>
+#include <random>
+#include <string>
 #include <system_error>
+
+#ifndef _WIN32
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#endif
 
 namespace proxima::detail {
 namespace {
@@ -165,16 +175,32 @@ void MaximaSession::restampPersistence() {
     }
 }
 
-std::string MaximaSession::frameBegin(std::uint64_t id) {
-    return "@@B" + std::to_string(id) + "@@";
+namespace {
+
+// What the helper formats with ~a in every delimiter.
+std::string frameTag(std::string_view key, std::uint64_t id) {
+    return std::format("{}-{}", key, id);
 }
 
-std::string MaximaSession::frameSeparator(std::uint64_t id) {
-    return "@@S" + std::to_string(id) + "@@";
+} // namespace
+
+std::string randomFrameKey() {
+    std::random_device device;
+    const std::uint64_t bits
+        = (std::uint64_t{device()} << 32) ^ std::uint64_t{device()};
+    return std::format("{:016x}", bits);
 }
 
-std::string MaximaSession::frameEnd(std::uint64_t id) {
-    return "@@E" + std::to_string(id) + "@@";
+std::string MaximaSession::frameBegin(std::string_view key, std::uint64_t id) {
+    return "@@B" + frameTag(key, id) + "@@";
+}
+
+std::string MaximaSession::frameSeparator(std::string_view key, std::uint64_t id) {
+    return "@@S" + frameTag(key, id) + "@@";
+}
+
+std::string MaximaSession::frameEnd(std::string_view key, std::uint64_t id) {
+    return "@@E" + frameTag(key, id) + "@@";
 }
 
 std::vector<std::string> MaximaSession::setupStatements() {
@@ -200,12 +226,15 @@ Payload Payload::text(std::string_view source) {
     return Payload("eval_string(" + stringLiteral(source) + ")");
 }
 
-std::string MaximaSession::requestFor(std::uint64_t id, const Payload &payload) {
+std::string MaximaSession::requestFor(std::string_view key, std::uint64_t id,
+                                      const Payload &payload) {
     // errcatch turns a Maxima error into an empty list rather than an error
     // prompt; ratdisrep keeps canonical rational (MRAT) forms from coming back
     // in place of general ones. The payload is a call on a string literal, so
-    // this text is well-formed whatever the caller asked.
-    return "cppsend(" + std::to_string(id) + ", errcatch(ratdisrep("
+    // this text is well-formed whatever the caller asked. The tag travels as a
+    // Maxima string, which is a Lisp string by the time the helper prints it
+    // with ~a — without quotes, exactly as frameBegin spells it.
+    return "cppsend(" + stringLiteral(frameTag(key, id)) + ", errcatch(ratdisrep("
            + payload.str() + ")))$";
 }
 
@@ -259,16 +288,71 @@ MaximaSession::launchEnvironment(const MaximaInstall &install,
         // read the user's maxima-init.mac. See Config::loadUserInit.
         std::filesystem::path userDir = config.userDir;
         if (userDir.empty()) {
+            userDir = defaultUserDir();
+        } else {
             std::error_code ec;
-            userDir = std::filesystem::temp_directory_path(ec) / "proxima"
-                      / "userdir";
+            std::filesystem::create_directories(userDir, ec);
         }
-        std::error_code ec;
-        std::filesystem::create_directories(userDir, ec);
         env.emplace_back("MAXIMA_USERDIR", toMaximaPath(userDir));
     }
 
     return env;
+}
+
+void ensurePrivateDirectory(const std::filesystem::path &dir) {
+#ifdef _WIN32
+    // %TEMP% is under the user's own profile, which other users cannot write.
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+#else
+    const auto refuse = [&dir](const std::string &why) {
+        throw KernelError("refusing to use " + toUtf8(dir)
+                          + " as Maxima's user directory: " + why);
+    };
+
+    // mkdir with the mode, rather than create_directories and a chmod after,
+    // so there is no moment at which the directory exists and is open to
+    // others. An existing one is accepted only if it is already private.
+    if (::mkdir(dir.c_str(), 0700) != 0 && errno != EEXIST) {
+        refuse(std::generic_category().message(errno));
+    }
+
+    // lstat, not stat: a symbolic link planted in its place is refused rather
+    // than followed to wherever its owner chose.
+    struct stat info {};
+    if (::lstat(dir.c_str(), &info) != 0) {
+        refuse(std::generic_category().message(errno));
+    }
+    if (!S_ISDIR(info.st_mode)) {
+        refuse("it is not a directory");
+    }
+    if (info.st_uid != ::geteuid()) {
+        refuse("it belongs to another user");
+    }
+    if ((info.st_mode & static_cast<mode_t>(0077)) != 0) {
+        refuse("other users have access to it");
+    }
+#endif
+}
+
+std::filesystem::path defaultUserDir() {
+    std::error_code ec;
+    const std::filesystem::path temp = std::filesystem::temp_directory_path(ec);
+
+#ifdef _WIN32
+    const std::filesystem::path userDir = temp / "proxima" / "userdir";
+    ensurePrivateDirectory(userDir);
+#else
+    // Maxima runs whatever maxima-init.mac it finds here. /tmp is shared by
+    // every user of the machine, so a single /tmp/proxima/userdir — what this
+    // used to be — let whoever created it first run code in every other
+    // user's Proxima. One directory per user, and only if it is really theirs.
+    const std::filesystem::path base = temp / ("proxima-" + std::to_string(::geteuid()));
+    ensurePrivateDirectory(base);
+    const std::filesystem::path userDir = base / "userdir";
+    ensurePrivateDirectory(userDir);
+#endif
+    return userDir;
 }
 
 MaximaSession::MaximaSession(Config config)
@@ -298,9 +382,10 @@ MaximaSession::MaximaSession(Config config)
     }
 }
 
-MaximaSession::MaximaSession(TransportFactory factory, Config config)
+MaximaSession::MaximaSession(TransportFactory factory, Config config,
+                             std::string frameKey)
     : config_(std::move(config)), factory_(std::move(factory)),
-      cache_(config_.cacheEntries) {
+      frameKey_(std::move(frameKey)), cache_(config_.cacheEntries) {
     if (!factory_) {
         throw KernelError("MaximaSession was given a null transport factory");
     }
@@ -311,9 +396,10 @@ MaximaSession::MaximaSession(TransportFactory factory, Config config)
     handshake();
 }
 
-MaximaSession::MaximaSession(std::unique_ptr<ITransport> transport, Config config)
+MaximaSession::MaximaSession(std::unique_ptr<ITransport> transport, Config config,
+                             std::string frameKey)
     : config_(std::move(config)), transport_(std::move(transport)),
-      cache_(config_.cacheEntries) {
+      frameKey_(std::move(frameKey)), cache_(config_.cacheEntries) {
     // No factory, so this session cannot be restarted; a death is final.
     if (!transport_) {
         throw KernelError("MaximaSession was given a null transport");
@@ -427,7 +513,7 @@ Reply MaximaSession::evalTrackedLocked(const Payload &payload) {
 
 Reply MaximaSession::evalLocked(const Payload &payload, Deadline deadline) {
     const std::uint64_t id = ++nextRequestId_;
-    writeLine(requestFor(id, payload));
+    writeLine(requestFor(frameKey_, id, payload));
     return readFrame(id, deadline);
 }
 
@@ -605,9 +691,9 @@ std::chrono::milliseconds MaximaSession::timeoutFor(Deadline deadline) const {
 }
 
 Reply MaximaSession::readFrame(std::uint64_t id, Deadline deadlineKind) {
-    const std::string begin = frameBegin(id);
-    const std::string separator = frameSeparator(id);
-    const std::string end = frameEnd(id);
+    const std::string begin = frameBegin(frameKey_, id);
+    const std::string separator = frameSeparator(frameKey_, id);
+    const std::string end = frameEnd(frameKey_, id);
 
     const auto started = std::chrono::steady_clock::now();
 
@@ -639,6 +725,13 @@ Reply MaximaSession::readFrame(std::uint64_t id, Deadline deadlineKind) {
         if (!chunk.empty()) {
             searchFrom = buffer.size() >= end.size() ? buffer.size() - (end.size() - 1) : 0;
             buffer += chunk;
+            // A KernelError, so converse restarts the child: whatever it was
+            // printing, the stream can no longer be trusted to line up.
+            if (buffer.size() > kMaxFrameBytes) {
+                throw KernelError("Maxima's reply exceeded "
+                                  + std::to_string(kMaxFrameBytes / (1024 * 1024))
+                                  + " MB without completing");
+            }
             continue;
         }
         // Nothing arrived. Either the child is gone, or it is simply still
@@ -652,7 +745,7 @@ Reply MaximaSession::readFrame(std::uint64_t id, Deadline deadlineKind) {
     if (beginAt == std::string::npos) {
         throw KernelError("Maxima produced a malformed reply: the closing "
                           "delimiter for request "
-                          + std::to_string(id) + " arrived without its opening "
+                          + frameTag(frameKey_, id) + " arrived without its opening "
                           + "delimiter");
     }
 

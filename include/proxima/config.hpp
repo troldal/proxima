@@ -83,9 +83,17 @@ struct Config {
 
     /// Where Maxima keeps user state when loadUserInit is false.
     ///
-    /// Empty means a directory under the system temporary directory, created on
-    /// demand. Ignored entirely when loadUserInit is true, in which case Maxima
-    /// falls back to its own default.
+    /// Empty means a directory private to the current user under the system
+    /// temporary directory, created on demand. On Unix that is
+    /// `<tmp>/proxima-<uid>/userdir`, created with mode 0700; if it already
+    /// exists but is a link, belongs to another user or is open to others, the
+    /// kernel refuses to start rather than use it. Ignored entirely when
+    /// loadUserInit is true, in which case Maxima falls back to its own
+    /// default.
+    ///
+    /// A directory given here is used as it is. Maxima executes the
+    /// maxima-init.mac it finds in it, so it must not be writable by anyone
+    /// you would not let run code as you.
     std::filesystem::path userDir;
 };
 

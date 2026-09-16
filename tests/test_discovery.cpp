@@ -15,12 +15,19 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <initializer_list>
 #include <map>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#ifndef _WIN32
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#endif
 
 using proxima::detail::candidateRoots;
 using proxima::detail::EnvLookup;
@@ -227,28 +234,30 @@ TEST_CASE("the Lisp helper's delimiters agree with the ones C++ looks for") {
     // Both sides derive from the same literal shape, and this pins that down.
     const std::string lisp = joined(MaximaSession::launchCommand(fakeInstall()));
 
-    // The helper formats the id with ~a, so strip the id from each delimiter
-    // and look for the surrounding literal text.
-    const auto stripId = [](std::string delimiter, std::uint64_t id) {
-        const std::string idText = std::to_string(id);
-        const size_t at = delimiter.find(idText);
+    // The helper formats the tag — key and id — with ~a, so strip the tag
+    // from each delimiter and look for the surrounding literal text.
+    const auto stripTag = [](std::string delimiter) {
+        const std::string tag = "k3y-7";
+        const size_t at = delimiter.find(tag);
         REQUIRE(at != std::string::npos);
-        return std::pair{delimiter.substr(0, at), delimiter.substr(at + idText.size())};
+        return std::pair{delimiter.substr(0, at), delimiter.substr(at + tag.size())};
     };
 
     for (const auto &[prefix, suffix] :
-         {stripId(MaximaSession::frameBegin(7), 7),
-          stripId(MaximaSession::frameSeparator(7), 7),
-          stripId(MaximaSession::frameEnd(7), 7)}) {
+         {stripTag(MaximaSession::frameBegin("k3y", 7)),
+          stripTag(MaximaSession::frameSeparator("k3y", 7)),
+          stripTag(MaximaSession::frameEnd("k3y", 7))}) {
         CHECK(lisp.find(prefix + "~a" + suffix) != std::string::npos);
     }
 }
 
 TEST_CASE("a request is wrapped so errors become values") {
     const std::string request = MaximaSession::requestFor(
-        42, proxima::detail::Payload::text("integrate(x, 5)"));
+        "k3y", 42, proxima::detail::Payload::text("integrate(x, 5)"));
 
-    CHECK(request.find("cppsend(42,") != std::string::npos);
+    // The tag as a string, which the helper prints with ~a and so without its
+    // quotes: exactly the spelling frameBegin("k3y", 42) looks for.
+    CHECK(request.find("cppsend(\"k3y-42\",") != std::string::npos);
     // errcatch is what stops a Maxima error leaving the stream in an error
     // prompt; ratdisrep keeps canonical rational (MRAT) forms from coming back.
     CHECK(request.find("errcatch(") != std::string::npos);
@@ -314,6 +323,80 @@ TEST_CASE("opting into the user's configuration leaves MAXIMA_USERDIR alone") {
         CHECK(key != "MAXIMA_USERDIR");
     }
 }
+
+TEST_CASE("the default user directory is private to the user") {
+    // Maxima runs the maxima-init.mac it finds in MAXIMA_USERDIR. The default
+    // used to be /tmp/proxima/userdir on Unix: one directory for every user
+    // of the machine, so whoever made it first could run code in everyone
+    // else's Proxima.
+    const auto env
+        = MaximaSession::launchEnvironment(fakeInstall(), proxima::Config{});
+    std::string userDir;
+    for (const auto &[key, value] : env) {
+        if (key == "MAXIMA_USERDIR") {
+            userDir = value;
+        }
+    }
+    REQUIRE_FALSE(userDir.empty());
+    CHECK(std::filesystem::is_directory(proxima::detail::pathFromUtf8(userDir)));
+
+#ifndef _WIN32
+    CHECK(userDir.find("/proxima-" + std::to_string(::geteuid()) + "/")
+          != std::string::npos);
+    for (const std::string &dir :
+         {userDir, std::filesystem::path(userDir).parent_path().string()}) {
+        CAPTURE(dir);
+        struct stat info {};
+        REQUIRE(::lstat(dir.c_str(), &info) == 0);
+        CHECK(info.st_uid == ::geteuid());
+        CHECK((info.st_mode & static_cast<mode_t>(0777)) == static_cast<mode_t>(0700));
+    }
+#endif
+}
+
+#ifndef _WIN32
+TEST_CASE("a user directory that is not private to the user is refused") {
+    namespace fs = std::filesystem;
+    using proxima::detail::ensurePrivateDirectory;
+
+    const fs::path base = fs::temp_directory_path()
+                          / ("proxima_private_dir_tests_" + std::to_string(::getpid()));
+    std::error_code ec;
+    fs::remove_all(base, ec);
+    fs::create_directories(base, ec);
+    REQUIRE_FALSE(ec);
+
+    SUBCASE("created private, and accepted again") {
+        const fs::path fresh = base / "fresh";
+        CHECK_NOTHROW(ensurePrivateDirectory(fresh));
+        struct stat info {};
+        REQUIRE(::lstat(fresh.c_str(), &info) == 0);
+        CHECK((info.st_mode & static_cast<mode_t>(0777)) == static_cast<mode_t>(0700));
+        CHECK_NOTHROW(ensurePrivateDirectory(fresh));
+    }
+    SUBCASE("open to others") {
+        const fs::path open = base / "open";
+        REQUIRE(::mkdir(open.c_str(), 0700) == 0);
+        REQUIRE(::chmod(open.c_str(), 0777) == 0);
+        CHECK_THROWS_AS(ensurePrivateDirectory(open), proxima::KernelError);
+    }
+    SUBCASE("a symbolic link, even to a private directory") {
+        const fs::path target = base / "target";
+        REQUIRE(::mkdir(target.c_str(), 0700) == 0);
+        const fs::path link = base / "link";
+        fs::create_directory_symlink(target, link, ec);
+        REQUIRE_FALSE(ec);
+        CHECK_THROWS_AS(ensurePrivateDirectory(link), proxima::KernelError);
+    }
+    SUBCASE("not a directory") {
+        const fs::path file = base / "file";
+        std::ofstream(file) << "proxima";
+        CHECK_THROWS_AS(ensurePrivateDirectory(file), proxima::KernelError);
+    }
+
+    fs::remove_all(base, ec);
+}
+#endif
 
 // --- paths outside ASCII -------------------------------------------------------
 //

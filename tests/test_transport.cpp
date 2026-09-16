@@ -24,13 +24,17 @@ using proxima::detail::Payload;
 
 namespace {
 
+/// The frame key every scripted session uses, so replies can be written before
+/// the session exists. A real session draws its own at random.
+constexpr const char *kKey = "test";
+
 /// A complete reply frame, exactly as the Lisp helper formats one.
 std::string frame(std::uint64_t id, bool ok, const std::string &value,
                   const std::string &reason = "") {
-    return MaximaSession::frameBegin(id) + (ok ? "T" : "NIL")
-           + MaximaSession::frameSeparator(id) + value
-           + MaximaSession::frameSeparator(id) + reason
-           + MaximaSession::frameEnd(id) + "\n";
+    return MaximaSession::frameBegin(kKey, id) + (ok ? "T" : "NIL")
+           + MaximaSession::frameSeparator(kKey, id) + value
+           + MaximaSession::frameSeparator(kKey, id) + reason
+           + MaximaSession::frameEnd(kKey, id) + "\n";
 }
 
 /// The banner Maxima prints before anything else, plus the prompts that appear
@@ -57,7 +61,7 @@ struct ScriptedSession {
 
         auto owned = std::make_unique<FakeTransport>(std::move(script));
         transport = owned.get();
-        session = std::make_unique<MaximaSession>(std::move(owned), proxima::Config{});
+        session = std::make_unique<MaximaSession>(std::move(owned), proxima::Config{}, kKey);
     }
 
     FakeTransport *transport = nullptr;
@@ -79,7 +83,7 @@ TEST_CASE("the handshake makes the session machine-readable and deterministic") 
 
     // And a framed probe, which is what synchronises the stream. A form, so
     // that the handshake needs nothing but the helper installed at launch.
-    CHECK(sent.find(MaximaSession::requestFor(1, Payload::form("T")))
+    CHECK(sent.find(MaximaSession::requestFor(kKey, 1, Payload::form("T")))
           != std::string::npos);
 }
 
@@ -89,7 +93,7 @@ TEST_CASE("a request carries its own correlation id") {
 
     // Request 1 was the handshake probe, so the first real request is 2.
     CHECK(scripted.transport->sent().back()
-          == MaximaSession::requestFor(2, Payload::text("x+1")) + "\n");
+          == MaximaSession::requestFor(kKey, 2, Payload::text("x+1")) + "\n");
 }
 
 TEST_CASE("a successful reply yields the internal s-expression") {
@@ -168,14 +172,39 @@ TEST_CASE("a value containing delimiter-like text is not truncated") {
     CHECK(scripted.session->eval(Payload::text("\"...\"")).value == tricky);
 }
 
+TEST_CASE("a value containing its own request's id is not truncated") {
+    // The delimiters used to be the id alone, so a Maxima string holding
+    // "@@E2@@" closed frame 2 from inside its own value. The frame key, which
+    // no value is ever computed from, is what rules that out.
+    const std::string tricky = R"("would end early at @@E2@@ and @@S2@@")";
+    ScriptedSession scripted({frame(2, true, tricky)});
+    CHECK(scripted.session->eval(Payload::text("\"...\"")).value == tricky);
+}
+
+TEST_CASE("each session draws a frame key of its own") {
+    const std::string first = proxima::detail::randomFrameKey();
+    const std::string second = proxima::detail::randomFrameKey();
+    CHECK(first.size() == 16);
+    CHECK(first.find_first_not_of("0123456789abcdef") == std::string::npos);
+    CHECK(first != second);
+}
+
+TEST_CASE("a reply that never completes is abandoned at the size limit") {
+    // Two halves that together pass the limit and carry no closing delimiter.
+    // Without the limit this read would continue until Config::timeout.
+    const std::string half(MaximaSession::kMaxFrameBytes / 2 + 1, 'x');
+    ScriptedSession scripted({frame(2, true, "1").substr(0, 20) + half, half});
+    CHECK_THROWS_AS(scripted.session->eval(Payload::text("x")), proxima::KernelError);
+}
+
 TEST_CASE("a closing delimiter with no opening one is a protocol error") {
-    ScriptedSession scripted({MaximaSession::frameEnd(2) + "\n"});
+    ScriptedSession scripted({MaximaSession::frameEnd(kKey, 2) + "\n"});
     CHECK_THROWS_AS(scripted.session->eval(Payload::text("x")), proxima::KernelError);
 }
 
 TEST_CASE("a frame missing its field separators is a protocol error") {
-    ScriptedSession scripted({MaximaSession::frameBegin(2) + "T"
-                              + MaximaSession::frameEnd(2)});
+    ScriptedSession scripted({MaximaSession::frameBegin(kKey, 2) + "T"
+                              + MaximaSession::frameEnd(kKey, 2)});
     CHECK_THROWS_AS(scripted.session->eval(Payload::text("x")), proxima::KernelError);
 }
 
@@ -189,9 +218,9 @@ TEST_CASE("a session whose child has died reports a KernelError") {
 
 TEST_CASE("a null transport is rejected rather than dereferenced") {
     CHECK_THROWS_AS(
-        MaximaSession(std::unique_ptr<proxima::detail::ITransport>(), proxima::Config{}),
+        MaximaSession(std::unique_ptr<proxima::detail::ITransport>(), proxima::Config{}, kKey),
         proxima::KernelError);
-    CHECK_THROWS_AS(MaximaSession(MaximaSession::TransportFactory{}, proxima::Config{}),
+    CHECK_THROWS_AS(MaximaSession(MaximaSession::TransportFactory{}, proxima::Config{}, kKey),
                     proxima::KernelError);
 }
 
@@ -219,7 +248,7 @@ TEST_CASE("a session that cannot answer restarts and replays its state") {
         return std::make_unique<FakeTransport>(std::move(script));
     };
 
-    MaximaSession session(factory, proxima::Config{});
+    MaximaSession session(factory, proxima::Config{}, kKey);
     REQUIRE(built == 1);
 
     const std::uint64_t handle = session.remember(Payload::text("assume(x > 0)"));
@@ -272,7 +301,7 @@ TEST_CASE("a timeout ends the busy child at once instead of waiting for it") {
 
     proxima::Config config;
     config.timeout = std::chrono::milliseconds(100);
-    MaximaSession session(factory, config);
+    MaximaSession session(factory, config, kKey);
 
     CHECK_THROWS_AS(session.eval(Payload::text("expand((x+y+z)^200)")),
                     proxima::TimeoutError);
@@ -294,7 +323,7 @@ TEST_CASE("bookkeeping does not wait behind a call in progress") {
     owned->staySilentWhenExhausted();
     proxima::Config config;
     config.timeout = 30s;
-    MaximaSession session(std::move(owned), config);
+    MaximaSession session(std::move(owned), config, kKey);
 
     auto running = std::async(std::launch::async, [&session] {
         return session.eval(Payload::text("something slow"));
@@ -361,7 +390,7 @@ TEST_CASE("an answer computed across a change of state is not cached") {
     auto owned = std::make_unique<GatedTransport>(handshakeScript(),
                                                   frame(2, true, "$BEFORE"));
     GatedTransport *gate = owned.get();
-    MaximaSession session(std::move(owned), proxima::Config{});
+    MaximaSession session(std::move(owned), proxima::Config{}, kKey);
 
     auto asking = std::async(std::launch::async, [&session] {
         return session.evalPure(Payload::text("question"));
@@ -435,7 +464,7 @@ TEST_CASE("restart() replaces the process and replays the journal") {
         return std::make_unique<FakeTransport>(std::move(script));
     };
 
-    MaximaSession session(factory, proxima::Config{});
+    MaximaSession session(factory, proxima::Config{}, kKey);
     session.remember(Payload::text("assume(x > 0)"));
 
     session.restart();
@@ -462,7 +491,7 @@ TEST_CASE("forgetting a statement stops it being replayed") {
         return std::make_unique<FakeTransport>(std::move(script));
     };
 
-    MaximaSession session(factory, proxima::Config{});
+    MaximaSession session(factory, proxima::Config{}, kKey);
     const std::uint64_t handle = session.remember(Payload::text("assume(x > 0)"));
     session.forget(handle);
 
@@ -475,6 +504,6 @@ TEST_CASE("a failed handshake is reported at construction") {
     // the caller discover that one query later.
     auto transport = std::make_unique<FakeTransport>(
         std::vector<std::string>{frame(1, false, "NIL", "something went wrong")});
-    CHECK_THROWS_AS(MaximaSession(std::move(transport), proxima::Config{}),
+    CHECK_THROWS_AS(MaximaSession(std::move(transport), proxima::Config{}, kKey),
                     proxima::KernelError);
 }

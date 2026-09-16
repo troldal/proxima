@@ -15,6 +15,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -36,7 +37,14 @@ namespace proxima::detail {
 /// A Lisp helper installed at startup wraps every reply in delimiters carrying
 /// the request's own id:
 ///
-///     @@B<id>@@<ok>@@S<id>@@<value>@@S<id>@@<reason>@@E<id>@@
+///     @@B<tag>@@<ok>@@S<tag>@@<value>@@S<tag>@@<reason>@@E<tag>@@
+///
+/// where the tag is `<key>-<id>`: the request's id, behind a key drawn at
+/// random for each session. The id alone was enough to keep one reply from
+/// being mistaken for another, but not to keep a *value* from ending its own
+/// frame — a Maxima string containing `@@E7@@`, printed inside frame 7, did
+/// exactly that, and ids are sequential and so easy to guess. The key is never
+/// part of any value Maxima is asked to compute.
 ///
 /// and each request is sent as
 ///
@@ -103,6 +111,20 @@ private:
     std::string call_;
 };
 
+/// A fresh frame key: sixteen hex digits from std::random_device.
+std::string randomFrameKey();
+
+/// Creates `dir` accessible to its owner only, or accepts it if it already
+/// exists as a directory — not a link — owned by this user and closed to
+/// everyone else; otherwise throws KernelError. On Windows, only creates it.
+void ensurePrivateDirectory(const std::filesystem::path &dir);
+
+/// The user directory Maxima is given when Config::userDir is empty: a
+/// per-user private directory under the system temporary directory, checked
+/// with ensurePrivateDirectory, since Maxima executes the maxima-init.mac it
+/// finds there.
+std::filesystem::path defaultUserDir();
+
 class MaximaSession {
 public:
     /// Produces a transport, and can be asked again after one dies. Holding a
@@ -113,12 +135,15 @@ public:
     explicit MaximaSession(Config config);
 
     /// Drives transports from `factory`, which is called again on restart.
-    /// For tests.
-    MaximaSession(TransportFactory factory, Config config);
+    /// For tests, which pass a fixed `frameKey` so that scripted replies can
+    /// be written in advance.
+    MaximaSession(TransportFactory factory, Config config,
+                  std::string frameKey = randomFrameKey());
 
     /// Drives one already-constructed transport, with no way to make another,
-    /// so a death is final. For tests.
-    MaximaSession(std::unique_ptr<ITransport> transport, Config config);
+    /// so a death is final. For tests; `frameKey` as above.
+    MaximaSession(std::unique_ptr<ITransport> transport, Config config,
+                  std::string frameKey = randomFrameKey());
 
     ~MaximaSession();
 
@@ -219,7 +244,9 @@ public:
 
     /// Builds the environment overrides layered over the parent's environment,
     /// with its paths in UTF-8 and forward slashes. Exposed for testing; may
-    /// create Config::userDir but starts nothing.
+    /// create Config::userDir, or the default user directory, but starts
+    /// nothing. Throws KernelError if the default directory exists and is not
+    /// private to this user (see defaultUserDir).
     static std::vector<EnvOverride> launchEnvironment(const MaximaInstall &install,
                                                       const Config &config);
 
@@ -228,15 +255,23 @@ public:
     /// exactly these.
     static std::vector<std::string> setupStatements();
 
-    /// Wraps `payload` in the framed, error-trapping call sent to Maxima.
-    /// Exposed for testing.
-    static std::string requestFor(std::uint64_t id, const Payload &payload);
+    /// Wraps `payload` in the framed, error-trapping call sent to Maxima, for
+    /// request `id` of the session whose frame key is `key`. Exposed for
+    /// testing.
+    static std::string requestFor(std::string_view key, std::uint64_t id,
+                                  const Payload &payload);
 
-    /// Frame delimiters for request `id`. Exposed so tests can script replies
-    /// in the same shape Maxima produces.
-    static std::string frameBegin(std::uint64_t id);
-    static std::string frameSeparator(std::uint64_t id);
-    static std::string frameEnd(std::uint64_t id);
+    /// Frame delimiters for request `id` under frame key `key`. Exposed so
+    /// tests can script replies in the same shape Maxima produces.
+    static std::string frameBegin(std::string_view key, std::uint64_t id);
+    static std::string frameSeparator(std::string_view key, std::uint64_t id);
+    static std::string frameEnd(std::string_view key, std::uint64_t id);
+
+    /// The most a single reply may occupy before it is abandoned as a broken
+    /// conversation. Without a limit, a child that streamed without ever
+    /// closing its frame was bounded only by Config::timeout — at pipe speed,
+    /// gigabytes. The largest reply measured in practice is under a megabyte.
+    static constexpr std::size_t kMaxFrameBytes = std::size_t{256} * 1024 * 1024;
 
 private:
     struct JournalEntry {
@@ -305,6 +340,7 @@ private:
     TransportFactory factory_;
     std::unique_ptr<ITransport> transport_;
     std::uint64_t nextRequestId_ = 0;
+    std::string frameKey_ = randomFrameKey();
 
     ReplyCache cache_;
 
