@@ -187,9 +187,15 @@ public:
     static Expr opaque(std::string text);
 
     /// Builds a sum. One term returns that term; no terms returns zero.
+    ///
+    /// The way to build a long sum. Each `+` normalises its whole result
+    /// afresh, so accumulating n terms one `+` at a time costs time quadratic
+    /// in n — measured, 4000 terms took over eight seconds — where one add()
+    /// over all of them takes milliseconds.
     static Expr add(std::vector<Expr> terms);
 
     /// Builds a product. One factor returns that factor; none returns one.
+    /// As with add(), build a long product here rather than one `*` at a time.
     static Expr mul(std::vector<Expr> factors);
 
     static Expr pow(Expr base, Expr exponent);
@@ -246,6 +252,8 @@ private:
     std::shared_ptr<const detail::Node> node_;
 };
 
+/// Arithmetic, normalised at once. Each builds a whole new canonical node, so
+/// to accumulate many operands use Expr::add or Expr::mul instead of a loop.
 Expr operator+(const Expr &lhs, const Expr &rhs);
 Expr operator-(const Expr &lhs, const Expr &rhs);
 Expr operator*(const Expr &lhs, const Expr &rhs);

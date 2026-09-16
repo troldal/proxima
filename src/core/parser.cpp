@@ -360,9 +360,56 @@ private:
 
         Expr left = prefix();
         while (leftBindingPower(current_.kind) > minimumPower) {
-            left = infix(std::move(left));
+            switch (current_.kind) {
+            case Token::Kind::Plus:
+            case Token::Kind::Minus:
+                left = sum(std::move(left));
+                break;
+            case Token::Kind::Star:
+            case Token::Kind::Slash:
+                left = product(std::move(left));
+                break;
+            default:
+                left = infix(std::move(left));
+                break;
+            }
         }
         return left;
+    }
+
+    // A run of `+` and `-`, or of `*` and `/`, is collected and built once.
+    // Folding it one operator at a time, as `left + right` did, normalised the
+    // whole growing sum again at every step: a 4000-term sum took nine seconds
+    // to parse, where one Expr::add over the same terms takes milliseconds.
+    // The result is the same expression, since canonical form does not depend
+    // on how the operands were grouped.
+
+    Expr sum(Expr first) {
+        std::vector<Expr> terms;
+        terms.push_back(std::move(first));
+        while (current_.kind == Token::Kind::Plus
+               || current_.kind == Token::Kind::Minus) {
+            const bool subtract = current_.kind == Token::Kind::Minus;
+            advance();
+            Expr term = expression(kAddSub);
+            terms.push_back(subtract ? -term : std::move(term));
+        }
+        return Expr::add(std::move(terms));
+    }
+
+    Expr product(Expr first) {
+        std::vector<Expr> factors;
+        factors.push_back(std::move(first));
+        while (current_.kind == Token::Kind::Star
+               || current_.kind == Token::Kind::Slash) {
+            const bool divide = current_.kind == Token::Kind::Slash;
+            advance();
+            Expr factor = expression(kMulDiv);
+            // 1 / factor is exactly what operator/ multiplies by: a reciprocal
+            // for a number, a negative power for anything else.
+            factors.push_back(divide ? Expr::integer(1) / factor : std::move(factor));
+        }
+        return Expr::mul(std::move(factors));
     }
 
     Expr prefix() {
@@ -421,15 +468,9 @@ private:
         const Token token = current_;
         advance();
 
+        // `+ - * /` never arrive here: expression() hands their runs to sum()
+        // and product().
         switch (token.kind) {
-        case Token::Kind::Plus:
-            return left + expression(kAddSub);
-        case Token::Kind::Minus:
-            return left - expression(kAddSub);
-        case Token::Kind::Star:
-            return left * expression(kMulDiv);
-        case Token::Kind::Slash:
-            return left / expression(kMulDiv);
         case Token::Kind::Caret:
             // Right-associative, so the right operand is parsed at one below
             // this operator's own power: x^2^3 is x^(2^3).

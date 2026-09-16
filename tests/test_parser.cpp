@@ -9,7 +9,9 @@
 #include <proxima/ops.hpp>
 #include <proxima/symbol.hpp>
 
+#include <cstddef>
 #include <string>
+#include <vector>
 
 using proxima::Expr;
 using proxima::Kind;
@@ -64,6 +66,44 @@ TEST_CASE("arithmetic and precedence") {
         CHECK(Expr::parse("x - y - 1") == Expr(x) - Expr(y) - 1);
         CHECK(Expr::parse("8/4/2") == Expr(1));
     }
+}
+
+TEST_CASE("a long sum or product is built once, not once per operator") {
+    // Each operator used to re-normalise everything to its left, so parsing
+    // took time quadratic in the number of terms: nine seconds for 4000. A
+    // regression shows up here as a slow test rather than a failing one.
+    const std::size_t n = 20000;
+    std::vector<Expr> terms;
+    std::vector<Expr> negated;
+    std::string sum;
+    std::string alternating;
+    std::string product;
+    for (std::size_t i = 0; i < n; ++i) {
+        const Expr term = Expr::symbol("x" + std::to_string(i));
+        terms.push_back(term);
+        negated.push_back(i % 2 == 0 ? term : -term);
+        sum += (i ? " + x" : "x") + std::to_string(i);
+        alternating += (i == 0 ? "x" : i % 2 == 0 ? " + x" : " - x") + std::to_string(i);
+        product += (i ? " * x" : "x") + std::to_string(i);
+    }
+    CHECK(Expr::parse(sum) == Expr::add(terms));
+    CHECK(Expr::parse(alternating) == Expr::add(negated));
+    CHECK(Expr::parse(product) == Expr::mul(terms));
+}
+
+TEST_CASE("runs of operators mean what chained operators mean") {
+    const Symbol a("a");
+    const Symbol b("b");
+    const Symbol c("c");
+    const Symbol d("d");
+    CHECK(Expr::parse("a - b + c - d") == Expr(a) - b + c - d);
+    CHECK(Expr::parse("a / b * c / d") == Expr(a) / b * c / d);
+    CHECK(Expr::parse("a*b + c/d - a^2*b") == Expr(a) * b + Expr(c) / d - pow(Expr(a), 2) * b);
+    CHECK(Expr::parse("-a - b") == -Expr(a) - b);
+    CHECK(Expr::parse("2/3*a/4") == Expr::rational(1, 6) * a);
+    CHECK(Expr::parse("a/0.5/2") == Expr(a) / Expr(0.5) / Expr(2));
+    CHECK(Expr::parse("1/0 + a") == Expr(a) + Expr(1) / Expr(0));
+    CHECK(Expr::parse("a + b < c * d - 1") == lt(Expr(a) + b, Expr(c) * d - 1));
 }
 
 TEST_CASE("the two precedences that surprise people") {
