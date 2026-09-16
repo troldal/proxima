@@ -247,6 +247,11 @@ TEST_CASE("operator== is structural equality returning bool") {
         counts[Expr(x)] = 3;
         CHECK(counts.at(Expr::symbol("x")) == 3);
 
+        // Symbols too, hashing as the expression they are.
+        const std::unordered_set<Symbol> symbols{x, Symbol("x"), Symbol("y")};
+        CHECK(symbols.size() == 2);
+        CHECK(std::hash<Symbol>{}(x) == std::hash<Expr>{}(Expr(x)));
+
         const std::vector<Expr> terms{Expr(1), Expr(x), Expr(2)};
         CHECK(std::find(terms.begin(), terms.end(), Expr(x)) != terms.end());
     }

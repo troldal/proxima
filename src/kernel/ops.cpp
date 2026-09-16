@@ -5,6 +5,7 @@
 #include <proxima/errors.hpp>
 
 #include <algorithm>
+#include <format>
 #include <string>
 #include <utility>
 
@@ -431,9 +432,11 @@ std::expected<double, Failure> findRoot(const Expr &expr, const Symbol &wrt,
     }
     // Handed back unevaluated: the expression was not a number at some point
     // of the interval, so there was nothing to bisect.
-    return std::unexpected(Failure{"find_root could not evaluate " + expr.str()
-                                   + " to a number between " + std::to_string(low)
-                                   + " and " + std::to_string(high)});
+    // std::format, not std::to_string: to_string prints six decimals, so an
+    // interval from 1e-9 to 1e-8 read "between 0.000000 and 0.000000".
+    return std::unexpected(Failure{std::format(
+        "find_root could not evaluate {} to a number between {} and {}",
+        expr.str(), low, high)});
 }
 
 } // namespace proxima

@@ -597,6 +597,12 @@ TEST_CASE("real roots: counted, isolated and found") {
         CHECK(sameSign.error().message.find("same sign") != std::string::npos);
 
         CHECK_FALSE(proxima::findRoot(Expr(x) * y, x, -1.0, 1.0).has_value());
+
+        // The interval as written, not to six decimals: to_string made this
+        // "between 0.000000 and 0.000000".
+        const auto tiny = proxima::findRoot(Expr(x) * y, x, 1e-9, 1e-8);
+        REQUIRE_FALSE(tiny.has_value());
+        CHECK(tiny.error().message.find("between 1e-09 and 1e-08") != std::string::npos);
     }
 }
 

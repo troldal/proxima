@@ -49,6 +49,15 @@ inline Symbol operator""_sym(const char *name, std::size_t length) {
 
 } // namespace proxima
 
+/// Hashes as the expression it is, so `std::unordered_set<Symbol>` works and
+/// agrees with `std::unordered_set<Expr>`.
+template <>
+struct std::hash<proxima::Symbol> {
+    std::size_t operator()(const proxima::Symbol &symbol) const noexcept {
+        return symbol.expr().hash();
+    }
+};
+
 /// Formats as the expression it is, with the same notations: `{:tex}` writes
 /// `%pi` as `\pi`.
 template <>

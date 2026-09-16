@@ -118,7 +118,10 @@ Expr sqrt(const T &x) {
 /// being computed. What a differential equation for proxima::ode2 is written with,
 /// since `diff(y, x)` of a plain symbol `y` would simply evaluate to 0. For
 /// the derivative computed, use proxima::diff.
-inline Expr derivative(const Expr &f, const Expr &variable, unsigned order = 1) {
+///
+/// The variable is a Symbol, as for every other calculus operation, so
+/// `derivative(y, x * 2)` does not compile.
+inline Expr derivative(const Expr &f, const Symbol &variable, unsigned order = 1) {
     return Expr::function("'diff", {f, variable, Expr(order)});
 }
 
