@@ -149,7 +149,10 @@ Linux (222 when the review was written).
 Every section is closed except §7's CI item, which is left for later.
 
 A second full review, made after the rename to Proxima, is §9 at the end of
-this file. It is where the open work now is.
+this file. It is where the open work now is. §9.1 is done except the two
+items that wait on §9.6 — `evalExpr`'s `query` and the throwing operators —
+and §9.2's parser fix is in (`3292b45` … `d7f32f8`). Suite after that round:
+333 cases on Windows under GCC, clang-cl and MSVC, 335 on Linux.
 
 ---
 
@@ -1159,7 +1162,7 @@ to the kernel. That is where the work is.
 
 ### 9.1 Correctness and safety
 
-- [ ] **`Feature::Prime` is not a Maxima feature.** *Measured:* against
+- [x] **`Feature::Prime` is not a Maxima feature.** *Measured:* against
   Maxima 5.50.0, `declare(zz, prime)` fails with `declare: unknown property
   prime`; every other enumerator is accepted (each on a fresh symbol, so the
   result is not a conflict between opposites). Maxima's own `features` list
@@ -1171,7 +1174,13 @@ to the kernel. That is where the work is.
   missing ten if they are wanted; and add the test that would have caught
   this — declare every enumerator against a live kernel — since no test does.
 
-- [ ] **The default user directory is a code-injection path on a shared
+  *Outcome:* fixed in `3292b45`. `Prime` is gone and the ten missing features
+  are added, so `Feature` is exactly Maxima's list, grouped by what they
+  describe (values, functions, operators). The new test declares each on a
+  symbol of its own and checks `featurep`; a probe first confirmed that all
+  twenty-two report true.
+
+- [x] **The default user directory is a code-injection path on a shared
   Unix machine.** *Measured:* Maxima loads `maxima-init.mac` from
   `$MAXIMA_USERDIR` (a probe with `proxima_probe: 42$` in that file printed 42;
   with the variable unset it printed the unbound symbol). With
@@ -1193,7 +1202,21 @@ to the kernel. That is where the work is.
   one is opt-in and documented as shared, so it is a documentation item:
   say that the directory must be private to the trust domain.)
 
-- [ ] **A reply that contains the frame delimiter truncates its own frame.**
+  *Outcome:* fixed in `fb16850`, with the second of the two fixes, not the
+  first: a per-user directory, `<tmp>/proxima-<uid>/userdir`, rather than one
+  per process, so nothing is left behind in the temporary directory by every
+  run. It is made with `mkdir(0700)` — never a `chmod` after, which would
+  leave a moment when it is open — and an existing one is accepted only if
+  `lstat` shows a directory, not a link, owned by this user and closed to
+  everyone else; otherwise the kernel refuses to start and says why. Windows
+  keeps `%TEMP%\proxima\userdir`. Tests: the default's owner and mode, and
+  refusal of an open directory, a symbolic link and a file (Unix only). A
+  `Config::userDir` given explicitly is used as it is, and its documentation
+  now says it must not be writable by others. `Config::cacheDirectory`'s
+  documentation says the same, in the terms above, in the commit that ticks
+  this section.
+
+- [x] **A reply that contains the frame delimiter truncates its own frame.**
   Not measured. `readFrame` searches for `@@E<id>@@` anywhere in the stream,
   and the value is printed with `~s`, so a Maxima *string* whose text contains
   the delimiter — reachable from `Expr::opaque("\"@@E7@@\"")`, or from any
@@ -1204,10 +1227,22 @@ to the kernel. That is where the work is.
   in the delimiters (`@@E<nonce>-<id>@@`), or have the helper length-prefix the
   value. The nonce is the smaller change.
 
-- [ ] **`readFrame`'s buffer is unbounded.** A child that streams without
+  *Outcome:* fixed in `fb16850` with the nonce: each session draws a 64-bit
+  key from `std::random_device` and every delimiter carries `<key>-<id>`. The
+  tag reaches the Lisp helper as a Maxima string, which it prints with `~a`,
+  so the helper itself is unchanged. The two test-only constructors take the
+  key, so scripted replies can still be written before the session exists.
+  New tests: a value containing its own request's old-style delimiter
+  survives, and two keys differ.
+
+- [x] **`readFrame`'s buffer is unbounded.** A child that streams without
   ever completing a frame is bounded only by `Config::timeout`, and at pipe
   speed two minutes is gigabytes. Cap the buffer (256 MB, say) and treat
   reaching it as a `KernelError` with a terminate, like a timeout.
+
+  *Outcome:* fixed in `fb16850`: 256 MB, `MaximaSession::kMaxFrameBytes`. A
+  `KernelError`, so `converse` restarts the child as it does for any broken
+  conversation. Tested with two half-limit chunks and no closing delimiter.
 
 - [ ] **`Kernel::evalExpr` has `eval`'s destructive semantics.** It calls
   `eval`, so it clears the reply cache and switches persistence off for the
@@ -1218,10 +1253,23 @@ to the kernel. That is where the work is.
   a type. Until then: add `query(text) -> std::expected<Expr, Failure>` on the
   pure path, and document `evalExpr` as a statement.
 
-- [ ] **The in-memory reply cache is bounded by count, not bytes.**
+  *Outcome:* half done. `evalExpr` is now documented as a statement, in bold,
+  in `kernel.hpp` (`2ac8654`) and in the README (`495fbb0`), both pointing to
+  `toExpr(kernel.evalPure(...))` for a pure question. `query` is not added:
+  it would be a fifth evaluation verb that §9.6 item 6 would remove again, so
+  it waits for that decision. Open.
+
+- [x] **The in-memory reply cache is bounded by count, not bytes.**
   `Config::cacheEntries` is 4096; a single reply can be 889 KB
   (`expand((x+y+z)^120)`, §3). Worst case 3.6 GB resident. The persistent cache
   already has a byte budget; give `ReplyCache` one too, or evict by size.
+
+  *Outcome:* fixed in `495fbb0`. A new `Config::cacheBytes`, 64 MB, enforced
+  alongside `cacheEntries`: least recently used first. Each entry is charged
+  its text, the key twice (the index holds a copy), and a fixed 256 bytes
+  for the nodes. A reply larger than the limit on its own is not kept, and
+  takes any older answer under its key with it, so a stale reply is never
+  served in place of one that replaced it.
 
 - [ ] **Arithmetic operators can throw.** Since `98a69db`, `Expr(1e308) *
   Expr(10.0)` throws `proxima::Error` from `operator*`, and so does any
@@ -1236,30 +1284,55 @@ to the kernel. That is where the work is.
   from misuse, and say so on `operator+`/`operator*`. Recommendation: the
   second now, the first if the pipeline work makes throwing operators hurt.
 
-- [ ] **Persistent-cache hits write to disk.** With a limit set — the
+  *Outcome:* deliberately not done in this round. Which of the two it should
+  be depends on §9.6 item 1 (one result type everywhere), so it is left open
+  with that.
+
+- [x] **Persistent-cache hits write to disk.** With a limit set — the
   default — `find()` refreshes the entry's mtime on every hit, a metadata
   write. It is once per entry per process (the in-memory cache takes over),
   so it is acceptable; document it, and consider refreshing only when the
   mtime is older than, say, an hour.
 
-- [ ] **`derivative(f, variable, order)` takes the variable as `const Expr
+  *Outcome:* fixed in `495fbb0` as suggested: a hit refreshes the time only
+  when the recorded use is an hour old or more. The recency test now ages its
+  entries in hours; a new test checks that a read within the hour leaves the
+  file's time alone.
+
+- [x] **`derivative(f, variable, order)` takes the variable as `const Expr
   &`** where every other calculus function takes `Symbol` for exactly the
   reason `symbol.hpp` gives. `derivative(y, x * 2)` compiles. Make it `Symbol`.
 
-- [ ] **`std::hash<Symbol>` is missing** although `std::hash<Expr>` exists
+  *Outcome:* fixed in `93a1a00`. No caller passed anything but a symbol.
+
+- [x] **`std::hash<Symbol>` is missing** although `std::hash<Expr>` exists
   and `Symbol` has `==`; `std::unordered_set<Symbol>` does not compile.
 
-- [ ] **`findRoot`'s failure message formats the interval with
+  *Outcome:* fixed in `93a1a00`, hashing as the expression, so it agrees with
+  `std::hash<Expr>`; tested.
+
+- [x] **`findRoot`'s failure message formats the interval with
   `std::to_string(double)`**, which prints six decimals: a failure between
   1e-9 and 1e-8 reads "between 0.000000 and 0.000000". Use `std::format`.
 
-- [ ] **`toTeX` renders `minf` as `-\infty` inside a sum term**, so `x + minf`
+  *Outcome:* fixed in `93a1a00`; the message now reads "between 1e-09 and
+  1e-08", which a test pins.
+
+- [x] **`toTeX` renders `minf` as `-\infty` inside a sum term**, so `x + minf`
   is `x + -\infty`; `minf` should carry its sign through `negate()`, as the
   MathML renderer does with `mrow`. Also a decision rather than a bug: the TeX
   and MathML renderers turn a user's own symbol named `gamma`, `pi`, `phi` or
   `mu` into the Greek letter, which is right for a physics formula and wrong
   for a variable that happens to be called `mu`. Say so in the docs, or limit
   the table to Maxima's `%`-constants.
+
+  *Outcome:* fixed in `2ac8654`, and not quite as suggested: the claim that
+  MathML already got it right was wrong — it produced `a + −∞` too. `minf`
+  cannot become a negated `inf` in the shared presentation layer, because the
+  text printer uses that layer and `a - inf` reads back as a different
+  expression. So each typeset renderer folds it in its `sum`: `a + minf` is
+  `a - \infty`, and `a - minf` is `a + \infty`. The Greek letters are
+  documented in `tex.hpp` and `mathml.hpp`, and kept.
 
 ### 9.2 Performance
 
@@ -1285,6 +1358,17 @@ to the kernel. That is where the work is.
   as the way to build a long sum, with a `proxima::sum(range)` helper. A
   `std::accumulate` over 4000 terms is the natural thing to write and takes
   nine seconds today.
+
+  *Outcome:* the first and third fixes are in `d7f32f8`. The parser collects a
+  run of `+`/`-`, or of `*`/`/`, and builds it once; the same probe now
+  measures `Expr::parse` at 0.7, 1.8, 3.1 and 6.9 ms for 500 to 4000 terms,
+  down from 80 ms to 8.5 s. New tests parse 20,000-term sums and products and
+  check runs against the chained operators they replace. `Expr::add`,
+  `Expr::mul` and the arithmetic operators now say to build long sums with
+  `add`. Still open: chained `operator+` (unchanged, 8.6 s at 4000 — each step
+  builds a new immutable sum, so an insertion only removes the sort, not the
+  copy), and a `proxima::sum(range)` helper, which belongs with the §9.6
+  naming decision.
 
 - [ ] **Including `<proxima/expr.hpp>` costs 1.46 s and 191,590 preprocessed
   lines per translation unit.** *Measured* (GCC 13, the project's Debug flags,

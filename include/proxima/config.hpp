@@ -66,13 +66,18 @@ struct Config {
     /// for a kernel whose state has been changed by a raw Kernel::eval, since
     /// that change is not part of the key; Kernel::persistenceActive says
     /// whether that has happened, and Kernel::restart undoes it.
+    ///
+    /// Entries are trusted as they are read: nothing signs or checks them. So
+    /// the directory must be writable only by people whose answers you would
+    /// accept — anyone who can write a file there can make `integrate` return
+    /// whatever they like.
     std::filesystem::path cacheDirectory;
 
     /// The most cacheDirectory may hold, in bytes, before the least recently
     /// used answers are deleted. Zero means no limit.
     ///
     /// Recency is each entry's modification time, which reading it back
-    /// refreshes. Over the limit, entries are deleted oldest first until the
+    /// refreshes when the recorded use is an hour old or more. Over the limit, entries are deleted oldest first until the
     /// directory is at three quarters of it. Each process enforces the limit on
     /// what it sees, so processes sharing a directory can overshoot it briefly.
     std::uintmax_t cacheDirectoryLimit = std::uintmax_t{256} * 1024 * 1024;
