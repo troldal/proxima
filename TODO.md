@@ -1557,7 +1557,7 @@ to the kernel. That is where the work is.
   verbose spelling. Show the terse one, and put `namespace px = proxima;` in
   the README's first example.
 
-  *Outcome:* done in COMMIT for the README (with `namespace px = proxima;` in
+  *Outcome:* done in `0dea560` for the README (with `namespace px = proxima;` in
   the first example and a sentence saying why no conversion is needed) and
   the demo; the tour already had none. The tests keep `Expr(x)`: a test is
   where the explicit form is worth exercising too, and rewriting 450 lines
