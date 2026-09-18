@@ -76,8 +76,9 @@ bool take_field(std::string_view &rest, std::string_view &field) {
         return false;
     }
     std::size_t length = 0;
-    const char *const last = length_text.data() + length_text.size();
-    const auto [stopped, error] = std::from_chars(length_text.data(), last, length);
+    const char *const first = length_text.data();
+    const char *const last = first + length_text.size();
+    const auto [stopped, error] = std::from_chars(first, last, length);
     if (error != std::errc{} || stopped != last) {
         return false;
     }

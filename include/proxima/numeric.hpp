@@ -42,8 +42,8 @@ public:
 
     Bindings() = default;
 
-    Bindings(
-        std::initializer_list<Entry> entries) { // NOLINT: `{{x, 1.0}}` is the point.
+    // NOLINTNEXTLINE(google-explicit-constructor): `{{x, 1.0}}` is the point.
+    Bindings(std::initializer_list<Entry> entries) {
         for (const Entry &entry : entries) {
             values_.insert_or_assign(entry.name, entry.value);
         }

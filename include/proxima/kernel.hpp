@@ -203,8 +203,8 @@ class Env {
 public:
     Env() = default;
     Env(Kernel &kernel) : kernel_(&kernel) {} // NOLINT: implicit on purpose
-    Env(Assumptions assumptions)
-        : assumptions_(std::move(assumptions)) {} // NOLINT: implicit on purpose
+    // NOLINTNEXTLINE(google-explicit-constructor): implicit on purpose
+    Env(Assumptions assumptions) : assumptions_(std::move(assumptions)) {}
     Env(Assumptions assumptions, Kernel &kernel)
         : kernel_(&kernel), assumptions_(std::move(assumptions)) {}
 

@@ -136,7 +136,9 @@ jobs:
       - name: clang-tidy
         run: |
           run-clang-tidy-19 -quiet -p build/linux "^$PWD/src/" > tidy.txt 2>&1 || true
-          if grep -E 'warning:|error:' tidy.txt; then
+          # Findings in the dependencies are theirs, FXT's .clang-tidy failing
+          # to parse among them.
+          if grep -E 'warning:|error:' tidy.txt | grep -v '/.cpm-cache/'; then
             echo "clang-tidy reported findings"
             exit 1
           fi
