@@ -101,7 +101,7 @@ unset(BUILD_SHARED_LIBS)
 CPMAddPackage(
         NAME fxt
         GITHUB_REPOSITORY troldal/FXT
-        GIT_TAG 361062b3dec831654722be88d3a32706f2e0f6ce
+        GIT_TAG 9208e597156b196dd5cbf55ab8460ffb2cead30b
         DOWNLOAD_ONLY YES
 )
 CPMAddPackage(
