@@ -3,15 +3,22 @@
 
 #include <doctest/doctest.h>
 
+#include <fxt/monads/AndThen.hpp>
+#include <fxt/monads/Transform.hpp>
+#include <fxt/monads/ValueOr.hpp>
+#include <fxt/utils/Lift.hpp>
+
 #include <proxima/context.hpp>
 #include <proxima/errors.hpp>
 #include <proxima/expr.hpp>
 #include <proxima/functions.hpp>
 #include <proxima/ops.hpp>
 #include <proxima/symbol.hpp>
+#include <proxima/tex.hpp>
 
 #include <cmath>
 #include <concepts>
+#include <functional>
 #include <numbers>
 #include <numeric>
 #include <span>
@@ -501,6 +508,41 @@ TEST_CASE("an operation with no ordinary failure mode throws instead") {
     // its cause names.
     CHECK_THROWS_AS(proxima::unwrap(proxima::diff(Expr::opaque("(1"), Symbol("x"))),
                     proxima::MaximaError);
+}
+
+TEST_CASE("results compose with FXT's adaptors, as the README shows") {
+    // Proxima has no pipe adaptors of its own: the result type is FXT's, so
+    // these idioms are the composition story, and they had better compile.
+    const Symbol x("x");
+    const Expr f = pow(Expr(x), 3);
+
+    const std::string answer
+        = proxima::diff(f, x)
+          | fxt::and_then(FXT_LIFT(proxima::factor))
+          | fxt::and_then([&](const Expr &e) { return proxima::diff(e, x); })
+          | fxt::and_then([&](const Expr &e) { return proxima::expand(e, proxima::shared_kernel()); })
+          | fxt::transform(proxima::to_tex)
+          | fxt::value_or(std::string("no answer"));
+    CHECK(answer == "6 x");
+
+#ifdef __cpp_lib_bind_back
+    // std::bind_back binds the variable without a lambda, where the standard
+    // library has it (libstdc++ 14, MSVC's STL).
+    const auto bound = proxima::diff(f, x) | fxt::and_then(std::bind_back(FXT_LIFT(proxima::diff), x));
+    CHECK(bound == 6 * Expr(x));
+#endif
+
+    // A chain stops at the first failure, and the failure that stopped it is
+    // the one that comes out.
+    const auto stopped = proxima::diff(Expr::opaque("(1"), x)
+                         | fxt::and_then(FXT_LIFT(proxima::factor))
+                         | fxt::transform(proxima::to_tex);
+    REQUIRE_FALSE(stopped.has_value());
+    CHECK(proxima::cause_of(stopped.error()) == proxima::Cause::MaximaError);
+
+    // And a chain can start from a plain expression by wrapping it once.
+    const auto started = proxima::result<Expr>{f} | fxt::and_then(FXT_LIFT(proxima::factor));
+    CHECK(started == f);
 }
 
 TEST_CASE("results are canonical expressions, not text") {

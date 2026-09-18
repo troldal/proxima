@@ -1786,7 +1786,7 @@ they are ordered so that each is useful without the next.
   `missing_fact` is not there: the question is text Maxima composed, and
   parsing it back into a relation would be a guess; the message carries it.
 
-- [ ] **3. Pipe adaptors for every operation.** Each operation gains an
+- [x] ~~**3. Pipe adaptors for every operation.**~~ Each operation gains an
   overload without its subject that returns a closure, and `Expr` and
   `result<Expr>` both pipe into it — the plain value applies, the result
   short-circuits (Kleisli composition, which is what `fxt::and_then` does):
@@ -1804,6 +1804,20 @@ they are ordered so that each is useful without the next.
   currying. The adaptor types live in `proxima` so that ADL finds the pipe;
   a `result<Expr> | adaptor` overload in `proxima` avoids requiring FXT for
   the common chain, and FXT's `and_then` works on it regardless.
+
+  *Outcome:* struck, at FXT's author's suggestion, once the result type was
+  FXT's (item 11). Everything this asked for except the spelling already
+  works with FXT's own adaptors: `f | fxt::and_then(FXT_LIFT(expand))` for
+  a single-argument operation, a lambda or `std::bind_back(FXT_LIFT(diff),
+  x)` for one that takes a variable — `FXT_LIFT` is variadic, so the
+  defaulted `order` and `kernel` parameters cost nothing. A second,
+  Proxima-specific closure per operation would duplicate FXT's pipe
+  machinery for `f | diff(x)` over `f | and_then(bind_back(LIFT(diff), x))`.
+  The README's *Composing with FXT* section documents the idioms, and a
+  test pins them. The one piece left open, deliberately, is an `operator|`
+  that lets a bare `Expr` start a chain — FXT's pipe is constrained on
+  expected-like types, so a chain starts from an operation's result or from
+  `result<Expr>{f}` — to be added only if that wrapping proves common.
 
 - [ ] **4. `match` over expressions, and optional accessors.** `Node` is a
   `std::variant` already; expose that as a visit over cheap, non-owning
@@ -1931,7 +1945,11 @@ they are ordered so that each is useful without the next.
   unless `<ostream>` came first — `result.hpp` includes it first, with a
   note; and `<fxt.hpp>` needs deducing this (`Match.hpp`) and
   `std::forward_like`, so GCC 13 cannot take the umbrella, only the headers
-  it uses.
+  it uses. And a third, found once the repository was public: the file is
+  tracked as `utils/failure.hpp` while FXT's own headers include
+  `Failure.hpp` — invisible on Windows, fatal on Linux. Proxima includes the
+  tracked name; `<fxt.hpp>` and `Attempt.hpp` stay broken on Linux until FXT
+  renames one or the other.
 
 - [ ] **12. What not to do.** Do not make `Expr` a public `std::variant`:
   the shared, hash-once representation is the reason it is a value. Do not

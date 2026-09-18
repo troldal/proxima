@@ -360,12 +360,39 @@ if (!area) {
     if (proxima::cause_of(area.error()) == proxima::Cause::NeedsAssumption) { ... }
 }
 
-// Composed, with FXT's adaptors: the chain stops at the first failure.
-const std::string answer = proxima::diff(f, x)
-                         | fxt::and_then([](const proxima::Expr &d) { return proxima::factor(d); })
-                         | fxt::transform(proxima::to_tex)
-                         | fxt::value_or(std::string("no answer"));
 ```
+
+### Composing with FXT
+
+Proxima adds no pipe adaptors of its own: its results are FXT's, so FXT's
+adaptors apply to them directly, and a chain stops at the first failure.
+The operations take their subject first, so a single-argument one lifts as
+it is, and one that takes a variable is bound with a lambda or
+`std::bind_back`:
+
+```cpp
+#include <fxt/monads/AndThen.hpp>
+#include <fxt/monads/Transform.hpp>
+#include <fxt/monads/ValueOr.hpp>
+#include <fxt/utils/Lift.hpp>
+
+const std::string answer
+    = proxima::diff(f, x)                                        // result<Expr>
+    | fxt::and_then(FXT_LIFT(proxima::factor))                    // one argument: lift it
+    | fxt::and_then([&](const proxima::Expr &e) { return proxima::diff(e, x); })
+    | fxt::and_then(std::bind_back(FXT_LIFT(proxima::expand), kernel))
+    | fxt::transform(proxima::to_tex)
+    | fxt::value_or(std::string("no answer"));
+```
+
+`FXT_LIFT` is variadic, so the defaulted `order` and `kernel` parameters
+need no mention; a lambda binds the extra argument anywhere, and
+`std::bind_back` does where the standard library has it (libstdc++ 14,
+MSVC's STL). A chain starts from an operation's result or from
+`proxima::result<Expr>{f}`; `fxt::match`, `fxt::with`, `fxt::sequence` and
+the rest work on the same values. Only the headers used need including —
+`<fxt.hpp>` brings in `fxt::match`, which needs deducing-this (GCC 14,
+Clang 18, MSVC 19.34).
 
 `*diff(f, x)` reads a result on the spot — `diff` fails only for a malformed
 argument — and `proxima::unwrap(r)` throws a failure as the exception its
