@@ -13,6 +13,8 @@
 
 #include <atomic>
 #include <cmath>
+#include <concepts>
+#include <functional>
 #include <limits>
 #include <numbers>
 #include <span>
@@ -219,6 +221,13 @@ TEST_CASE("as_function binds one variable for repeated use") {
         const Symbol a("a");
         const auto scaled = proxima::as_function(Expr(a) * Expr(x), x, {{"a", 10.0}});
         CHECK(scaled(2.5) == doctest::Approx(25.0));
+    }
+    SUBCASE("as the Compiled itself, which a std::function will hold") {
+        // It used to be a std::function: an allocation, and an indirect call
+        // per point.
+        static_assert(std::same_as<decltype(f), const proxima::Compiled>);
+        const std::function<double(double)> wrapped = f;
+        CHECK(wrapped(4.0) == doctest::Approx(16.0));
     }
 }
 

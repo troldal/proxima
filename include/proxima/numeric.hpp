@@ -200,10 +200,14 @@ result<Compiled> compile(const Expr &expr, std::span<const Symbol> variables,
 result<Compiled> compile(const Expr &expr, const Symbol &variable,
                          const Bindings &constants = {});
 
-/// Binds `expr` to one variable for repeated evaluation.
+/// Binds `expr` to one variable for repeated evaluation: the Compiled for it,
+/// which is itself a callable `double(double)`.
 ///
-/// Backed by a Compiled, so the returned function is cheap to call.
-std::function<double(double)> as_function(const Expr &expr, const Symbol &variable,
-                                         const Bindings &fixed = {});
+/// Returned as the Compiled rather than wrapped in a std::function, which cost
+/// an allocation and an indirect call per point for nothing: a Compiled
+/// converts to a std::function<double(double)> wherever one is wanted.
+/// Throws proxima::EvalError, as Compiled's constructor does; compile() is the
+/// same preparation as a result.
+Compiled as_function(const Expr &expr, const Symbol &variable, const Bindings &fixed = {});
 
 } // namespace proxima

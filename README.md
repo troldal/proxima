@@ -231,7 +231,7 @@ For repeated evaluation — plotting, root-finding, quadrature — compile once:
 const proxima::Compiled f(*integral, x);
 for (int i = 0; i < points; ++i) { plot(f(i * step)); }
 
-const auto g = proxima::as_function(*integral, x);     // same thing, as a std::function
+const auto g = proxima::as_function(*integral, x);     // the same Compiled, bound to x
 ```
 
 `Compiled` resolves every symbol to an argument slot and every function to a

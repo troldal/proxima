@@ -583,11 +583,8 @@ result<Compiled> compile(const Expr &expr, const Symbol &variable,
     return compile(expr, std::span<const Symbol>(variables), constants);
 }
 
-std::function<double(double)> as_function(const Expr &expr, const Symbol &variable,
-                                         const Bindings &fixed) {
-    return [compiled = Compiled(expr, variable, fixed)](double value) {
-        return compiled(value);
-    };
+Compiled as_function(const Expr &expr, const Symbol &variable, const Bindings &fixed) {
+    return Compiled(expr, variable, fixed);
 }
 
 } // namespace proxima

@@ -428,8 +428,9 @@ void numeric_evaluation() {
     const double point[] = {1.0, 2.0}; // x = 1, a = 2
     show("Compiled f(x, a) at (1, 2)", std::to_string(two_variables(point)));
 
-    // as_function wraps a Compiled in a std::function<double(double)>, for
-    // APIs that want a callable.
+    // as_function binds one variable and hands back the Compiled, which is
+    // itself a callable — and converts to a std::function<double(double)>
+    // for an API that wants one.
     const std::function<double(double)> as_callable
         = proxima::as_function(f, x, {{"a", 2.0}});
     show("as_function(f, x, {a: 2})(1)", std::to_string(as_callable(1.0)));
