@@ -4,6 +4,12 @@ project(proxima VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# No C++20 modules here or in the dependencies. CMake 3.28 and later scan every
+# C++20 target for them unless told not to, and with clang that needs
+# clang-scan-deps, which a distribution may package separately from the
+# compiler: Ubuntu's clang-19 alone failed to build Boost.Process for want of it.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
 # All symbolic work is delegated to a Maxima child process, so nothing here
 # links against a computer algebra library. Two parts of Boost are used:
 #
