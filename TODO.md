@@ -1372,7 +1372,7 @@ to the kernel. That is where the work is.
   copy), and a `proxima::sum(range)` helper, which belongs with the §9.6
   naming decision.
 
-- [ ] **Including `<proxima/expr.hpp>` costs 1.46 s and 191,590 preprocessed
+- [x] **Including `<proxima/expr.hpp>` costs 1.46 s and 191,590 preprocessed
   lines per translation unit.** *Measured* (GCC 13, the project's Debug flags,
   `-fsyntax-only`, best of three): the standard headers it needs cost 0.59 s
   and 72,776 lines; `<proxima/integer.hpp>` alone is 1.45 s and 191,308 lines.
@@ -1391,6 +1391,26 @@ to the kernel. That is where the work is.
   package config needs only the private Boost.Process, and a consumer's
   compile time roughly halves. `cpp_rational` (§9.4) can hide behind the same
   wall.
+
+  *Outcome:* done in `2c44c76`, with the second layout: an inline `int64_t`
+  and a `shared_ptr<const detail::BigInt>` set only when the value does not
+  fit. The public header declares `BigInt` and never defines it, so a shared
+  pointer to it copies, moves and destroys with no Boost in sight, and
+  copying a large value copies a pointer. The representation is canonical, so
+  small values compare inline. Measured the same way: `<proxima/expr.hpp>` is
+  now 86,440 lines and 0.74 s (from 191,590 and 1.46 s), `<proxima/ops.hpp>`
+  102,072 and 0.89 s (from 203,653 and 1.61 s) — about 0.04 s above the
+  standard headers alone. Runtime improved too, since two small values now
+  meet machine arithmetic with an overflow check instead of cpp_int: Release,
+  best of fifteen, small arithmetic 4.0× faster, small rational expressions
+  1.4×, parsing 1.35×, large values unchanged within noise. One part of the
+  prediction was wrong: the install rules cannot go back to `ON`. Proxima is
+  static and links Boost.Process's compiled library, so consumers still need
+  that installed. What changed is that `Boost::multiprecision` is linked as
+  `$<BUILD_INTERFACE:...>`, so the exported target and the package config ask
+  only for Boost.Process, and a consumer built against a clean install has no
+  Boost directory on its compile line (checked). A new test includes every
+  public header and fails to compile if any brings in Boost.
 
 - [ ] **`transform` allocates a vector for every compound node even when
   nothing under it changes.** For a rewrite that touches one leaf of a large
@@ -1527,7 +1547,7 @@ to the kernel. That is where the work is.
 
 ### 9.4 What existing libraries could provide
 
-- [ ] **`boost::multiprecision::cpp_rational` for `Fraction` and the `Exact`
+- [x] **`boost::multiprecision::cpp_rational` for `Fraction` and the `Exact`
   accumulator.** `Expr::rational` reduces by the gcd and moves the sign by
   hand; `Exact::add`, `multiply` and `reduce` in the normaliser re-implement
   rational arithmetic. `cpp_rational` is exactly that — canonical, reduced,
@@ -1535,6 +1555,17 @@ to the kernel. That is where the work is.
   removes some sixty lines and two places where gcd or sign handling could
   drift apart. Do it together with the opaque buffer in §9.2, so it stays out
   of the public header.
+
+  *Outcome:* half, in `2c44c76`. The normaliser's `Exact` is now a
+  `cpp_rational`, reached through the internal `src/core/big_int.hpp`, and
+  its `add`, `multiply` and `reduce` are gone; its double conversion is now
+  correctly rounded once, where dividing two doubles rounded twice and gave
+  NaN when both parts overflowed. A 400-term sum of fractions got 5.3× faster.
+  `Fraction` and `Expr::rational` keep their `Integer` fields: the node's
+  payload is the public representation of a Rational, and routing every
+  small rational through `cpp_rational` to reduce it would cost more than
+  the gcd and two divisions it replaces, now that those are machine
+  arithmetic. So there is one hand reduction left, not two.
 
 - [ ] **`std::generator` (C++23) for traversal.** `for (const Expr &node :
   proxima::nodes(e))` reads better than a callback and composes with ranges:
