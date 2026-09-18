@@ -1484,7 +1484,7 @@ to the kernel. That is where the work is.
   hot loops. Caching the string in the node (`mutable`, once) is possible but
   not obviously worth the size. Low.
 
-  *Outcome:* documented on `str()` in COMMIT, and not cached: a cached string
+  *Outcome:* documented on `str()` in `43094f9`, and not cached: a cached string
   would make every node larger for the benefit of the few that are printed,
   and hashing, equality and the wire never print.
 
