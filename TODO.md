@@ -1493,7 +1493,7 @@ to the kernel. That is where the work is.
   string once; `sweep()` sorts every entry when only the eviction boundary
   matters (`nth_element`). Low.
 
-  *Outcome:* the first in COMMIT: an entry is read in one go and parsed from
+  *Outcome:* the first in `e78337b`: an entry is read in one go and parsed from
   memory with `take_line` and `take_field`, bounding each length against what
   is left of the string; the corrupt, truncated and huge-length tests pass
   unchanged. The second not done: `nth_element` needs the boundary's
