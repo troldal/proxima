@@ -1,0 +1,7 @@
+# Commits that only reformat, which blame should look through. GitHub reads
+# this file itself; locally:
+#
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Apply .clang-format to the whole tree (TODO §9.5)
+fbe1a2ff2c8440bff30915444ea6aaac37e23de3

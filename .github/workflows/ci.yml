@@ -4,6 +4,8 @@
 #             distribution, the whole suite, warnings as errors.
 #   windows   MSVC, the Maxima-free suite, warnings as errors.
 #   tidy      clang-tidy over the library, as .clang-tidy configures it.
+#   format    every C++ file as .clang-format has it, with the version the
+#             tree was formatted with.
 #   fuzz      the two hand-written parsers under libFuzzer, briefly.
 #
 # Dependencies (Boost, FXT, doctest) come through CPM, into a cache kept
@@ -104,6 +106,19 @@ jobs:
             echo "clang-tidy reported findings"
             exit 1
           fi
+
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned: clang-format's output changes between versions, and this is
+      # the one the tree was formatted with.
+      - name: Install clang-format
+        run: pip install clang-format==23.1.0
+
+      - name: Check formatting
+        run: git ls-files '*.cpp' '*.hpp' | xargs clang-format --dry-run --Werror
 
   fuzz:
     runs-on: ubuntu-24.04

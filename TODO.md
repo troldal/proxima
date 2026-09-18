@@ -1840,10 +1840,23 @@ to the kernel. That is where the work is.
   that name a missing group of operations moved to `Resolved`, where both
   paths meet them. `docs/design.md` records the change of mind.
 
-- [ ] **Apply `.clang-format` wholesale when §9.6 lands.** It was committed
+- [x] **Apply `.clang-format` wholesale when §9.6 lands.** It was committed
   as "closest, not applied" (§7) to protect line history; a rewrite that
   touches most files anyway is the moment to reformat once and stop the
   drift.
+
+  *Outcome:* applied in `fbe1a2f`, a commit that does nothing else, with
+  clang-format 23.1.0: 66 files, about 1,300 lines. One option was added
+  first — `NamespaceMacros: [TEST_SUITE]` — because clang-format read
+  doctest's `TEST_SUITE` as a function and indented every suite's body, which
+  alone would have doubled the diff. The history the §7 note wanted to keep is
+  kept another way: `.git-blame-ignore-revs` lists the commit, GitHub's blame
+  honours it, and `git config blame.ignoreRevsFile .git-blame-ignore-revs`
+  does the same locally. The drift is stopped by a `format` job in CI running
+  `clang-format --dry-run --Werror` over every file, pinned to 23.1.0 through
+  `pip` because another version can break a line differently; PyPI's 23.1.0
+  was checked to agree with the one the tree was formatted with. GCC, MSVC,
+  clang-cl and GCC 16 on WSL all build and pass afterwards.
 
 - [x] **docs/design.md says "Genuinely undecided: nothing."** It should now list the
   decisions this section asks for — naming, values versus exceptions,
