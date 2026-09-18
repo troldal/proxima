@@ -47,7 +47,23 @@ public:
         }
     }
 
-    /// Gives a symbol a value, replacing any it had.
+    /// These bindings with one more — or one replaced — leaving these as they
+    /// are. The value-oriented way to build bindings up, and the one to use
+    /// on bindings shared between callers:
+    ///
+    ///     const Bindings base{{"g", 9.81}};
+    ///     const Bindings here = base.with("h", 2.0);   // base still has only g
+    [[nodiscard]] Bindings with(const Symbol &symbol, double value) const {
+        return with(symbol.name(), value);
+    }
+    [[nodiscard]] Bindings with(std::string_view symbol_name, double value) const {
+        Bindings copy = *this;
+        copy.set(symbol_name, value);
+        return copy;
+    }
+
+    /// Gives a symbol a value in place, replacing any it had. For bindings
+    /// being built up locally; with() leaves the original alone.
     void set(const Symbol &symbol, double value) { set(symbol.name(), value); }
     void set(std::string_view symbol_name, double value) {
         values_.insert_or_assign(std::string(symbol_name), value);

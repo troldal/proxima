@@ -35,11 +35,12 @@ CheckOptions:
   # members, with a trailing underscore on private ones; PascalCase for types,
   # concepts, template parameters and enumerators; kPascalCase for named
   # constants. Exceptions: the public version constants, which a user reads
-  # as `proxima::version_major`; the standard's own alias names (`type`,
-  # `const_iterator`); the parser's k-prefixed precedence enumerators, which
+  # as `proxima::version_major`; the standard's own names (`type`,
+  # `iterator`, `const_iterator`); the parser's k-prefixed precedence enumerators, which
   # are constants; and a single capital, a mathematical name like `F`.
   readability-identifier-naming.NamespaceCase: lower_case
   readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.ClassIgnoredRegexp: '^(iterator|const_iterator)$'
   readability-identifier-naming.StructCase: CamelCase
   readability-identifier-naming.UnionCase: CamelCase
   readability-identifier-naming.EnumCase: CamelCase

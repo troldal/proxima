@@ -1429,12 +1429,16 @@ to the kernel. That is where the work is.
   Boost directory on its compile line (checked). A new test includes every
   public header and fails to compile if any brings in Boost.
 
-- [ ] **`transform` allocates a vector for every compound node even when
+- [x] **`transform` allocates a vector for every compound node even when
   nothing under it changes.** For a rewrite that touches one leaf of a large
   tree, that is one allocation per ancestor *and* per untouched sibling
   subtree. Delay the allocation until the first changed child, copying the
   prefix then. Also: `replace` and `contains` revisit shared subtrees, which a
   memo keyed by node identity would avoid for DAG-shaped expressions. Low.
+
+  *Outcome:* the allocation half is done in COMMIT, in `transform` and in the
+  new `rewrite` alike: no vector until an operand has changed, the untouched
+  prefix copied in then. Not measured. The memo is not done.
 
 - [ ] **`Expr` copies are atomic reference-count operations.** The
   normaliser and the traversals copy operands freely, and `std::shared_ptr`'s
@@ -1517,7 +1521,7 @@ to the kernel. That is where the work is.
   *Outcome:* answered by §9.6 item 4 in `05f6d32`. The throwing accessors
   remain, documented as the form for code that has already checked the kind.
 
-- [ ] **`Bindings::set` mutates, in an otherwise value-oriented numeric
+- [x] **`Bindings::set` mutates, in an otherwise value-oriented numeric
   API.** Add `with(symbol, value)` returning a new `Bindings`, and consider
   `std::flat_map` (C++23; libstdc++ 15, MSVC 19.4x, libc++ 20) as the store —
   a handful of entries in contiguous memory beats a node-per-entry
@@ -1903,7 +1907,7 @@ they are ordered so that each is useful without the next.
   invalidates a cache, and it says so in its name. `eval_expr`'s trap (§9.1)
   cannot be written. `fxt::unit` is the natural success type for `tell`.
 
-- [ ] **7. Traversal as folds and ranges.** `visit`, `any_of` and `transform`
+- [x] **7. Traversal as folds and ranges.** `visit`, `any_of` and `transform`
   are three special cases of one catamorphism:
 
   ```cpp
@@ -1917,15 +1921,40 @@ they are ordered so that each is useful without the next.
   representation-identity trick that `transform` needs today; and `nodes(e)`
   makes `any_of` a `std::ranges::any_of`. All pure, all in the core.
 
-- [ ] **8. Immutability where it is missing.** `Bindings::with(...)` beside
+  *Outcome:* done in COMMIT, with two departures. `nodes(e)` is not a
+  `std::generator`: GCC 13's library and libc++ do not have it. It is a
+  hand-written input range, an explicit stack of operand spans, which is
+  portable and allocates no coroutine frame; it keeps its own copy of the
+  root, so a temporary is safe to walk and an iterator safe to move.
+  `fold<R>(e, algebra)` takes `R` explicitly, since the algebra's signature
+  mentions it, and folds to `bool` through a plain array because
+  `std::vector<bool>` has no span. `rewrite(e, f)` takes an `f` returning
+  `std::optional<Expr>` and finds out what changed from the optionals, not
+  from representation identity. `visit`, `any_of` and `transform` stay:
+  they are the common cases by name, and `transform` has callers. A new
+  property checks that `nodes`, `fold` and `visit` agree on the size of
+  every random tree, and that a rewrite changing nothing hands back the same
+  representation.
+
+- [x] **8. Immutability where it is missing.** `Bindings::with(...)` beside
   `set`, or instead of it; `Config` is already a value copied into the
   kernel; `Compiled` is already immutable. `fxt::immutable<T>` is the right
   wrapper to show in the examples for a `Bindings` built up and then frozen.
 
-- [ ] **9. Effects at the edge, stated.** A short table in the README: these
+  *Outcome:* `Bindings::with(symbol, value)` in COMMIT, `[[nodiscard]]`,
+  beside `set`, which stays for bindings built up locally. `std::flat_map`
+  is not used: GCC 13's library does not have it. `fxt::immutable` is not
+  shown: a `const Bindings` built with `with` already says it.
+
+- [x] **9. Effects at the edge, stated.** A short table in the README: these
   headers are pure, these have effects, and `Kernel` is the only type with
   state. The code already honours it; the documentation should promise it,
   because it is the property that makes the rest of this section possible.
+
+  *Outcome:* the README's *What is pure, and what is not* in COMMIT. Checked
+  against the code first: the one piece of mutable state in the core is
+  `Compiled`'s thread-local scratch stack, which no caller can observe; the
+  process-wide state is `shared_kernel()` and the `Context` registry.
 
 - [x] **10. Errors from the parser and the numeric layer as values too.**
   `Expr::parse` returns `result<Expr>` (with `Cause::Parse` and the offset);

@@ -545,3 +545,15 @@ TEST_CASE("mod and round agree with Maxima across signs and halves") {
 }
 
 } // TEST_SUITE("maxima")
+
+TEST_CASE("with() adds a binding to a copy, and leaves the original alone") {
+    const Symbol h("h");
+    const proxima::Bindings base{{"g", 9.81}};
+    const proxima::Bindings here = base.with(h, 2.0).with("g", 10.0);
+
+    CHECK_FALSE(base.contains(h));
+    CHECK(base.find("g")->second == 9.81);
+    CHECK(here.find(h)->second == 2.0);
+    CHECK(here.find("g")->second == 10.0);
+    CHECK(*proxima::eval_numeric(Expr::symbol("g") * h, here) == 20.0);
+}

@@ -3,7 +3,15 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <iterator>
+#include <numeric>
+#include <optional>
+#include <ranges>
+#include <span>
+#include <string>
 #include <vector>
 
 #include <proxima/errors.hpp>
@@ -124,4 +132,125 @@ TEST_CASE("contains is reachable from its own header") {
     const Symbol x("x");
     CHECK(proxima::contains(proxima::sin(Expr(x)) + 1, x));
     CHECK_FALSE(proxima::contains(proxima::sin(Expr(Symbol("y"))), x));
+}
+
+// --- nodes, fold and rewrite ----------------------------------------------------
+
+using proxima::Kind;
+
+static_assert(std::ranges::input_range<proxima::Nodes>);
+
+TEST_CASE("nodes is the tree as a range, in visit's order") {
+    const Symbol x("x");
+    const Expr e = proxima::sin(Expr(x)) + pow(Expr(x), 2);
+
+    std::vector<std::string> visited;
+    proxima::visit(e, [&](const Expr &n) { visited.push_back(n.str()); });
+    std::vector<std::string> ranged;
+    for (const Expr &n : proxima::nodes(e)) {
+        ranged.push_back(n.str());
+    }
+    CHECK(ranged == visited);
+
+    SUBCASE("and the standard algorithms apply") {
+        CHECK(std::ranges::distance(proxima::nodes(e)) == 6);
+        CHECK(std::ranges::any_of(proxima::nodes(e),
+                                  [](const Expr &n) { return n.is(Kind::Function); }));
+        CHECK(std::ranges::count_if(proxima::nodes(e),
+                                    [&](const Expr &n) { return n == Expr(x); })
+              == 2);
+        auto numbers = proxima::nodes(e)
+                       | std::views::filter([](const Expr &n) { return n.is_number(); });
+        CHECK(std::ranges::distance(numbers) == 1);
+    }
+    SUBCASE("a temporary is safe to walk: the range keeps its own copy") {
+        std::size_t count = 0;
+        for ([[maybe_unused]] const Expr &n : proxima::nodes(Expr(x) + 1)) {
+            ++count;
+        }
+        CHECK(count == 3);
+    }
+    SUBCASE("an iterator can be moved mid-walk") {
+        auto it = proxima::nodes(e).begin();
+        ++it;
+        auto moved = std::move(it);
+        ++moved;
+        CHECK(moved->str() == "x");
+    }
+    SUBCASE("a leaf is a one-node range") {
+        CHECK(std::ranges::distance(proxima::nodes(Expr(x))) == 1);
+    }
+}
+
+TEST_CASE("fold is the recursion the other walks are cases of") {
+    const Symbol x("x");
+    const Symbol y("y");
+    const Expr e = proxima::sin(Expr(x) * y) + pow(Expr(x), 2) + 1;
+
+    const auto size = proxima::fold<std::size_t>(
+        e, [](const Expr &, std::span<const std::size_t> sizes) {
+            return std::accumulate(sizes.begin(), sizes.end(), std::size_t{1});
+        });
+    CHECK(size == static_cast<std::size_t>(std::ranges::distance(proxima::nodes(e))));
+
+    const auto depth = proxima::fold<int>(e, [](const Expr &, std::span<const int> depths) {
+        return 1 + (depths.empty() ? 0 : *std::ranges::max_element(depths));
+    });
+    CHECK(depth == 4); // sum > sin > product > x
+
+    SUBCASE("to bool, which a vector cannot hold as a span") {
+        const auto mentions_y = [&](const Expr &tree) {
+            return proxima::fold<bool>(tree, [&](const Expr &n, std::span<const bool> below) {
+                return n == Expr(y) || std::ranges::any_of(below, [](bool b) { return b; });
+            });
+        };
+        CHECK(mentions_y(e));
+        CHECK_FALSE(mentions_y(pow(Expr(x), 2)));
+    }
+    SUBCASE("with match telling it the kind") {
+        const auto calls = proxima::fold<int>(e, [](const Expr &n, std::span<const int> below) {
+            const int here = n.match([](const proxima::node::Call &) { return 1; },
+                                     [](const auto &) { return 0; });
+            return here + std::accumulate(below.begin(), below.end(), 0);
+        });
+        CHECK(calls == 1);
+    }
+}
+
+TEST_CASE("rewrite replaces what f says to, and shares the rest") {
+    const Symbol x("x");
+    const Symbol y("y");
+    const auto sin_to_cos = [](const Expr &n) -> std::optional<Expr> {
+        if (n.is(Kind::Function) && n.name() == "sin") {
+            return proxima::cos(n.arg(0));
+        }
+        return std::nullopt;
+    };
+
+    const Expr untouched = pow(Expr(y), 3) * proxima::log(Expr(y));
+    const Expr e = proxima::sin(Expr(x)) + untouched;
+    const Expr rewritten = proxima::rewrite(e, sin_to_cos);
+    CHECK(rewritten == proxima::cos(Expr(x)) + untouched);
+
+    // The part f never touched is the same representation, not a copy.
+    const auto shared = std::ranges::any_of(rewritten.args(), [&](const Expr &term) {
+        return proxima::detail::same_representation(term, e.args()[1])
+               || proxima::detail::same_representation(term, e.args()[0]);
+    });
+    CHECK(shared);
+
+    SUBCASE("changing nothing hands back the very same expression") {
+        const Expr same = proxima::rewrite(e, [](const Expr &) { return std::optional<Expr>(); });
+        CHECK(proxima::detail::same_representation(same, e));
+    }
+    SUBCASE("bottom-up, and normalised as it goes") {
+        // Every x becomes 2 first; the sum then folds as a new one would.
+        const Expr folded = proxima::rewrite(3 * Expr(x) + 2, [&](const Expr &n) -> std::optional<Expr> {
+            if (n == Expr(x)) {
+                return Expr(2);
+            }
+            return std::nullopt;
+        });
+        CHECK(folded == Expr(8));
+    }
 }

@@ -447,6 +447,28 @@ proxima::integrate(pow(proxima::Expr(x), proxima::Expr(n)), x);   // x^(1 + n)*(
 The scope ends when `ctx` does, taking the assumption with it — and invalidating
 any cached answer that depended on it.
 
+## What is pure, and what is not
+
+Everything that reads, builds, rewrites, renders or evaluates an expression
+is a pure function of its arguments: no I/O, no Maxima, and no state beyond
+constants. The effects live in three headers, and `Kernel` is the only type
+that holds state.
+
+| Pure — no kernel, no state | Effects — talks to Maxima |
+|---|---|
+| `expr.hpp`, `integer.hpp`, `symbol.hpp`, `functions.hpp` | `kernel.hpp`: `Kernel`, a Maxima process and its caches |
+| `traverse.hpp`: `nodes`, `fold`, `rewrite`, `transform`, `replace` | `ops.hpp`: every operation, and `shared_kernel()` |
+| `numeric.hpp`: `eval_numeric`, `compile`, `Compiled`, `Bindings` | `context.hpp`: `Context`, assumption scopes in a kernel |
+| `render.hpp`, `tex.hpp`, `mathml.hpp` | |
+| `result.hpp`, `errors.hpp`, `config.hpp`, `version.hpp` | |
+
+The process-wide state is exactly two things: `shared_kernel()`, started on
+first use, and the registry through which `Context` scopes on one kernel
+find each other. (`Compiled` keeps a thread-local scratch stack for its
+evaluation, which no caller can observe.) This is a promise, not an
+accident: it is what lets a pure result be cached, shared between threads,
+and composed without asking what it might have changed.
+
 ## Notes on the design
 
 `PLAN.md` records the architecture and the reasoning, including the decisions

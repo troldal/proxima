@@ -35,6 +35,7 @@
 #include <limits>
 #include <optional>
 #include <random>
+#include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
@@ -384,6 +385,27 @@ TEST_CASE("property: match sees what the accessors see") {
                   == (node.is(Kind::Integer) || node.is(Kind::Rational)));
             CHECK(node.as_symbol().has_value() == node.is(Kind::Symbol));
         });
+    });
+}
+
+TEST_CASE("property: nodes, fold and visit see the same tree") {
+    // Three walks of one tree must agree on its size, and a rewrite that
+    // changes nothing must hand back the very representation it was given.
+    for_all(10, {.opaque = true, .odd_names = true}, [](const Expr &expr) {
+        std::size_t visited = 0;
+        proxima::visit(expr, [&](const Expr &) { ++visited; });
+        const auto folded = proxima::fold<std::size_t>(
+            expr, [](const Expr &, std::span<const std::size_t> sizes) {
+                std::size_t total = 1;
+                for (const std::size_t size : sizes) {
+                    total += size;
+                }
+                return total;
+            });
+        CHECK(static_cast<std::size_t>(std::ranges::distance(proxima::nodes(expr))) == visited);
+        CHECK(folded == visited);
+        CHECK(proxima::detail::same_representation(
+            proxima::rewrite(expr, [](const Expr &) { return std::optional<Expr>(); }), expr));
     });
 }
 
