@@ -131,9 +131,11 @@ jobs:
           cmake --preset linux
           cmake --build --preset linux -j 4
 
+      # The pattern is anchored to the checkout: plain 'src/' also matched the
+      # sources CPM builds for Boost, under .cpm-cache/boost/.../src/.
       - name: clang-tidy
         run: |
-          run-clang-tidy-19 -quiet -p build/linux 'src/' > tidy.txt 2>&1 || true
+          run-clang-tidy-19 -quiet -p build/linux "^$PWD/src/" > tidy.txt 2>&1 || true
           if grep -E 'warning:|error:' tidy.txt; then
             echo "clang-tidy reported findings"
             exit 1
