@@ -1,12 +1,19 @@
 # The checks that were run by hand after every change, run on every push.
 #
-#   linux     GCC 13 — the oldest compiler supported — with Maxima from the
-#             distribution, the whole suite, warnings as errors.
+#   linux     GCC 13 — the oldest compiler supported — the Maxima-free suite,
+#             warnings as errors.
+#   maxima    the whole suite against a real Maxima: openSUSE Tumbleweed, in a
+#             container, because it packages Maxima on SBCL, which Proxima
+#             launches (Debian's and Ubuntu's Maxima is built on GCL).
 #   windows   MSVC, the Maxima-free suite, warnings as errors.
 #   tidy      clang-tidy over the library, as .clang-tidy configures it.
 #   format    every C++ file as .clang-format has it, with the version the
 #             tree was formatted with.
 #   fuzz      the two hand-written parsers under libFuzzer, briefly.
+#
+# Clang is 19 rather than Ubuntu 24.04's default 18: clang 18 cannot use
+# libstdc++ 13's <expected>, which it hides behind a __cpp_concepts value only
+# clang 19 reports.
 #
 # Dependencies (Boost, FXT, doctest) come through CPM, into a cache kept
 # between runs.
@@ -32,13 +39,13 @@ jobs:
           path: .cpm-cache
           key: cpm-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'cmake/CPM.cmake') }}
 
-      - name: Install Maxima and Ninja
+      - name: Install GCC 13 and Ninja
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends maxima maxima-sbcl ninja-build
+          sudo apt-get install -y --no-install-recommends g++-13 ninja-build
 
       - name: Configure
-        run: cmake --preset linux -DPROXIMA_WARNINGS_AS_ERRORS=ON
+        run: cmake --preset linux -DCMAKE_CXX_COMPILER=g++-13 -DPROXIMA_WARNINGS_AS_ERRORS=ON
 
       - name: Build
         run: cmake --build --preset linux -j 4
@@ -46,10 +53,35 @@ jobs:
       - name: Test without Maxima
         run: ctest --preset linux -LE maxima
 
-      # Against the distribution's Maxima, which may be older than the 5.50
-      # the suite was recorded against.
-      - name: Test against Maxima
-        run: ctest --preset linux -L maxima
+  maxima:
+    runs-on: ubuntu-24.04
+    container: opensuse/tumbleweed
+    steps:
+      # First, because checkout and the cache need git and tar.
+      - name: Install Maxima, the toolchain and Ninja
+        run: |
+          zypper --non-interactive refresh
+          zypper --non-interactive install --no-recommends \
+            maxima maxima-exec-sbcl gcc-c++ cmake ninja git tar gzip zstd
+
+      - uses: actions/checkout@v4
+
+      - name: Cache CPM sources
+        uses: actions/cache@v4
+        with:
+          path: .cpm-cache
+          key: cpm-tumbleweed-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'cmake/CPM.cmake') }}
+
+      - name: Configure
+        run: cmake --preset linux -DPROXIMA_WARNINGS_AS_ERRORS=ON
+
+      - name: Build
+        run: cmake --build --preset linux -j 4
+
+      # The whole suite: Tumbleweed's Maxima is the 5.50 the golden
+      # transcripts were recorded with.
+      - name: Test
+        run: ctest --preset linux --output-on-failure
 
   windows:
     runs-on: windows-latest
@@ -90,7 +122,7 @@ jobs:
       - name: Install clang-tidy and Ninja
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang-tidy-18 ninja-build
+          sudo apt-get install -y --no-install-recommends clang-tidy-19 ninja-build
 
       # Configured and built, so that the generated headers and the fetched
       # dependencies exist for clang-tidy to read.
@@ -101,7 +133,7 @@ jobs:
 
       - name: clang-tidy
         run: |
-          run-clang-tidy-18 -quiet -p build/linux 'src/' > tidy.txt 2>&1 || true
+          run-clang-tidy-19 -quiet -p build/linux 'src/' > tidy.txt 2>&1 || true
           if grep -E 'warning:|error:' tidy.txt; then
             echo "clang-tidy reported findings"
             exit 1
@@ -134,12 +166,12 @@ jobs:
       - name: Install Clang and Ninja
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang-18 libclang-rt-18-dev ninja-build
+          sudo apt-get install -y --no-install-recommends clang-19 libclang-rt-19-dev ninja-build
 
       - name: Build the fuzzers
         env:
-          CC: clang-18
-          CXX: clang++-18
+          CC: clang-19
+          CXX: clang++-19
         run: |
           cmake -S . -B build/fuzz -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
                 -DPROXIMA_BUILD_FUZZERS=ON -DPROXIMA_BUILD_TESTS=OFF
