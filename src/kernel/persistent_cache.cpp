@@ -8,6 +8,9 @@
 #include <cstdint>
 #include <exception>
 #include <fstream>
+#include <string_view>
+#include <iterator>
+#include <charconv>
 #include <random>
 #include <system_error>
 #include <vector>
@@ -48,33 +51,46 @@ void write_field(std::ostream &out, std::string_view text) {
     out << text.size() << '\n' << text;
 }
 
-bool read_field(std::istream &in, std::string &text) {
+/// The next line of `rest`, without its newline, consumed. False if there is
+/// no newline, which for a well-formed entry cannot happen.
+bool take_line(std::string_view &rest, std::string_view &line) {
+    const std::size_t end = rest.find('\n');
+    if (end == std::string_view::npos) {
+        return false;
+    }
+    line = rest.substr(0, end);
+    rest.remove_prefix(end + 1);
+    return true;
+}
+
+/// One length-prefixed field, consumed from `rest`: its decimal length, a
+/// newline, and that many bytes.
+///
+/// Parsed from the entry in memory. It used to be read from the stream with
+/// three seeks per field to find how much of the file was left — twelve per
+/// entry — which is what bounding the length needs, and which a string
+/// already knows.
+bool take_field(std::string_view &rest, std::string_view &field) {
+    std::string_view length_text;
+    if (!take_line(rest, length_text) || length_text.empty()) {
+        return false;
+    }
     std::size_t length = 0;
-    if (!(in >> length)) {
+    const char *const last = length_text.data() + length_text.size();
+    const auto [stopped, error] = std::from_chars(length_text.data(), last, length);
+    if (error != std::errc{} || stopped != last) {
         return false;
     }
-    if (in.get() != '\n') {
-        return false;
-    }
-
-    // A field cannot be longer than what is left of the file. The length used
+    // A field cannot be longer than what is left of the entry. The length used
     // to be trusted, so a corrupt or hostile entry claiming
-    // 18446744073709551615 bytes made the resize below throw
-    // std::length_error, which escaped a question instead of reading as a miss.
-    const std::streampos here = in.tellg();
-    in.seekg(0, std::ios::end);
-    const std::streampos end = in.tellg();
-    in.seekg(here);
-    if (here < 0 || end < here
-        || static_cast<std::uint64_t>(length)
-               > static_cast<std::uint64_t>(end - here)) {
+    // 18446744073709551615 bytes made a resize throw std::length_error, which
+    // escaped a question instead of reading as a miss.
+    if (length > rest.size()) {
         return false;
     }
-
-    text.resize(length);
-    return length == 0 || static_cast<bool>(in.read(text.data(),
-                                                    static_cast<std::streamsize>(
-                                                        length)));
+    field = rest.substr(0, length);
+    rest.remove_prefix(length);
+    return true;
 }
 
 constexpr const char *kFormat = "proxima-cache-1";
@@ -174,6 +190,9 @@ void PersistentCache::sweep() const {
 
     if (byte_limit_ != 0 && total > byte_limit_) {
         const std::uintmax_t target = byte_limit_ / 4 * 3;
+        // A full sort, although only the oldest are removed: how many is not
+        // known until their sizes are summed in order, and the sort is
+        // nothing beside the directory walk and the stat of every file above.
         std::sort(entries.begin(), entries.end(),
                   [](const Entry &a, const Entry &b) { return a.used < b.used; });
         for (const Entry &entry : entries) {
@@ -206,36 +225,40 @@ std::optional<Reply> PersistentCache::find(std::string_view source) const {
 
     const std::string key = key_for(source);
     const std::filesystem::path path = path_for(key);
-    Reply reply;
+    // The whole entry in one read, then parsed from memory.
+    std::string contents;
     {
         std::ifstream in(path, std::ios::binary);
         if (!in) {
             return std::nullopt;
         }
-
-        std::string format;
-        if (!std::getline(in, format) || format != kFormat) {
-            return std::nullopt;
-        }
-
-        std::string stored_key;
-        if (!read_field(in, stored_key) || stored_key != key) {
-            // Either a hash collision or a file from an incompatible writer.
-            // Either way this is not the answer to the question being asked.
-            return std::nullopt;
-        }
-
-        std::string ok;
-        std::string value;
-        std::string reason;
-        if (!read_field(in, ok) || !read_field(in, value) || !read_field(in, reason)) {
-            return std::nullopt; // Truncated, most likely a partial write.
-        }
-
-        reply.ok = ok == "1";
-        reply.value = std::move(value);
-        reply.reason = std::move(reason);
+        contents.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
     }
+
+    std::string_view rest = contents;
+    std::string_view format;
+    if (!take_line(rest, format) || format != kFormat) {
+        return std::nullopt;
+    }
+
+    std::string_view stored_key;
+    if (!take_field(rest, stored_key) || stored_key != key) {
+        // Either a hash collision or a file from an incompatible writer.
+        // Either way this is not the answer to the question being asked.
+        return std::nullopt;
+    }
+
+    std::string_view ok;
+    std::string_view value;
+    std::string_view reason;
+    if (!take_field(rest, ok) || !take_field(rest, value) || !take_field(rest, reason)) {
+        return std::nullopt; // Truncated, most likely a partial write.
+    }
+
+    Reply reply;
+    reply.ok = ok == "1";
+    reply.value = std::string(value);
+    reply.reason = std::string(reason);
 
     // A read is a use: it keeps the entry from eviction. After the stream has
     // closed, since Windows may refuse to change the time of a file held open.

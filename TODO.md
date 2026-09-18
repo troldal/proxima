@@ -1488,10 +1488,18 @@ to the kernel. That is where the work is.
   would make every node larger for the benefit of the few that are printed,
   and hashing, equality and the wire never print.
 
-- [ ] **Small things in the persistent cache:** `read_field` does three seeks
+- [x] **Small things in the persistent cache:** `read_field` does three seeks
   per field (twelve per entry read) to bound the length — read the file into a
   string once; `sweep()` sorts every entry when only the eviction boundary
   matters (`nth_element`). Low.
+
+  *Outcome:* the first in COMMIT: an entry is read in one go and parsed from
+  memory with `take_line` and `take_field`, bounding each length against what
+  is left of the string; the corrupt, truncated and huge-length tests pass
+  unchanged. The second not done: `nth_element` needs the boundary's
+  position, which is not known until the oldest entries' sizes are summed in
+  order, and the sort is nothing beside the directory walk and the stat of
+  every file before it. A comment says so.
 
 ### 9.3 Ergonomics and the shape of the API
 
