@@ -1826,7 +1826,7 @@ to the kernel. That is where the work is.
   `Renderer<T>` can wrap the template. A decision rather than a bug; the
   concepts and the display layer stay exactly as they are.
 
-  *Outcome:* done in COMMIT. `render(e, r)` now walks the concrete renderer:
+  *Outcome:* done in `26f6b0a`. `render(e, r)` now walks the concrete renderer:
   `detail::Resolved<R, T>` settles the optional operations — `list`,
   `negate`, `strength_of`, `context_for` — with `if constexpr` where the type
   is visible, and every call in the walk is direct. `Renderer<T>` stays, as
