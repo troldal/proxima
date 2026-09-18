@@ -2219,6 +2219,11 @@ they are ordered so that each is useful without the next.
   tracked name; `<fxt.hpp>` and `Attempt.hpp` stay broken on Linux until FXT
   renames one or the other.
 
+  *Since:* FXT renamed it, in `361062b`: the file is tracked as `Failure.hpp`,
+  the name every include uses. Proxima's pin moved there, and `result.hpp`
+  includes `Failure.hpp` like everything else. `examples/functional.cpp`,
+  which uses `fxt::attempt`, was what found it still mattered.
+
 - [x] **12. What not to do.** Do not make `Expr` a public `std::variant`:
   the shared, hash-once representation is the reason it is a value. Do not
   curry the operations: default arguments are the ergonomic win, and adaptors

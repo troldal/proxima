@@ -137,6 +137,9 @@ target_link_libraries(my_app PRIVATE proxima::proxima)
   shares, produces and calls whom.
 - [`examples/tour.cpp`](examples/tour.cpp) — a runnable walk through every
   public feature; read it with its output beside it.
+- [`examples/functional.cpp`](examples/functional.cpp) — Proxima in a
+  functional style: its results composed with FXT's adaptors, from
+  `and_then` to `traverse`, `zip` and `match`.
 - [`docs/design.md`](docs/design.md) — how the library came to be as it is,
   and why: the architecture and every decision that shaped it.
 - [`TODO.md`](TODO.md) — the reviews of the code, what they found, and what

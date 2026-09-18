@@ -355,6 +355,14 @@ the rest work on the same values. Only the headers used need including —
 `<fxt.hpp>` brings in `fxt::match`, which needs deducing-this (GCC 14,
 Clang 18, MSVC 19.34).
 
+[`examples/functional.cpp`](../examples/functional.cpp) runs through the
+adaptors one at a time: validating with `ensure`, bringing throwing code in
+with `attempt`, recovering from a particular `Cause` with `or_else`,
+all-or-nothing work with `traverse`, and combining independent results with
+`with` and `zip`. `traverse`, `zip`, `curry` and `match` need
+`std::forward_like` and deducing this, so GCC 13 builds the demo without
+them.
+
 `*diff(f, x)` reads a result on the spot — `diff` fails only for a malformed
 argument — and `proxima::unwrap(r)` throws a failure as the exception its
 cause names (`ParseError`, `EvalError`, `OverflowError`, otherwise

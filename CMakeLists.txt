@@ -101,7 +101,7 @@ unset(BUILD_SHARED_LIBS)
 CPMAddPackage(
         NAME fxt
         GITHUB_REPOSITORY troldal/FXT
-        GIT_TAG a07e1431dea5dfb44b355cbd37e8fb4a68724fd0
+        GIT_TAG 361062b3dec831654722be88d3a32706f2e0f6ce
         DOWNLOAD_ONLY YES
 )
 CPMAddPackage(
@@ -238,6 +238,11 @@ target_compile_options(demo PRIVATE ${PROXIMA_MSVC_UTF8} ${PROXIMA_WARNINGS})
 add_executable(tour examples/tour.cpp)
 target_link_libraries(tour PRIVATE proxima::proxima)
 target_compile_options(tour PRIVATE ${PROXIMA_MSVC_UTF8} ${PROXIMA_WARNINGS})
+
+# Proxima in a functional style: its results composed with FXT's adaptors.
+add_executable(functional examples/functional.cpp)
+target_link_libraries(functional PRIVATE proxima::proxima)
+target_compile_options(functional PRIVATE ${PROXIMA_MSVC_UTF8} ${PROXIMA_WARNINGS})
 
 # --- Installation ---------------------------------------------------------
 

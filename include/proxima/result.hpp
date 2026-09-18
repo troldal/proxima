@@ -27,7 +27,7 @@
 #include <ostream>
 
 #include <fxt/monads/Expected.hpp>
-#include <fxt/utils/failure.hpp> // Lower case, as the file is tracked in FXT's git; see below.
+#include <fxt/utils/Failure.hpp>
 
 #include <string>
 #include <string_view>
