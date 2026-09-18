@@ -131,6 +131,8 @@ target_link_libraries(my_app PRIVATE proxima::proxima)
 ## Documentation
 
 - [`docs/guide.md`](docs/guide.md) — every part of the library, with examples.
+- [`ARCH.md`](ARCH.md) — the architecture on one page: the layers, and how a
+  question travels from your code to Maxima and back.
 - [`examples/tour.cpp`](examples/tour.cpp) — a runnable walk through every
   public feature; read it with its output beside it.
 - [`docs/design.md`](docs/design.md) — how the library came to be as it is,
