@@ -2,7 +2,7 @@
 // consumer's translation unit would.
 
 #include <proxima/config.hpp>
-#include <proxima/context.hpp>
+#include <proxima/assumptions.hpp>
 #include <proxima/errors.hpp>
 #include <proxima/expr.hpp>
 #include <proxima/functions.hpp>

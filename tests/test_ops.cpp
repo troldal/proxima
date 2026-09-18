@@ -8,7 +8,7 @@
 #include <fxt/monads/ValueOr.hpp>
 #include <fxt/utils/Lift.hpp>
 
-#include <proxima/context.hpp>
+#include <proxima/assumptions.hpp>
 #include <proxima/errors.hpp>
 #include <proxima/expr.hpp>
 #include <proxima/functions.hpp>
@@ -195,8 +195,8 @@ TEST_CASE("the shared kernel is one process, reused") {
     // observable consequence of there being a single long-lived process.
     // Note this goes through Kernel::eval, not proxima::parse: parsing is only
     // parsing, and deliberately does not evaluate what it reads.
-    REQUIRE(proxima::shared_kernel().eval("shared_probe: 11").has_value());
-    CHECK(proxima::shared_kernel().eval("shared_probe^2").value() == "121");
+    REQUIRE(proxima::shared_kernel().tell(proxima::Statement::text("shared_probe: 11")).has_value());
+    CHECK(proxima::shared_kernel().ask(proxima::Query::text("shared_probe^2")) == Expr(121));
 }
 
 TEST_CASE("differentiation") {
@@ -554,18 +554,15 @@ TEST_CASE("results are canonical expressions, not text") {
     CHECK(chained == 3 * pow(Expr(x), 2) + 2 * Expr(x));
 }
 
-TEST_CASE("is asks a predicate under the assumptions in force") {
+TEST_CASE("is asks a predicate under the assumptions it is given") {
     // A name no other test assumes anything about.
     const Expr a = Expr::symbol("mx_is_probe");
+    const auto positive = proxima::assuming(proxima::gt(a, 0));
 
     CHECK(*proxima::is(proxima::gt(a, 0)) == proxima::Truth::Unknown);
-    {
-        proxima::Context context;
-        context.assume(proxima::gt(a, 0));
-        // The same question as above, so a stale cached Unknown would show.
-        CHECK(*proxima::is(proxima::gt(a, 0)) == proxima::Truth::True);
-        CHECK(*proxima::is(proxima::lt(a, 0)) == proxima::Truth::False);
-    }
+    // The same question as above, so a stale cached Unknown would show.
+    CHECK(*proxima::is(proxima::gt(a, 0), positive) == proxima::Truth::True);
+    CHECK(*proxima::is(proxima::lt(a, 0), positive) == proxima::Truth::False);
     CHECK(*proxima::is(proxima::gt(a, 0)) == proxima::Truth::Unknown);
     CHECK(*proxima::is(proxima::gt(Expr(2), Expr(1))) == proxima::Truth::True);
 }
@@ -694,7 +691,7 @@ TEST_CASE("every builder round-trips through Maxima unchanged") {
     };
     for (const Expr &expression : built) {
         CAPTURE(expression.str());
-        const auto back = proxima::shared_kernel().eval_pure(expression).and_then(proxima::to_expr);
+        const auto back = proxima::shared_kernel().ask(proxima::Query::form(expression));
         REQUIRE(back.has_value());
         CHECK(*back == expression);
     }

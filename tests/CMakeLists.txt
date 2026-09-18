@@ -16,9 +16,9 @@ CPMAddPackage(
 
 add_executable(proxima_tests
         test_main.cpp
+        test_assumptions.cpp
         test_basics.cpp
         test_cache.cpp
-        test_context.cpp
         test_discovery.cpp
         test_expr.cpp
         test_format.cpp

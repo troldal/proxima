@@ -19,6 +19,8 @@ std::string_view to_string(Cause cause) {
         return "Maxima error";
     case Cause::NeedsAssumption:
         return "needs an assumption";
+    case Cause::Inconsistent:
+        return "inconsistent assumptions";
     case Cause::NoClosedForm:
         return "no closed form";
     case Cause::NotSolved:

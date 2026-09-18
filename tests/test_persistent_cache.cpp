@@ -6,7 +6,7 @@
 #include "kernel/persistent_cache.hpp"
 
 #include <proxima/config.hpp>
-#include <proxima/context.hpp>
+#include <proxima/assumptions.hpp>
 #include <proxima/errors.hpp>
 #include <proxima/expr.hpp>
 #include <proxima/functions.hpp>
@@ -403,22 +403,35 @@ TEST_CASE("an assumption is part of the key, not an afterthought") {
     const Expr root = proxima::sqrt(pow(Expr(x), 2));
 
     {
-        proxima::Kernel assuming(config);
-        proxima::Context ctx(assuming);
-        ctx.assume(gt(Expr(x), Expr(0)));
-        CHECK(*proxima::simplify(root, assuming) == Expr(x));
+        proxima::Kernel first(config);
+        CHECK(*proxima::simplify(root, {proxima::assuming(gt(Expr(x), Expr(0))), first}) == Expr(x));
     }
 
     // A different process would see only the directory. This kernel makes no
     // assumption, so it must not be handed the assuming kernel's answer.
     proxima::Kernel plain(config);
     CHECK(*proxima::simplify(root, plain) == proxima::abs(Expr(x)));
+    CHECK(plain.cache_stats().persistent_hits == 0);
+
+    SUBCASE("while one asking under the same assumptions is answered from disk") {
+        // Written in another order: the key is the canonical form, so it is
+        // the same key.
+        const Symbol y("assumption_key_other");
+        {
+            proxima::Kernel writer(config);
+            const auto both = proxima::assuming(gt(Expr(x), Expr(0))).with(gt(Expr(y), Expr(0)));
+            CHECK(*proxima::simplify(root, {both, writer}) == Expr(x));
+        }
+        proxima::Kernel reader(config);
+        const auto same = proxima::assuming(gt(Expr(y), Expr(0))).with(gt(Expr(x), Expr(0)));
+        CHECK(*proxima::simplify(root, {same, reader}) == Expr(x));
+        CHECK(reader.cache_stats().persistent_hits == 1);
+    }
 }
 
-TEST_CASE("a raw eval switches persistence off for that kernel") {
-    // Nothing in the text of a raw eval says whether it changed Maxima's state,
-    // so the journal can no longer be trusted to describe the session — and the
-    // journal is what the key is built from.
+TEST_CASE("a statement switches persistence off for that kernel") {
+    // Nothing in a statement says what it changed in Maxima, so no key can
+    // describe the session after it.
     const auto directory = scratch("raw_eval");
     proxima::Config config;
     config.cache_directory = directory;
@@ -431,7 +444,7 @@ TEST_CASE("a raw eval switches persistence off for that kernel") {
     CHECK(before > 0);
     CHECK(kernel.persistence_active());
 
-    static_cast<void>(kernel.eval("raw_eval_probe: 7"));
+    static_cast<void>(kernel.tell(proxima::Statement::text("raw_eval_probe: 7")));
     CHECK_FALSE(kernel.persistence_active());
     static_cast<void>(proxima::expand(pow(Expr(x) + 1, 6), kernel));
     // Still working, just no longer writing entries it could not honestly key.
@@ -443,35 +456,34 @@ TEST_CASE("a raw eval switches persistence off for that kernel") {
     static_cast<void>(proxima::expand(pow(Expr(x) + 1, 5), kernel));
     CHECK(kernel.cache_stats().persistent_hits == 0);
 
-    SUBCASE("until a restart discards the unrecorded change") {
+    SUBCASE("until a restart discards the change") {
         // There used to be no way back short of a new Kernel.
         kernel.restart();
         CHECK(kernel.persistence_active());
-        // The raw eval's binding went with the old process, which is exactly
-        // what makes the disk answers trustworthy again.
-        CHECK(kernel.eval("is(raw_eval_probe = 7)").value() != "T");
-        // That check was a raw eval as well, and switched persistence off in
-        // turn — so restart once more before reading from disk.
-        CHECK_FALSE(kernel.persistence_active());
-        kernel.restart();
+        // The statement's binding went with the old process, which is exactly
+        // what makes the disk answers trustworthy again. Asking is a question,
+        // so it leaves persistence on — where the raw eval this used to be
+        // switched it off again.
+        CHECK(kernel.ask(proxima::Query::text("is(raw_eval_probe = 7)")) == Expr::symbol("false"));
+        CHECK(kernel.persistence_active());
         static_cast<void>(proxima::expand(pow(Expr(x) + 1, 5), kernel));
         CHECK(kernel.cache_stats().persistent_hits == 1);
     }
 }
 
 TEST_CASE("a kernel restarted after dying resumes persistence") {
-    // Recovery replays the journal into a fresh process, which discards any
-    // unrecorded change just as restart() does. Persistence used to stay off
-    // regardless.
+    // Recovery starts a fresh process, which discards what any statement
+    // changed just as restart() does. Persistence used to stay off regardless.
     const auto directory = scratch("recovered");
     proxima::Config config;
     config.cache_directory = directory;
 
     proxima::Kernel kernel(config);
-    static_cast<void>(kernel.eval("recovered_probe: 7"));
+    static_cast<void>(kernel.tell(proxima::Statement::text("recovered_probe: 7")));
     REQUIRE_FALSE(kernel.persistence_active());
 
-    CHECK_THROWS_AS(static_cast<void>(kernel.eval("quit()")), proxima::KernelError);
+    CHECK_THROWS_AS(static_cast<void>(kernel.tell(proxima::Statement::text("quit()"))),
+                    proxima::KernelError);
     CHECK(kernel.persistence_active());
 }
 

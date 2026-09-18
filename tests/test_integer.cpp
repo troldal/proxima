@@ -8,6 +8,8 @@
 #include <proxima/errors.hpp>
 #include <proxima/integer.hpp>
 #include <proxima/kernel.hpp>
+
+#include "kernel/kernel_internal.hpp"
 #include <proxima/ops.hpp>
 
 #include <cstdint>
@@ -282,7 +284,7 @@ TEST_CASE("arithmetic agrees with Maxima on large random values") {
     };
 
     const auto maxima_says = [&kernel](const std::string &expression) {
-        const auto reply = kernel.eval_pure(expression);
+        const auto reply = proxima::detail::ask_wire(kernel, proxima::Query::text(expression), {});
         REQUIRE(reply.has_value());
         return *reply;
     };
@@ -326,8 +328,8 @@ TEST_CASE("a factorial from Maxima is a number here") {
     CHECK(doubled.str() == "530505719624382117272616960000000");
 
     // And Maxima agrees.
-    const auto confirmed = kernel.eval_pure("is(" + doubled.str() + " = 2*30!)");
-    CHECK(confirmed.value() == "T");
+    const auto confirmed = kernel.ask(proxima::Query::text("is(" + doubled.str() + " = 2*30!)"));
+    CHECK(confirmed == proxima::Expr::symbol("true"));
 }
 
 } // TEST_SUITE("maxima")

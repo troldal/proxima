@@ -4,10 +4,12 @@
 
 #include <doctest/doctest.h>
 
+#include "kernel/reply.hpp"
 #include "kernel/session.hpp"
 #include "transport/fake_transport.hpp"
 
 #include <proxima/errors.hpp>
+#include <proxima/result.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -18,6 +20,7 @@
 #include <thread>
 #include <vector>
 
+using proxima::detail::Environment;
 using proxima::detail::FakeTransport;
 using proxima::detail::MaximaSession;
 using proxima::detail::Payload;
@@ -224,17 +227,16 @@ TEST_CASE("a null transport is rejected rather than dereferenced") {
                     proxima::KernelError);
 }
 
-TEST_CASE("a session that cannot answer restarts and replays its state") {
+TEST_CASE("a session that cannot answer restarts") {
     // Two scripted transports: the first dies mid-request, the second answers
-    // the handshake, the replayed statement, and then the retry.
+    // the handshake and then the retry. This is what stops one hung
+    // computation costing a whole session.
     //
-    // This is what stops one hung computation costing a whole session. Without
-    // the replay, the restarted kernel would come back *working but wrong* —
-    // missing every assumption the caller had established, which is worse than
-    // an outright failure because nothing announces it.
+    // Nothing is replayed. There used to be a journal of every assumption in
+    // force, replayed into the new process, because assumptions were state the
+    // session held; they are now carried by each question, and the contexts
+    // for them are made again when next asked for.
     int built = 0;
-    std::vector<std::string> sent_to_second;
-
     auto factory = [&]() -> std::unique_ptr<proxima::detail::ITransport> {
         ++built;
         if (built == 1) {
@@ -242,24 +244,19 @@ TEST_CASE("a session that cannot answer restarts and replays its state") {
             return std::make_unique<FakeTransport>(handshake_script());
         }
         std::vector<std::string> script = handshake_script();
-        // The replayed statement, then the caller's retry.
-        script.push_back(frame(2, true, "$DONE"));
-        script.push_back(frame(3, true, "$RECOVERED"));
+        script.push_back(frame(2, true, "$RECOVERED"));
         return std::make_unique<FakeTransport>(std::move(script));
     };
 
     MaximaSession session(factory, proxima::Config{}, kKey);
     REQUIRE(built == 1);
 
-    const std::uint64_t handle = session.remember(Payload::text("assume(x > 0)"));
-    static_cast<void>(handle);
-
     // The first transport's script is exhausted, so this call finds a dead
     // child and fails — but triggers recovery on the way out.
     CHECK_THROWS_AS(session.eval(Payload::text("1+1")), proxima::KernelError);
     CHECK(built == 2);
 
-    // And the session works again, with the remembered statement replayed.
+    // And the session works again.
     CHECK(session.eval(Payload::text("something")).value == "$RECOVERED");
 }
 
@@ -381,10 +378,10 @@ private:
     bool gated_sent_ = false;
 };
 
-TEST_CASE("an answer computed across a change of state is not cached") {
-    // remember() no longer waits for the pipe, so the journal — and with it
-    // the key an answer is filed under — can change while Maxima is working on
-    // a question. The answer belongs to the state before the change.
+TEST_CASE("an answer computed across an invalidation is not cached") {
+    // invalidate_cache() does not wait for the pipe, so it can happen while
+    // Maxima is working on a question. The answer belongs to the state before
+    // it, and is not kept.
     using namespace std::chrono_literals;
 
     auto owned = std::make_unique<GatedTransport>(handshake_script(),
@@ -399,48 +396,109 @@ TEST_CASE("an answer computed across a change of state is not cached") {
         std::this_thread::sleep_for(1ms);
     }
 
-    auto remembering = std::async(std::launch::async, [&session] {
-        return session.remember(Payload::text("assume(x > 0)"));
+    auto invalidating = std::async(std::launch::async, [&session] {
+        session.invalidate_cache();
     });
     // Does not wait for the computation, which is still held back.
-    CHECK(remembering.wait_for(2s) == std::future_status::ready);
+    CHECK(invalidating.wait_for(2s) == std::future_status::ready);
 
     gate->release = true;
     CHECK(asking.get().value == "$BEFORE");
-    static_cast<void>(remembering.get());
+    invalidating.get();
     CHECK(session.cache_stats().entries == 0);
 }
 
-TEST_CASE("a statement and its record are one conversation") {
-    // A Context's statement and the journal's record of it used to be two
-    // separate calls. A question from another thread could be answered in
-    // between — under Maxima's new state, but cached under the journal's old
-    // one. Inside converse_atomically it has to wait until the record is made.
-    using namespace std::chrono_literals;
+namespace {
 
-    ScriptedSession scripted({frame(2, true, "$DONE"), frame(3, true, "$ANSWER")});
+/// An environment of one assumption, as Kernel builds one: its key, and the
+/// statement that establishes it.
+Environment assuming(const std::string &fact) {
+    return {"assume(" + fact + ")\n", {{Payload::text("assume(" + fact + ")"), fact}}};
+}
+
+} // namespace
+
+TEST_CASE("a set of assumptions gets a context once, and is switched to") {
+    // Assumptions travel with each question. The first question under a set
+    // makes a context for it; later ones find it current, or switch to it,
+    // and a question under no assumptions runs in `initial`.
+    ScriptedSession scripted({
+        frame(2, true, "$PROXIMA_A1"),                   // supcontext
+        frame(3, true, "((MLIST SIMP) ((MGREATERP SIMP) $X 0))"), // assume
+        frame(4, true, "$ONE"),                          // question one, under x > 0
+        frame(5, true, "$TWO"),                          // question two: no switch needed
+        frame(6, true, "$INITIAL"),                      // context: initial
+        frame(7, true, "$BARE"),                         // question one, under nothing
+        frame(8, true, "$PROXIMA_A1"),                   // context: proxima_a1
+        frame(9, true, "$THREE"),                        // question three, under x > 0
+    });
+    MaximaSession &session = *scripted.session;
+    const Environment positive = assuming("x > 0");
+
+    CHECK(session.eval_pure(Payload::text("one"), positive).value == "$ONE");
+    CHECK(session.eval_pure(Payload::text("two"), positive).value == "$TWO");
+    CHECK(session.eval_pure(Payload::text("one")).value == "$BARE");
+    // Asked before under the same assumptions: from the cache, no frame.
+    CHECK(session.eval_pure(Payload::text("one"), positive).value == "$ONE");
+    CHECK(session.eval_pure(Payload::text("three"), positive).value == "$THREE");
+
+    // One answer per question and set of assumptions: "one" twice.
+    CHECK(session.cache_stats().entries == 4);
+
+    const std::string sent = scripted.transport->sent_text();
+    CHECK(sent.find("supcontext(proxima_a1, initial)") < sent.find("assume(x > 0)"));
+    CHECK(sent.find("assume(x > 0)") < sent.find("\"one\""));
+    CHECK(sent.find("context: initial") != std::string::npos);
+    CHECK(sent.find("context: proxima_a1") > sent.find("context: initial"));
+}
+
+TEST_CASE("contradictory assumptions are refused, and leave no context behind") {
+    ScriptedSession scripted({
+        frame(2, true, "$PROXIMA_A1"),                   // supcontext
+        frame(3, true, "((MLIST SIMP) $INCONSISTENT)"),  // assume: contradicts
+        frame(4, true, "$INITIAL"),                      // context: initial
+        frame(5, true, "$DONE"),                         // killcontext
+    });
     MaximaSession &session = *scripted.session;
 
-    std::future<proxima::detail::Reply> asking;
-    session.converse_atomically([&](MaximaSession::Conversation &conversation) {
-        conversation.eval_tracked(Payload::text("assume(x > 0)"));
+    const proxima::detail::Reply refused
+        = session.eval_pure(Payload::text("question"), assuming("x < 0"));
+    CHECK_FALSE(refused.ok);
+    CHECK(refused.reason.starts_with(MaximaSession::kInconsistent));
+    CHECK(refused.reason.find("x < 0") != std::string::npos);
+    CHECK(proxima::cause_of(proxima::detail::to_result(refused).error())
+          == proxima::Cause::Inconsistent);
 
-        asking = std::async(std::launch::async, [&session] {
-            return session.eval_pure(Payload::text("question"));
-        });
-        // Between the statement and its record: the question must wait.
-        CHECK(asking.wait_for(200ms) == std::future_status::timeout);
-
-        conversation.remember(Payload::text("assume(x > 0)"));
-    });
-
-    CHECK(asking.get().value == "$ANSWER");
-    // Asked once the record existed, so its answer describes the recorded
-    // state, and is kept.
-    CHECK(session.cache_stats().entries == 1);
-    // And the statement went out before the question did.
+    // Not cached — it is not an answer to the question — and not asked.
+    CHECK(session.cache_stats().entries == 0);
     const std::string sent = scripted.transport->sent_text();
-    CHECK(sent.find("assume(x > 0)") < sent.find("question"));
+    CHECK(sent.find("\"question\"") == std::string::npos);
+    CHECK(sent.find("killcontext(proxima_a1)") != std::string::npos);
+}
+
+TEST_CASE("past the limit, the least recently used context is killed") {
+    // Each set of assumptions: supcontext, assume, the question. The one past
+    // the limit also kills the oldest.
+    std::vector<std::string> script;
+    std::uint64_t id = 1;
+    for (std::size_t i = 0; i <= MaximaSession::kMaxContexts; ++i) {
+        script.push_back(frame(++id, true, "$CONTEXT"));
+        script.push_back(frame(++id, true, "((MLIST SIMP) $DONE)"));
+        if (i == MaximaSession::kMaxContexts) {
+            script.push_back(frame(++id, true, "$DONE")); // killcontext
+        }
+        script.push_back(frame(++id, true, "$ANSWER"));
+    }
+    ScriptedSession scripted(script);
+    for (std::size_t i = 0; i <= MaximaSession::kMaxContexts; ++i) {
+        CHECK(scripted.session
+                  ->eval_pure(Payload::text("q"), assuming("x > " + std::to_string(i)))
+                  .value
+              == "$ANSWER");
+    }
+    const std::string sent = scripted.transport->sent_text();
+    CHECK(sent.find("killcontext(proxima_a1)") != std::string::npos);
+    CHECK(sent.find("killcontext(proxima_a2)") == std::string::npos);
 }
 
 TEST_CASE("a session with no way to build another transport does not restart") {
@@ -451,25 +509,26 @@ TEST_CASE("a session with no way to build another transport does not restart") {
     CHECK_THROWS_AS(scripted.session->eval(Payload::text("1+1")), proxima::KernelError);
 }
 
-TEST_CASE("restart() replaces the process and replays the journal") {
+TEST_CASE("restart() replaces the process, and contexts are made again when needed") {
     int built = 0;
     auto factory = [&]() -> std::unique_ptr<proxima::detail::ITransport> {
         ++built;
         std::vector<std::string> script = handshake_script();
-        if (built > 1) {
-            // The replayed statement, then a question.
-            script.push_back(frame(2, true, "$DONE"));
-            script.push_back(frame(3, true, "$FRESH"));
-        }
+        // Each process: the context for x > 0, then the question under it.
+        script.push_back(frame(2, true, "$PROXIMA_A1"));
+        script.push_back(frame(3, true, "((MLIST SIMP) ((MGREATERP SIMP) $X 0))"));
+        script.push_back(frame(4, true, built == 1 ? "$OLD" : "$FRESH"));
         return std::make_unique<FakeTransport>(std::move(script));
     };
 
     MaximaSession session(factory, proxima::Config{}, kKey);
-    session.remember(Payload::text("assume(x > 0)"));
+    CHECK(session.eval_pure(Payload::text("q"), assuming("x > 0")).value == "$OLD");
 
     session.restart();
     CHECK(built == 2);
-    CHECK(session.eval(Payload::text("question")).value == "$FRESH");
+    // The cache went with the old process, and so did its context: the new
+    // one is made before the question is asked again.
+    CHECK(session.eval_pure(Payload::text("q"), assuming("x > 0")).value == "$FRESH");
 
     SUBCASE("unless there is no way to start another") {
         ScriptedSession scripted({});
@@ -477,27 +536,6 @@ TEST_CASE("restart() replaces the process and replays the journal") {
     }
 }
 
-TEST_CASE("forgetting a statement stops it being replayed") {
-    int built = 0;
-    auto factory = [&]() -> std::unique_ptr<proxima::detail::ITransport> {
-        ++built;
-        std::vector<std::string> script = handshake_script();
-        if (built > 1) {
-            // Only the retry, with no replayed statement before it: if the
-            // forgotten entry were still in the journal it would consume this
-            // frame and the assertion below would see the wrong value.
-            script.push_back(frame(2, true, "$CLEAN"));
-        }
-        return std::make_unique<FakeTransport>(std::move(script));
-    };
-
-    MaximaSession session(factory, proxima::Config{}, kKey);
-    const std::uint64_t handle = session.remember(Payload::text("assume(x > 0)"));
-    session.forget(handle);
-
-    CHECK_THROWS_AS(session.eval(Payload::text("1+1")), proxima::KernelError);
-    CHECK(session.eval(Payload::text("again")).value == "$CLEAN");
-}
 
 TEST_CASE("a failed handshake is reported at construction") {
     // If the session cannot be made machine-readable there is no point letting

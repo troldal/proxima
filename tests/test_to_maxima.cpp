@@ -8,12 +8,13 @@
 
 #include <doctest/doctest.h>
 
+#include "kernel/kernel_internal.hpp"
 #include "kernel/session.hpp"
 #include "wire/from_maxima.hpp"
 #include "wire/sexpr.hpp"
 #include "wire/to_maxima.hpp"
 
-#include <proxima/context.hpp>
+#include <proxima/assumptions.hpp>
 #include <proxima/errors.hpp>
 #include <proxima/expr.hpp>
 #include <proxima/functions.hpp>
@@ -205,7 +206,7 @@ TEST_SUITE("maxima") {
 
 /// Sends `expr` as a form and maps the reply back.
 Expr round_trip(proxima::Kernel &kernel, const Expr &expr) {
-    const auto reply = kernel.eval_pure(expr);
+    const auto reply = proxima::detail::ask_wire(kernel, proxima::Query::form(expr), {});
     REQUIRE_MESSAGE(reply.has_value(), reply.error().message());
     return from_maxima(parse_sexpr(*reply));
 }
@@ -293,16 +294,18 @@ TEST_CASE("text Maxima cannot read is a failure, not a stall") {
 
     SUBCASE("through the raw text entry point") {
         proxima::result<std::string> reply;
-        CHECK(within([&] { reply = kernel.eval("(1"); }));
+        CHECK(within([&] { reply = proxima::detail::ask_wire(kernel, proxima::Query::text("(1"), {}); }));
         REQUIRE_FALSE(reply.has_value());
         CHECK_FALSE(reply.error().message().empty());
         CHECK(proxima::cause_of(reply.error()) == proxima::Cause::MaximaError);
     }
     SUBCASE("through a statement terminator that used to cut the wrapper") {
         proxima::result<std::string> reply;
-        CHECK(within([&] { reply = kernel.eval("1$ 2"); }));
+        CHECK(within([&] {
+            reply = proxima::detail::ask_wire(kernel, proxima::Query::text("1$ 2"), {});
+        }));
         // Contained either way: parsed up to the terminator, or refused.
-        CHECK(within([&] { reply = kernel.eval_pure("2+2"); }));
+        CHECK(within([&] { reply = proxima::detail::ask_wire(kernel, proxima::Query::text("2+2"), {}); }));
         REQUIRE(reply.has_value());
         CHECK(*reply == "4");
     }
@@ -319,13 +322,12 @@ TEST_CASE("text Maxima cannot read is a failure, not a stall") {
 }
 
 TEST_CASE("assumptions travel as forms too") {
-    // Context sends the user's predicate as structure, so the guarantee
-    // covers the one path that changes Maxima's state on the user's behalf.
+    // The user's facts are sent as structure, so the guarantee covers the one
+    // path that establishes state in Maxima on the user's behalf.
     proxima::Kernel kernel;
     const Symbol odd("n m");
-    proxima::Context scope(kernel);
-    CHECK_NOTHROW(scope.assume(gt(odd, 0)));
-    const auto result = proxima::integrate(pow(Expr(Symbol("x")), odd), Symbol("x"), kernel);
+    const auto result = proxima::integrate(pow(Expr(Symbol("x")), odd), Symbol("x"),
+                                           {proxima::assuming(gt(odd, 0)), kernel});
     REQUIRE(result.has_value());
     CHECK(proxima::contains(*result, odd));
 }

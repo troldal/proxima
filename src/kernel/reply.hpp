@@ -36,10 +36,14 @@ inline result<std::string> to_result(Reply reply) {
     if (reply.ok) {
         return std::move(reply.value);
     }
+    // The session's own wording for contradictory assumptions; see
+    // MaximaSession::kInconsistent, which must stay in step with this.
     constexpr std::string_view kQuestion = "this computation needs an assumption";
-    const Cause cause = std::string_view(reply.reason).starts_with(kQuestion)
-                            ? Cause::NeedsAssumption
-                            : Cause::MaximaError;
+    constexpr std::string_view kInconsistent = "the assumptions are inconsistent: ";
+    const std::string_view reason = reply.reason;
+    const Cause cause = reason.starts_with(kQuestion)       ? Cause::NeedsAssumption
+                        : reason.starts_with(kInconsistent) ? Cause::Inconsistent
+                                                            : Cause::MaximaError;
     return fxt::unexpected(fail(cause, std::move(reply.reason)));
 }
 

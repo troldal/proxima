@@ -60,7 +60,7 @@ bool read_field(std::istream &in, std::string &text) {
     // A field cannot be longer than what is left of the file. The length used
     // to be trusted, so a corrupt or hostile entry claiming
     // 18446744073709551615 bytes made the resize below throw
-    // std::length_error, which escaped eval_pure instead of reading as a miss.
+    // std::length_error, which escaped a question instead of reading as a miss.
     const std::streampos here = in.tellg();
     in.seekg(0, std::ios::end);
     const std::streampos end = in.tellg();

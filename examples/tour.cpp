@@ -17,7 +17,7 @@
 //
 // The companion examples/demo.cpp is the short version. This is the long one.
 
-#include <proxima/context.hpp>   // proxima::Context — scopes of assumptions
+#include <proxima/assumptions.hpp> // proxima::Assumptions — facts, as a value
 #include <proxima/errors.hpp>    // proxima::Error and its family
 #include <proxima/expr.hpp>      // proxima::Expr — the expression value type
 #include <proxima/functions.hpp> // sin, cos, exp, sqrt, pi, inf, ...
@@ -592,50 +592,48 @@ void assumptions() {
     show("integrate(x^n, x)",
          unknown ? unknown->str() : "Failure: " + unknown.error().message());
 
-    // Supply facts in an proxima::Context. Everything assumed inside it is
-    // discarded when it goes out of scope — a real Maxima context, not a
-    // best-effort undo.
-    {
-        proxima::Context scope;
-        scope.assume(gt(n, 0));
-        if (const auto known = proxima::integrate(pow(x, n), x)) {
-            show("  with n > 0", *known);
-        }
+    // Supply the fact with the question. Assumptions are a value, passed as
+    // the last argument like the kernel is: nothing is set up beforehand, and
+    // nothing is left behind for the next call.
+    const auto positive_n = proxima::assuming(gt(n, 0));
+    if (const auto known = proxima::integrate(pow(x, n), x, positive_n)) {
+        show("  under n > 0", *known);
+    }
 
-        // The same expression can simplify differently under different facts.
-        show("  sqrt(x^2), nothing assumed of x", *proxima::expand(proxima::sqrt(pow(x, 2))));
-        scope.assume(gt(x, 0));
-        show("  sqrt(x^2), with x > 0", *proxima::expand(proxima::sqrt(pow(x, 2))));
+    // The same expression can simplify differently under different facts.
+    const proxima::Expr root = proxima::sqrt(pow(x, 2));
+    show("  sqrt(x^2), nothing assumed of x", *proxima::expand(root));
+    show("  sqrt(x^2), under x > 0", *proxima::expand(root, proxima::assuming(gt(x, 0))));
+    show("  sqrt(x^2), under x < 0", *proxima::expand(root, proxima::assuming(lt(x, 0))));
 
-        // Contexts nest.
-        {
-            proxima::Context inner;
+    // Assumptions grow by making new values. declaring records a property of
+    // a symbol, rather than a relation.
+    const auto more = positive_n.with(gt(x, 0)).with(k, proxima::Feature::Integer);
+    show("  sin(k*pi), k declared integer",
+         *proxima::expand(proxima::sin(k * proxima::pi()), more));
+    show("  sin(k*pi), nothing declared", *proxima::expand(proxima::sin(k * proxima::pi())));
+    show("  more.facts()", joined({more.facts().begin(), more.facts().end()}));
 
-            // An inner scope still sees what the outer one assumed...
-            show("    sqrt(x^2), inherited x > 0", *proxima::expand(proxima::sqrt(pow(x, 2))));
+    // A value compares by what it says, not how it was built, so the same
+    // facts in another order are the same assumptions — the same Maxima
+    // context, and the same cached answers.
+    show("  order does not matter",
+         proxima::assuming(gt(x, 0)).with(gt(n, 0)) == proxima::assuming(gt(n, 0)).with(gt(x, 0))
+             ? "true"
+             : "false");
 
-            // ...and adds facts of its own. declare records a property of a
-            // symbol, rather than a relation.
-            inner.declare(k, proxima::Feature::Integer);
-            show("    sin(k*pi), k declared integer",
-                 *proxima::expand(proxima::sin(k * proxima::pi())));
-
-            // facts() lists every fact in force here, innermost first: the
-            // declaration, then the outer scope's n > 0 and x > 0.
-            show("    inner.facts()", joined(inner.facts()));
-        } // k is no longer an integer here.
-
-        show("  sin(k*pi), after the inner scope", *proxima::expand(proxima::sin(k * proxima::pi())));
-        show("  scope.facts()", joined(scope.facts()));
-    } // n > 0 and x > 0 are gone here.
-
+    // And the question without them still fails, as it should: nothing was
+    // left in force.
     const auto again = proxima::integrate(pow(x, n), x);
-    show("integrate(x^n, x), after the scope",
+    show("integrate(x^n, x), under nothing",
          again ? again->str() : "Failure again, as it should be");
 
-    // Contexts survive a kernel restart: they are recorded and replayed, so a
-    // Maxima that crashed mid-scope comes back with the same facts in force.
-    // An assumption that contradicts one already in force throws MaximaError.
+    // Facts that contradict one another are refused, with their own cause.
+    const auto contradiction
+        = proxima::expand(root, proxima::assuming({gt(x, 0), lt(x, 0)}));
+    show("  under x > 0 and x < 0",
+         contradiction ? contradiction->str()
+                       : std::string(proxima::to_string(proxima::cause_of(contradiction.error()))));
 }
 
 // --- 10. The kernel, configuration and caching --------------------------------
@@ -694,50 +692,44 @@ void the_kernel() {
 
     // --- talking to Maxima directly --------------------------------------
     //
-    // Beneath the operations, a Kernel evaluates anything you give it and
-    // hands back Maxima's reply as a result<std::string>: the value, as the
-    // text of Maxima's internal form, or a Failure with Maxima's reason.
-    //
-    // Prefer eval_pure for questions. It uses the cache, on the promise that
-    // the text changes nothing in Maxima.
-    const auto pi = second.eval_pure("float(%pi)");
-    show("eval_pure(\"float(%pi)\")", pi ? *pi : pi.error().message());
+    // Beneath the operations, a Kernel has two verbs. ask answers a Query —
+    // an expression or Maxima text that changes nothing — and is cached;
+    // tell carries out a Statement, and is not. The type says which is
+    // which, so a question cannot be mistaken for a statement.
+    const auto pi = second.ask(proxima::Query::text("float(%pi)"));
+    show("ask(float(%pi))", pi ? pi->str() : pi.error().message());
 
     // An Expr can be sent instead of text; it travels as structure, so
-    // nothing about it can be misread. Note the reply is Maxima's internal
-    // form, here the rational 1/2 — and to_expr reads it back into an Expr,
-    // composing with the reply as every operation does.
-    const auto via_expr = second.eval_pure(proxima::sin(proxima::pi() / 6));
-    show("eval_pure(sin(pi()/6))", via_expr ? *via_expr : via_expr.error().message());
-    show("  read back with to_expr",
-         (via_expr | fxt::and_then(proxima::to_expr))
-             .transform([](const proxima::Expr &e) { return e.str(); })
-             .value_or("?"));
+    // nothing about it can be misread — and under assumptions, as any
+    // operation can.
+    const auto via_expr = second.ask(proxima::Query::form(proxima::sin(proxima::pi() / 6)));
+    show("ask(sin(pi()/6))", via_expr ? via_expr->str() : via_expr.error().message());
 
     // Text Maxima cannot parse is an ordinary failure with a reason, not an
     // exception, and costs one round trip.
-    const auto broken = second.eval_pure("(1");
-    show("eval_pure(\"(1\") has a value?", broken ? "yes" : "no: " + broken.error().message());
+    const auto broken = second.ask(proxima::Query::text("(1"));
+    show("ask(\"(1\") has a value?", broken ? "yes" : "no: " + broken.error().message());
 
     // Asking the same question again is answered from memory.
     const auto before = second.cache_stats();
-    static_cast<void>(second.eval_pure("float(%pi)"));
+    static_cast<void>(second.ask(proxima::Query::text("float(%pi)")));
     show("the same question again: cache hits",
          std::to_string(before.hits) + " -> "
              + std::to_string(second.cache_stats().hits));
 
-    // eval, as opposed to eval_pure, is for statements that change Maxima —
-    // an assignment, a definition. Since there is no telling from the text
-    // what changed, it empties the cache, and turns off the on-disk cache for
-    // this kernel for good. Use it only when you mean it.
-    const auto assigned = second.eval("tour_value: 42");
-    show("eval(\"tour_value: 42\")", assigned ? *assigned : assigned.error().message());
+    // tell is for statements that change Maxima — an assignment, a
+    // definition. Since there is no telling from the text what changed, it
+    // empties the cache, and turns off the on-disk cache for this kernel
+    // until restart(). Use it only when you mean it.
+    const auto assigned = second.tell(proxima::Statement::text("tour_value: 42"));
+    show("tell(tour_value: 42)", assigned ? "done" : assigned.error().message());
+    show("  then ask(tour_value)", second.ask(proxima::Query::text("tour_value"))->str());
 
     // --- timeouts and recovery -------------------------------------------
     //
     // A call that runs past its timeout throws proxima::TimeoutError. Before it
-    // does, the kernel is restarted and its assumptions replayed, so only
-    // that call is lost: the next one works. set_timeout changes the deadline
+    // does, the kernel is restarted, so only that call is lost: the next one
+    // works, under whatever assumptions it brings. set_timeout changes the deadline
     // for later calls. The restart takes a moment.
     second.set_timeout(std::chrono::milliseconds(1));
     try {

@@ -6,7 +6,7 @@
 // two-dimensional text — and the last comes from examples/text2d.hpp, a
 // renderer written the way any user of the library would write one.
 
-#include <proxima/context.hpp>
+#include <proxima/assumptions.hpp>
 #include <proxima/errors.hpp>
 #include <proxima/expr.hpp>
 #include <proxima/functions.hpp>
@@ -159,10 +159,8 @@ int main() {
                               : "no result: " + unknown.error().message())
                   << '\n';
 
-        // Supplying it in a scope, which is discarded on the way out.
-        proxima::Context assuming;
-        assuming.assume(gt(proxima::Expr(n), proxima::Expr(0)));
-        if (const auto known = proxima::integrate(power, x)) {
+        // Supplying it with the question.
+        if (const auto known = proxima::integrate(power, x, proxima::assuming(gt(n, 0)))) {
             std::cout << "  assuming n > 0 = " << known->str() << '\n';
         }
 

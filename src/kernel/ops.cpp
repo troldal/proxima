@@ -21,12 +21,11 @@ namespace {
 /// parses infix text. That is what makes a symbol called `x y`, or an Opaque
 /// holding a `$`, a question Maxima can answer (or refuse, with a message)
 /// rather than a stall.
-result<Expr> evaluate(Kernel &kernel, const Expr &form) {
-    // eval_pure, not eval: every operation here is a question rather than an
-    // instruction, so the answer can be remembered. The promise that goes with
-    // eval_pure is exactly what these functions are — nothing below assigns,
-    // assumes or defines anything.
-    return kernel.eval_pure(form).and_then(to_expr);
+result<Expr> evaluate(const Env &env, const Expr &form) {
+    // A Query: every operation here is a question rather than an instruction,
+    // so the answer can be remembered — under the assumptions it was asked
+    // under, which travel with it.
+    return env.kernel().ask(Query::form(form), env.assumptions());
 }
 
 /// A Failure of `cause`, as an unexpected, ready to return.
@@ -72,42 +71,42 @@ Kernel &shared_kernel() {
     return kernel;
 }
 
-result<Expr> parse(std::string_view source, Kernel &kernel) {
+result<Expr> parse(std::string_view source, const Env &env) {
     // The source travels as a string literal, which an Opaque of that shape
     // becomes, for parse_string to read on the far side.
-    return evaluate(kernel, call("parse_string",
+    return evaluate(env, call("parse_string",
                                  {Expr::opaque(detail::string_literal(source))}));
 }
 
-result<Expr> diff(const Expr &expr, const Symbol &wrt, unsigned order, Kernel &kernel) {
-    return evaluate(kernel, call("diff", {expr, wrt, Expr(order)}));
+result<Expr> diff(const Expr &expr, const Symbol &wrt, unsigned order, const Env &env) {
+    return evaluate(env, call("diff", {expr, wrt, Expr(order)}));
 }
 
-result<Expr> expand(const Expr &expr, Kernel &kernel) {
-    return evaluate(kernel, call("expand", {expr}));
+result<Expr> expand(const Expr &expr, const Env &env) {
+    return evaluate(env, call("expand", {expr}));
 }
 
-result<Expr> factor(const Expr &expr, Kernel &kernel) {
-    return evaluate(kernel, call("factor", {expr}));
+result<Expr> factor(const Expr &expr, const Env &env) {
+    return evaluate(env, call("factor", {expr}));
 }
 
-result<Expr> ratsimp(const Expr &expr, Kernel &kernel) {
-    return evaluate(kernel, call("ratsimp", {expr}));
+result<Expr> ratsimp(const Expr &expr, const Env &env) {
+    return evaluate(env, call("ratsimp", {expr}));
 }
 
-result<Expr> simplify(const Expr &expr, Kernel &kernel) {
-    return ratsimp(expr, kernel);
+result<Expr> simplify(const Expr &expr, const Env &env) {
+    return ratsimp(expr, env);
 }
 
 result<Expr> subst(const Expr &expr, const Symbol &symbol, const Expr &value,
-           Kernel &kernel) {
+           const Env &env) {
     // Maxima's argument order is (replacement, target, expression).
-    return evaluate(kernel, call("subst", {value, symbol, expr}));
+    return evaluate(env, call("subst", {value, symbol, expr}));
 }
 
 result<Expr> integrate(const Expr &expr, const Symbol &wrt,
-                                       Kernel &kernel) {
-    auto result = evaluate(kernel, call("integrate", {expr, wrt}));
+                                       const Env &env) {
+    auto result = evaluate(env, call("integrate", {expr, wrt}));
     if (!result) {
         return result;
     }
@@ -123,8 +122,8 @@ result<Expr> integrate(const Expr &expr, const Symbol &wrt,
 
 result<Expr> integrate(const Expr &expr, const Symbol &wrt,
                                        const Expr &from, const Expr &to,
-                                       Kernel &kernel) {
-    auto result = evaluate(kernel, call("integrate", {expr, wrt, from, to}));
+                                       const Env &env) {
+    auto result = evaluate(env, call("integrate", {expr, wrt, from, to}));
     if (!result) {
         return result;
     }
@@ -137,12 +136,12 @@ result<Expr> integrate(const Expr &expr, const Symbol &wrt,
 }
 
 result<Expr> limit(const Expr &expr, const Symbol &wrt,
-                                   const Expr &to, Side side, Kernel &kernel) {
+                                   const Expr &to, Side side, const Env &env) {
     std::vector<Expr> args{expr, wrt, to};
     if (const std::string_view keyword = side_keyword(side); !keyword.empty()) {
         args.push_back(Expr::symbol(std::string(keyword)));
     }
-    auto result = evaluate(kernel, call("limit", std::move(args)));
+    auto result = evaluate(env, call("limit", std::move(args)));
     if (!result) {
         return result;
     }
@@ -171,7 +170,7 @@ result<Expr> limit(const Expr &expr, const Symbol &wrt,
 
 result<std::vector<Solution>>
 solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
-      Kernel &kernel) {
+      const Env &env) {
     if (unknowns.empty()) {
         return refuse(Cause::Argument, "solve was given no unknowns");
     }
@@ -188,7 +187,7 @@ solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
     }
     const Expr unknown_list = call("list", std::move(unknown_exprs));
 
-    auto result = evaluate(kernel, call("solve", {equation_list, unknown_list}));
+    auto result = evaluate(env, call("solve", {equation_list, unknown_list}));
     if (!result) {
         return fxt::unexpected(result.error());
     }
@@ -264,14 +263,14 @@ solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
 }
 
 result<std::vector<Expr>>
-solve(const Expr &equation, const Symbol &unknown, Kernel &kernel) {
+solve(const Expr &equation, const Symbol &unknown, const Env &env) {
     // Delegates, so that the rules deciding what counts as a solution live in
     // one place rather than being maintained twice.
     const Expr equations[] = {equation};
     const Symbol unknowns[] = {unknown};
 
     auto solutions = solve(std::span<const Expr>(equations),
-                           std::span<const Symbol>(unknowns), kernel);
+                           std::span<const Symbol>(unknowns), env);
     if (!solutions) {
         return fxt::unexpected(solutions.error());
     }
@@ -285,8 +284,8 @@ solve(const Expr &equation, const Symbol &unknown, Kernel &kernel) {
 }
 
 result<Expr> ode2(const Expr &equation, const Symbol &dependent,
-                                  const Symbol &independent, Kernel &kernel) {
-    auto result = evaluate(kernel, call("ode2", {equation, dependent, independent}));
+                                  const Symbol &independent, const Env &env) {
+    auto result = evaluate(env, call("ode2", {equation, dependent, independent}));
     if (!result) {
         return result;
     }
@@ -299,10 +298,10 @@ result<Expr> ode2(const Expr &equation, const Symbol &dependent,
     return result;
 }
 
-result<Truth> is(const Expr &predicate, Kernel &kernel) {
-    // eval_pure is safe although the answer depends on the assumptions: the
-    // reply cache is discarded whenever a Context changes them.
-    return evaluate(kernel, call("is", {predicate}))
+result<Truth> is(const Expr &predicate, const Env &env) {
+    // A question like any other, though its answer depends on the
+    // assumptions: they are part of the cache key, as for every operation.
+    return evaluate(env, call("is", {predicate}))
         .and_then([&predicate](const Expr &answer) -> result<Truth> {
             if (answer.is(Kind::Symbol)) {
                 if (answer.name() == "true") {
@@ -322,34 +321,34 @@ result<Truth> is(const Expr &predicate, Kernel &kernel) {
 }
 
 result<Expr> taylor(const Expr &expr, const Symbol &wrt, const Expr &at, unsigned order,
-            Kernel &kernel) {
+            const Env &env) {
     // Maxima answers a taylor series in its own truncated-series form; the
     // protocol hands every reply through ratdisrep, which makes it a sum.
-    return evaluate(kernel, call("taylor", {expr, wrt, at, Expr(order)}));
+    return evaluate(env, call("taylor", {expr, wrt, at, Expr(order)}));
 }
 
-result<Expr> trigsimp(const Expr &expr, Kernel &kernel) {
-    return evaluate(kernel, call("trigsimp", {expr}));
+result<Expr> trigsimp(const Expr &expr, const Env &env) {
+    return evaluate(env, call("trigsimp", {expr}));
 }
 
-result<Expr> trigexpand(const Expr &expr, Kernel &kernel) {
-    return evaluate(kernel, call("trigexpand", {expr}));
+result<Expr> trigexpand(const Expr &expr, const Env &env) {
+    return evaluate(env, call("trigexpand", {expr}));
 }
 
-result<Expr> radcan(const Expr &expr, Kernel &kernel) {
-    return evaluate(kernel, call("radcan", {expr}));
+result<Expr> radcan(const Expr &expr, const Env &env) {
+    return evaluate(env, call("radcan", {expr}));
 }
 
-result<Expr> partfrac(const Expr &expr, const Symbol &wrt, Kernel &kernel) {
-    return evaluate(kernel, call("partfrac", {expr, wrt}));
+result<Expr> partfrac(const Expr &expr, const Symbol &wrt, const Env &env) {
+    return evaluate(env, call("partfrac", {expr, wrt}));
 }
 
-result<Expr> to_float(const Expr &expr, Kernel &kernel) {
-    return evaluate(kernel, call("float", {expr}));
+result<Expr> to_float(const Expr &expr, const Env &env) {
+    return evaluate(env, call("float", {expr}));
 }
 
-result<Expr> coeff(const Expr &expr, const Expr &term, int power, Kernel &kernel) {
-    return evaluate(kernel, call("coeff", {expr, term, Expr(power)}));
+result<Expr> coeff(const Expr &expr, const Expr &term, int power, const Env &env) {
+    return evaluate(env, call("coeff", {expr, term, Expr(power)}));
 }
 
 namespace {
@@ -357,12 +356,12 @@ namespace {
 /// sum or product, closed or a Failure.
 result<Expr> closed_form(const std::string &head, const Expr &term,
                                         const Symbol &index, const Expr &from,
-                                        const Expr &to, Kernel &kernel) {
+                                        const Expr &to, const Env &env) {
     // `simpsum` is what has Maxima look for a closed form when a bound is
     // symbolic; without it `sum(k, k, 1, n)` stays the noun. ev turns it on
     // for this evaluation alone, so no setting outlives the call.
     const Expr series = call(head, {term, index, from, to});
-    auto result = evaluate(kernel, call("ev", {series, Expr::symbol("simpsum")}));
+    auto result = evaluate(env, call("ev", {series, Expr::symbol("simpsum")}));
     if (!result) {
         return result;
     }
@@ -375,18 +374,18 @@ result<Expr> closed_form(const std::string &head, const Expr &term,
 } // namespace
 
 result<Expr> sum(const Expr &term, const Symbol &index,
-                                 const Expr &from, const Expr &to, Kernel &kernel) {
-    return closed_form("sum", term, index, from, to, kernel);
+                                 const Expr &from, const Expr &to, const Env &env) {
+    return closed_form("sum", term, index, from, to, env);
 }
 
 result<Expr> product(const Expr &term, const Symbol &index,
-                                     const Expr &from, const Expr &to, Kernel &kernel) {
-    return closed_form("product", term, index, from, to, kernel);
+                                     const Expr &from, const Expr &to, const Env &env) {
+    return closed_form("product", term, index, from, to, env);
 }
 
 result<std::size_t> nroots(const Expr &polynomial, const Expr &low, const Expr &high,
-                           Kernel &kernel) {
-    return evaluate(kernel, call("nroots", {polynomial, low, high}))
+                           const Env &env) {
+    return evaluate(env, call("nroots", {polynomial, low, high}))
         .and_then([](const Expr &count) -> result<std::size_t> {
             if (count.is(Kind::Integer)) {
                 const auto value = count.integer_value().to_int64();
@@ -399,8 +398,8 @@ result<std::size_t> nroots(const Expr &polynomial, const Expr &low, const Expr &
         });
 }
 
-result<std::vector<Expr>> realroots(const Expr &polynomial, Kernel &kernel) {
-    return evaluate(kernel, call("realroots", {polynomial}))
+result<std::vector<Expr>> realroots(const Expr &polynomial, const Env &env) {
+    return evaluate(env, call("realroots", {polynomial}))
         .and_then([](const Expr &roots) -> result<std::vector<Expr>> {
             const auto not_roots = [&roots] {
                 return refuse(Cause::UnexpectedAnswer, "realroots answered " + roots.str()
@@ -423,9 +422,9 @@ result<std::vector<Expr>> realroots(const Expr &polynomial, Kernel &kernel) {
 }
 
 result<double> find_root(const Expr &expr, const Symbol &wrt,
-                                        double low, double high, Kernel &kernel) {
+                                        double low, double high, const Env &env) {
     auto result
-        = evaluate(kernel, call("find_root", {expr, wrt, Expr(low), Expr(high)}));
+        = evaluate(env, call("find_root", {expr, wrt, Expr(low), Expr(high)}));
     if (!result) {
         return fxt::unexpected(result.error());
     }

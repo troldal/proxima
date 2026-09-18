@@ -22,18 +22,12 @@ namespace proxima {
 // around the call; callers who compose write `f | ...` with FXT's adaptors.
 // The one exception is proxima::KernelError, for the kernel dying or the
 // protocol breaking, which is not an outcome of the mathematics.
-
-/// The process-wide kernel, started on first use and shut down at exit.
-///
-/// Convenient rather than obligatory: every operation below takes a Kernel to
-/// use, defaulting to this one. Safe to use from several threads, like any
-/// Kernel: starting it on first use is thread-safe, and calls on it take turns.
-///
-/// Shut down during static destruction, like any function-local static. An
-/// proxima::Context still open on it by then — one with static storage duration,
-/// say — does not call into the destroyed kernel: its operations throw
-/// proxima::KernelError, and its destructor does nothing.
-Kernel &shared_kernel();
+//
+// Each takes a proxima::Env last: the kernel to ask, shared_kernel() unless
+// said otherwise, and the Assumptions to ask under, none unless said
+// otherwise. `integrate(f, x, assuming(gt(n, 0)))` is the whole of asking
+// under an assumption; nothing is set up beforehand, and nothing is left
+// behind for the next call.
 
 /// Parses Maxima source into an expression.
 ///
@@ -41,7 +35,7 @@ Kernel &shared_kernel();
 /// the backend's — but it does need a running kernel. A free function rather
 /// than Expr::parse, because Expr belongs to a layer that knows nothing about
 /// the kernel. A Failure, with Cause::MaximaError, for text Maxima cannot read.
-result<Expr> parse(std::string_view source, Kernel &kernel = shared_kernel());
+result<Expr> parse(std::string_view source, const Env &env = {});
 
 // --- Calculus and algebra ------------------------------------------------
 //
@@ -50,58 +44,58 @@ result<Expr> parse(std::string_view source, Kernel &kernel = shared_kernel());
 
 /// Differentiates `expr` with respect to `wrt`, `order` times.
 result<Expr> diff(const Expr &expr, const Symbol &wrt, unsigned order = 1,
-                  Kernel &kernel = shared_kernel());
+                  const Env &env = {});
 
-result<Expr> expand(const Expr &expr, Kernel &kernel = shared_kernel());
-result<Expr> factor(const Expr &expr, Kernel &kernel = shared_kernel());
+result<Expr> expand(const Expr &expr, const Env &env = {});
+result<Expr> factor(const Expr &expr, const Env &env = {});
 
 /// Rational simplification: puts the expression over a common denominator
 /// and cancels, so (x^2 - 1)/(x - 1) is x + 1. It treats a function
 /// application, sin(x) or sqrt(x), as an opaque variable, so it knows no
 /// identities: for those, see trigsimp, trigexpand and radcan.
-result<Expr> ratsimp(const Expr &expr, Kernel &kernel = shared_kernel());
+result<Expr> ratsimp(const Expr &expr, const Env &env = {});
 
 /// The same as ratsimp, under the name it used to have. No CAS has a
 /// general-purpose "make it nicer", and this is not one; new code should say
 /// ratsimp, which says what happens.
-result<Expr> simplify(const Expr &expr, Kernel &kernel = shared_kernel());
+result<Expr> simplify(const Expr &expr, const Env &env = {});
 
 /// Substitutes `value` for every occurrence of `symbol`, in Maxima, which
 /// evaluates the result: `sin(x)` with x = 0 comes back as 0. For a rewrite
 /// that needs no kernel and does not evaluate, see proxima::replace.
 result<Expr> subst(const Expr &expr, const Symbol &symbol, const Expr &value,
-                   Kernel &kernel = shared_kernel());
+                   const Env &env = {});
 
 /// The Taylor expansion of `expr` in `wrt` about `at`, up to `wrt^order`, as
 /// an ordinary expression: `taylor(sin(x), x, 0, 5)` is x - x^3/6 + x^5/120.
 result<Expr> taylor(const Expr &expr, const Symbol &wrt, const Expr &at,
-                    unsigned order, Kernel &kernel = shared_kernel());
+                    unsigned order, const Env &env = {});
 
 /// Simplifies with the Pythagorean identities: sin(x)^2 + cos(x)^2 is 1.
-result<Expr> trigsimp(const Expr &expr, Kernel &kernel = shared_kernel());
+result<Expr> trigsimp(const Expr &expr, const Env &env = {});
 
 /// Expands functions of sums and multiples: sin(2*x) is 2*cos(x)*sin(x).
-result<Expr> trigexpand(const Expr &expr, Kernel &kernel = shared_kernel());
+result<Expr> trigexpand(const Expr &expr, const Env &env = {});
 
 /// Simplifies logarithms, exponentials and radicals into a canonical form:
 /// exp(2*log(x)) is x^2. Treats sqrt(x^2) as x, as Maxima's radcan does.
-result<Expr> radcan(const Expr &expr, Kernel &kernel = shared_kernel());
+result<Expr> radcan(const Expr &expr, const Env &env = {});
 
 /// The partial-fraction decomposition of `expr` in `wrt`.
 result<Expr> partfrac(const Expr &expr, const Symbol &wrt,
-                      Kernel &kernel = shared_kernel());
+                      const Env &env = {});
 
 /// Maxima's `float`: every number and numeric constant in `expr` as a
 /// double, symbols left alone — `%pi + x` is 3.141592653589793 + x. For
 /// evaluation with no kernel, see proxima::eval_numeric. (Not `float`, which C++
 /// reserves.)
-result<Expr> to_float(const Expr &expr, Kernel &kernel = shared_kernel());
+result<Expr> to_float(const Expr &expr, const Env &env = {});
 
 /// The coefficient of `term^power` in `expr`. The expression is taken as it
 /// stands, not expanded first — as Maxima's coeff does — so the coefficient
 /// of x in (x + 1)^2 is 0; expand first to get 2.
 result<Expr> coeff(const Expr &expr, const Expr &term, int power = 1,
-                   Kernel &kernel = shared_kernel());
+                   const Env &env = {});
 
 // --- Operations with an answer of their own for "no" ----------------------
 
@@ -111,11 +105,11 @@ result<Expr> coeff(const Expr &expr, const Expr &term, int power = 1,
 /// as an error: it returns the integral unevaluated, and that noun form is
 /// what this recognises.
 result<Expr> integrate(const Expr &expr, const Symbol &wrt,
-                       Kernel &kernel = shared_kernel());
+                       const Env &env = {});
 
 /// Definite integral over [from, to].
 result<Expr> integrate(const Expr &expr, const Symbol &wrt, const Expr &from,
-                       const Expr &to, Kernel &kernel = shared_kernel());
+                       const Expr &to, const Env &env = {});
 
 /// Which side to approach from, for a limit that differs either way.
 enum class Side { Both, FromAbove, FromBelow };
@@ -133,7 +127,7 @@ enum class Side { Both, FromAbove, FromBelow };
 /// Maxima could not decide. Approaching from one side can turn a Failure into
 /// a value.
 result<Expr> limit(const Expr &expr, const Symbol &wrt, const Expr &to,
-                   Side side = Side::Both, Kernel &kernel = shared_kernel());
+                   Side side = Side::Both, const Env &env = {});
 
 /// Solves `equation` for `unknown`, returning one value per solution.
 ///
@@ -145,7 +139,7 @@ result<Expr> limit(const Expr &expr, const Symbol &wrt, const Expr &to,
 ///
 /// An empty result means Maxima found no solutions, which is itself an answer.
 result<std::vector<Expr>> solve(const Expr &equation, const Symbol &unknown,
-                                Kernel &kernel = shared_kernel());
+                                const Env &env = {});
 
 /// One solution of a system: a value for each unknown, in the order they were
 /// asked for, so `solution[i]` belongs to `unknowns[i]`.
@@ -173,7 +167,7 @@ using Solution = std::vector<Expr>;
 /// caller wanting only fully determined solutions should check for them.
 result<std::vector<Solution>> solve(std::span<const Expr> equations,
                                     std::span<const Symbol> unknowns,
-                                    Kernel &kernel = shared_kernel());
+                                    const Env &env = {});
 
 /// A differential equation's general solution, from Maxima's `ode2`, for a
 /// first- or second-order ordinary equation.
@@ -184,7 +178,7 @@ result<std::vector<Solution>> solve(std::span<const Expr> equations,
 /// second-order one. Cause::NotSolved when ode2 cannot solve it, which Maxima
 /// says by answering `false`.
 result<Expr> ode2(const Expr &equation, const Symbol &dependent,
-                  const Symbol &independent, Kernel &kernel = shared_kernel());
+                  const Symbol &independent, const Env &env = {});
 
 /// The sum of `term` for `index` from `from` to `to`, in closed form:
 /// `sum(k, k, 1, n)` is n*(n + 1)/2, and `to` may be proxima::inf().
@@ -192,25 +186,25 @@ result<Expr> ode2(const Expr &equation, const Symbol &dependent,
 /// Cause::NoClosedForm when Maxima finds none, which it says by handing back
 /// the sum unevaluated. Maxima's `simpsum` is on for this evaluation only.
 result<Expr> sum(const Expr &term, const Symbol &index, const Expr &from,
-                 const Expr &to, Kernel &kernel = shared_kernel());
+                 const Expr &to, const Env &env = {});
 
 /// The product of `term` for `index` from `from` to `to`, in closed form.
 /// Cause::NoClosedForm when there is none — which, for symbolic bounds, is
 /// usual.
 result<Expr> product(const Expr &term, const Symbol &index, const Expr &from,
-                     const Expr &to, Kernel &kernel = shared_kernel());
+                     const Expr &to, const Env &env = {});
 
 // --- Questions under the assumptions in force ------------------------------
 
 /// Maxima's three-valued answer to a predicate.
 enum class Truth { False, True, Unknown };
 
-/// Asks Maxima whether `predicate` holds, under whatever proxima::Context
-/// assumptions are in force: with `a > 0` assumed, `is(gt(a, 0))` is True and
-/// `is(lt(a, 0))` False; with nothing assumed, both are Unknown.
+/// Asks Maxima whether `predicate` holds under the Env's assumptions: under
+/// `assuming(gt(a, 0))`, `is(gt(a, 0))` is True and `is(lt(a, 0))` False; with
+/// nothing assumed, both are Unknown.
 ///
 /// Cause::UnexpectedAnswer if Maxima answers anything but a truth value.
-result<Truth> is(const Expr &predicate, Kernel &kernel = shared_kernel());
+result<Truth> is(const Expr &predicate, const Env &env = {});
 
 // --- Roots, numerically ----------------------------------------------------
 
@@ -221,7 +215,7 @@ result<Truth> is(const Expr &predicate, Kernel &kernel = shared_kernel());
 result<std::size_t> nroots(const Expr &polynomial,
                            const Expr &low = Expr::symbol("minf"),
                            const Expr &high = Expr::symbol("inf"),
-                           Kernel &kernel = shared_kernel());
+                           const Env &env = {});
 
 /// The distinct real roots of a univariate polynomial, each once however
 /// repeated, as exact rationals within Maxima's `rootsepsilon` (1e-7) of the
@@ -229,7 +223,7 @@ result<std::size_t> nroots(const Expr &polynomial,
 /// them, which is not sorted. Cause::MaximaError for anything but a
 /// univariate polynomial with rational coefficients.
 result<std::vector<Expr>> realroots(const Expr &polynomial,
-                                    Kernel &kernel = shared_kernel());
+                                    const Env &env = {});
 
 /// A root of `expr` in `wrt` between `low` and `high`, found numerically by
 /// Maxima's `find_root`. The expression must change sign across the interval.
@@ -238,6 +232,6 @@ result<std::vector<Expr>> realroots(const Expr &polynomial,
 /// Cause::Eval when the expression does not evaluate to a number there,
 /// because some other symbol is in it.
 result<double> find_root(const Expr &expr, const Symbol &wrt, double low,
-                         double high, Kernel &kernel = shared_kernel());
+                         double high, const Env &env = {});
 
 } // namespace proxima

@@ -35,12 +35,10 @@ public:
 
 /// Maxima produced no answer, and the caller asked for the value anyway.
 ///
-/// Thrown by proxima::unwrap on a result whose Cause is neither Parse nor
-/// Eval. Nothing in this library throws it for an ordinary outcome of its
+/// Thrown by proxima::unwrap on a result whose Cause is not one of the
+/// others' (Parse, Eval, Overflow). Nothing in this library throws it of its
 /// own accord: every operation returns a proxima::result, and this is the
-/// exception a caller who prefers catching to checking gets from it. The
-/// one place it is thrown directly is proxima::Context, whose assume() and
-/// declare() are statements rather than questions.
+/// exception a caller who prefers catching to checking gets from it.
 class MaximaError : public Error {
 public:
     using Error::Error;

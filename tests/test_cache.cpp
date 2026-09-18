@@ -5,7 +5,7 @@
 
 #include "kernel/cache.hpp"
 
-#include <proxima/context.hpp>
+#include <proxima/assumptions.hpp>
 #include <proxima/expr.hpp>
 #include <proxima/functions.hpp>
 #include <proxima/kernel.hpp>
@@ -173,41 +173,35 @@ TEST_CASE("an assumption invalidates answers computed without it") {
     const Expr root = proxima::sqrt(pow(Expr(x), 2));
 
     CHECK(*proxima::simplify(root, kernel) == proxima::abs(Expr(x)));
-
-    {
-        proxima::Context ctx(kernel);
-        ctx.assume(gt(Expr(x), Expr(0)));
-        CHECK(*proxima::simplify(root, kernel) == Expr(x));
-    }
-
-    // And leaving the scope invalidates just as much as entering it did.
+    // The assumption is part of the question, so it is part of the key.
+    CHECK(*proxima::simplify(root, {proxima::assuming(gt(Expr(x), Expr(0))), kernel}) == Expr(x));
     CHECK(*proxima::simplify(root, kernel) == proxima::abs(Expr(x)));
 }
 
-TEST_CASE("a raw eval discards the cache, since it could have changed anything") {
+TEST_CASE("a statement discards the cache, since it could have changed anything") {
     proxima::Kernel kernel;
     const Symbol x("x");
 
     static_cast<void>(proxima::diff(pow(Expr(x), 3), x, 1, kernel));
     REQUIRE(kernel.cache_stats().entries > 0);
 
-    static_cast<void>(kernel.eval("2 + 2"));
+    static_cast<void>(kernel.tell(proxima::Statement::text("2 + 2")));
     CHECK(kernel.cache_stats().entries == 0);
 }
 
-TEST_CASE("a binding made through eval cannot leave a stale answer behind") {
+TEST_CASE("a binding made through tell cannot leave a stale answer behind") {
     // The hazard the blunt invalidation above exists for: nothing in the text
-    // of "cache_binding_probe: 7" says it is an instruction rather than a
-    // question, so eval assumes the worst.
+    // of "cache_binding_probe: 7" says what it changes, so tell assumes the
+    // worst.
     proxima::Kernel kernel;
     const Symbol x("x");
 
-    REQUIRE(kernel.eval("cache_binding_probe: 2").has_value());
+    REQUIRE(kernel.tell(proxima::Statement::text("cache_binding_probe: 2")).has_value());
     const Expr before
         = *proxima::simplify(Expr::symbol("cache_binding_probe") * Expr(x), kernel);
     CHECK(before == 2 * Expr(x));
 
-    REQUIRE(kernel.eval("cache_binding_probe: 3").has_value());
+    REQUIRE(kernel.tell(proxima::Statement::text("cache_binding_probe: 3")).has_value());
     const Expr after
         = *proxima::simplify(Expr::symbol("cache_binding_probe") * Expr(x), kernel);
     CHECK(after == 3 * Expr(x));

@@ -113,6 +113,7 @@ target_compile_features(fxt INTERFACE cxx_std_23)
 add_library(fxt::fxt ALIAS fxt)
 
 add_library(proxima
+        src/core/assumptions.cpp
         src/core/expr.cpp
         src/core/format.cpp
         src/core/integer.cpp
@@ -125,7 +126,6 @@ add_library(proxima
         src/core/traverse.cpp
         src/core/mathml.cpp
         src/kernel/cache.cpp
-        src/kernel/context.cpp
         src/kernel/discovery.cpp
         src/kernel/persistent_cache.cpp
         src/kernel/kernel.cpp

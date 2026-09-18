@@ -235,48 +235,70 @@ function is an error rather than a guess.
 
 ### Assumptions
 
-`proxima::Context` opens a Maxima context and discards it on destruction —
-assumptions *and* declarations, which forgetting each assumption individually
-would not achieve. Contexts nest and inherit. A contradictory assumption is
-refused. `declare` covers every entry of Maxima's `features` list: `Integer`,
-`Even`, `Odd`, `Rational`, `Real`, `Complex`, `Constant`, the function
-properties (`Increasing`, `OddFun`, …) and the operator ones (`Commutative`,
-`Symmetric`, …).
+Assumptions are a value, passed with the question — not a scope held open in
+the kernel:
+
+```cpp
+const auto positive = proxima::assuming(gt(x, 0));
+proxima::simplify(sqrt(pow(x, 2)));                        // abs(x)
+proxima::simplify(sqrt(pow(x, 2)), positive);              // x
+proxima::simplify(sqrt(pow(x, 2)), {positive, kernel});    // x, on a kernel of your own
+
+const auto more = positive.with(gt(n, 0)).with(k, proxima::Feature::Integer);
+```
+
+Every operation's last parameter is a `proxima::Env`: the kernel to ask,
+`shared_kernel()` unless said otherwise, and the `Assumptions` to ask under,
+none unless said otherwise. It converts from either or both. So the meaning of
+a call is a function of its arguments, on every thread, whatever else is
+running; nothing is set up beforehand and nothing is left behind.
+
+`Assumptions` is immutable and canonical: the facts and declarations are kept
+sorted and without duplicates, so the same facts in another order are equal,
+hash alike, and share a Maxima context and cached answers. Facts that
+contradict one another make the operation fail with `Cause::Inconsistent`; a
+redundant fact is accepted quietly. `declaring` covers every entry of Maxima's
+`features` list: `Integer`, `Even`, `Odd`, `Rational`, `Real`, `Complex`,
+`Constant`, the function properties (`Increasing`, `OddFun`, …) and the
+operator ones (`Commutative`, `Symmetric`, …).
 
 ### The kernel
 
 - **Started on first use**, or constructed explicitly. `shared_kernel()` is the
-  process-wide one; every operation takes a `Kernel` defaulting to it.
+  process-wide one; every operation's `Env` defaults to it.
 - **Serialised**, so a `Kernel` is safe to share between threads. For real
   parallelism, give each thread its own — Maxima is one process doing one thing.
 - **Survives its own death.** If Maxima hangs or exits, the failing call reports
-  it and the kernel is restarted with its assumptions replayed, so the next call
-  starts from a working session rather than a wrong one.
+  it and the kernel is restarted, so the next call starts from a working
+  session. Nothing needs replaying: assumptions come with each question, and
+  the Maxima context for a set of them is made again when next asked for.
 - **Speaks structure, not text.** An expression reaches Maxima as its internal
   s-expression and comes back the same way; the infix printer is for people
   and is not on the path. So a symbol called `x y`, or an `Opaque` holding a
   `$`, is simply a symbol or simply a question — nothing this library sends
   can be misread by Maxima's parser, and nothing Maxima *cannot* read (a
-  malformed string given to `Kernel::eval`) costs more than one round trip
-  and a message. `Kernel::eval`, `eval_pure` and `eval_tracked` take an `Expr`
-  as well as text. `Kernel::eval_expr` evaluates and reads the reply back into
-  an `Expr` — `kernel.eval_expr("gcd(12, 18)")` is 6 — for a Maxima function
-  this library does not wrap. Like `eval` it assumes the text changed
-  something, so it empties the cache and stops persistence; for a pure
-  question, `proxima::to_expr(kernel.eval_pure("gcd(12, 18)"))` keeps both.
-- **Remembers answers.** An LRU keyed on the request, discarded whenever
-  anything might have changed it — any raw `eval`, any assumption added or
-  dropped. Bounded by `Config::cache_entries` and `Config::cache_bytes` (64 MB);
-  zero entries disables it.
+  malformed string given as a `Query`) costs more than one round trip and a
+  message.
+- **Two verbs, and the type says which.** `kernel.ask(Query::text("gcd(12,
+  18)"))` is 6, as an `Expr`: a question, for a Maxima function this library
+  does not wrap, cached like any operation and asked under assumptions like
+  any operation. `kernel.tell(Statement::text("a: 7"))` carries out a
+  statement: it empties the cache and stops persistence, since nothing in it
+  says what it changed. Both take an `Expr` (`Query::form`,
+  `Statement::form`) as well as text. There is no "evaluate, and promise it
+  changes nothing" to get wrong.
+- **Remembers answers.** An LRU keyed on the question *and* the assumptions it
+  was asked under, so asking under different assumptions never needs to
+  discard anything; only a `tell` does. Bounded by `Config::cache_entries` and
+  `Config::cache_bytes` (64 MB); zero entries disables it.
 - **Optionally between runs.** Set `Config::cache_directory` and answers survive
   process exit and are shared with other processes using the same directory.
   Every key carries the Maxima version, this library's version *and* the
-  assumption state, so an entry can only be read back under the conditions that
-  produced it — `sqrt(x^2)` cached under `assume(x > 0)` is not visible to a
-  process that never made the assumption. A raw `eval` may change Maxima in a
-  way no key can describe, so it stops persistence for that kernel;
-  `Kernel::persistence_active()` says so, and `Kernel::restart()` resumes it by
-  replaying the kernel's recorded state into a fresh Maxima.
+  assumptions, so an entry can only be read back under the conditions that
+  produced it — `sqrt(x^2)` asked under `x > 0` is not visible to a question
+  asked under nothing. A `tell` may change Maxima in a way no key can describe,
+  so it stops persistence for that kernel; `Kernel::persistence_active()` says
+  so, and `Kernel::restart()` resumes it with a fresh Maxima.
 - **Cannot be deadlocked by a prompt.** Maxima asks the user for facts it lacks,
   and reads the answer from standard input; over a pipe that would block and
   then swallow the next request. Questions become errors instead — see *When
@@ -419,8 +441,7 @@ Clang 18, MSVC 19.34).
 argument — and `proxima::unwrap(r)` throws a failure as the exception its
 cause names (`ParseError`, `EvalError`, `OverflowError`, otherwise
 `MaximaError`), for code that would rather catch than check. Nothing in the
-library throws those of its own accord, except `Context::assume` and
-`declare`, which are statements rather than questions.
+library throws those of its own accord.
 
 `Expr::parse`, `eval_numeric` and `compile` (the value-returning form of
 `Compiled`'s constructor) follow the same rule, with no kernel involved.
@@ -439,33 +460,33 @@ stuck.error().message();
 // "this computation needs an assumption that was not supplied.
 //  Maxima asked: Is n equal to -1?"
 
-proxima::Context ctx;
-ctx.assume(gt(proxima::Expr(n), proxima::Expr(0)));
-proxima::integrate(pow(proxima::Expr(x), proxima::Expr(n)), x);   // x^(1 + n)*(1 + n)^(-1)
+proxima::integrate(pow(proxima::Expr(x), proxima::Expr(n)), x,
+                   proxima::assuming(gt(n, 0)));             // x^(1 + n)/(1 + n)
 ```
 
-The scope ends when `ctx` does, taking the assumption with it — and invalidating
-any cached answer that depended on it.
+The assumption belongs to that call alone. The next call, asked under nothing,
+fails as the first did.
 
 ## What is pure, and what is not
 
 Everything that reads, builds, rewrites, renders or evaluates an expression
 is a pure function of its arguments: no I/O, no Maxima, and no state beyond
-constants. The effects live in three headers, and `Kernel` is the only type
+constants. The effects live in two headers, and `Kernel` is the only type
 that holds state.
 
 | Pure — no kernel, no state | Effects — talks to Maxima |
 |---|---|
-| `expr.hpp`, `integer.hpp`, `symbol.hpp`, `functions.hpp` | `kernel.hpp`: `Kernel`, a Maxima process and its caches |
-| `traverse.hpp`: `nodes`, `fold`, `rewrite`, `transform`, `replace` | `ops.hpp`: every operation, and `shared_kernel()` |
-| `numeric.hpp`: `eval_numeric`, `compile`, `Compiled`, `Bindings` | `context.hpp`: `Context`, assumption scopes in a kernel |
+| `expr.hpp`, `integer.hpp`, `symbol.hpp`, `functions.hpp` | `kernel.hpp`: `Kernel`, a Maxima process and its caches, and `shared_kernel()` |
+| `assumptions.hpp`: `Assumptions`, `assuming`, `declaring` | `ops.hpp`: every operation |
+| `traverse.hpp`: `nodes`, `fold`, `rewrite`, `transform`, `replace` | |
+| `numeric.hpp`: `eval_numeric`, `compile`, `Compiled`, `Bindings` | |
 | `render.hpp`, `tex.hpp`, `mathml.hpp` | |
 | `result.hpp`, `errors.hpp`, `config.hpp`, `version.hpp` | |
 
-The process-wide state is exactly two things: `shared_kernel()`, started on
-first use, and the registry through which `Context` scopes on one kernel
-find each other. (`Compiled` keeps a thread-local scratch stack for its
-evaluation, which no caller can observe.) This is a promise, not an
+The process-wide state is exactly one thing: `shared_kernel()`, started on
+first use. (`Compiled` keeps a thread-local scratch stack for its
+evaluation, which no caller can observe.) Assumptions are not state
+anywhere: they are values, passed with each question. This is a promise, not an
 accident: it is what lets a pure result be cached, shared between threads,
 and composed without asking what it might have changed.
 

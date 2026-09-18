@@ -17,10 +17,13 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <list>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -125,6 +128,19 @@ void ensure_private_directory(const std::filesystem::path &dir);
 /// finds there.
 std::filesystem::path default_user_dir();
 
+/// What eval_pure needs to answer under a set of assumptions: a key naming
+/// the set, empty for none, and the statements that establish it in a fresh
+/// Maxima context, each with the text a failure should quote.
+struct Environment {
+    struct Statement {
+        Payload payload;
+        std::string description;
+    };
+
+    std::string key;
+    std::vector<Statement> statements;
+};
+
 class MaximaSession {
 public:
     /// Produces a transport, and can be asked again after one dies. Holding a
@@ -150,52 +166,39 @@ public:
     MaximaSession(const MaximaSession &) = delete;
     MaximaSession &operator=(const MaximaSession &) = delete;
 
-    /// Evaluates one request and returns its result. A Maxima error —
-    /// including a malformed expression, which fails inside the payload's
-    /// own reader — is reported through Reply::ok rather than thrown.
+    /// Evaluates a statement: something that may change Maxima's state, and
+    /// whose answer is therefore never cached. A Maxima error — including a
+    /// malformed expression, which fails inside the payload's own reader — is
+    /// reported through Reply::ok rather than thrown.
+    ///
+    /// Run in Maxima's `initial` context, outside any this session made for a
+    /// set of assumptions. Nothing in the text says what it changed, so it
+    /// empties the reply cache and stops persistence until restart().
     ///
     /// Throws TimeoutError if Maxima did not answer within Config::timeout, or
     /// KernelError if the session died or answered something unintelligible. In
-    /// either case the kernel is restarted and its remembered state replayed
-    /// first, so only this call is lost.
+    /// either case the kernel is restarted first, so only this call is lost.
     ///
     /// Serialised: concurrent callers take turns rather than interleaving
     /// requests on one pipe. Calls that only touch bookkeeping — cache_stats,
-    /// set_timeout, remember, forget, invalidate_cache, persistence_active — do
-    /// not take that turn, and never wait behind a computation.
+    /// set_timeout, invalidate_cache, persistence_active — do not take that
+    /// turn, and never wait behind a computation.
     Reply eval(const Payload &payload);
 
-    /// Evaluates a pure expression, consulting and filling the reply cache.
-    /// The caller guarantees the expression changes nothing in Maxima.
-    Reply eval_pure(const Payload &payload);
-
-    /// Evaluates a state-changing statement the journal accounts for.
-    Reply eval_tracked(const Payload &payload);
-
-    /// The requests a caller has to keep together, available only inside
-    /// converse_atomically: a change to Maxima's state and the journal's record
-    /// of it.
-    class Conversation {
-    public:
-        Reply eval_tracked(const Payload &payload);
-        std::uint64_t remember(Payload payload);
-        void forget(std::uint64_t handle);
-
-    private:
-        friend class MaximaSession;
-        explicit Conversation(MaximaSession &session) : session_(session) {}
-        MaximaSession &session_;
-    };
-
-    /// Runs `steps` as one conversation: no other caller's request reaches
-    /// Maxima until it returns.
+    /// Evaluates a pure question under `environment`, consulting and filling
+    /// the reply cache: the caller guarantees it changes nothing in Maxima.
     ///
-    /// What a statement and its record need. Made separately — eval_tracked,
-    /// then remember — another thread's eval_pure can run between the two,
-    /// compute under Maxima's new state, and file its answer under the
-    /// journal's old one, where a persistent cache keeps it beyond this
-    /// process. proxima::Context makes every change this way.
-    void converse_atomically(const std::function<void(Conversation &)> &steps);
+    /// The assumptions live in a Maxima context of their own, made the first
+    /// time they are asked under and kept, least recently used first, for as
+    /// many as kMaxContexts sets; the session switches to it only when the
+    /// last question was asked under different ones. Both caches key the
+    /// answer on the environment's key as well as the question, so an answer
+    /// is only ever read back under the assumptions that produced it.
+    ///
+    /// Fails, without asking, if the environment cannot be established: a
+    /// Maxima error in one of its statements, or facts that contradict one
+    /// another (a reason beginning kInconsistent).
+    Reply eval_pure(const Payload &payload, const Environment &environment = {});
 
     /// Discards every cached reply.
     void invalidate_cache();
@@ -208,17 +211,6 @@ public:
     };
     CacheStats cache_stats() const;
 
-    /// Records a statement to replay after a restart, and returns a handle for
-    /// removing it again.
-    ///
-    /// The kernel is a separate process holding mutable state — assumptions,
-    /// declarations, bindings — that a restart would otherwise silently lose,
-    /// leaving later results quietly wrong rather than obviously broken. Scoped
-    /// state such as proxima::Context registers itself here.
-    std::uint64_t remember(Payload payload);
-
-    /// Stops replaying the statement `handle` names.
-    void forget(std::uint64_t handle);
 
     /// Changes the per-call deadline, for a call already waiting as well as
     /// for later ones: it takes effect within one poll. Does not affect
@@ -226,16 +218,22 @@ public:
     void set_timeout(std::chrono::milliseconds timeout);
 
     /// True while answers are read from and written to Config::cache_directory:
-    /// a directory was configured, and nothing has changed Maxima's state
-    /// without the journal recording it.
+    /// a directory was configured, and no statement has changed Maxima's state
+    /// since the process started.
     bool persistence_active() const;
 
-    /// Replaces Maxima with a fresh process and replays the journal, which
-    /// returns the session to exactly the state the journal describes: every
-    /// unrecorded change, such as a raw eval's, is discarded, and persistence
-    /// resumes. Throws KernelError for a session built without a factory, which
-    /// has no way to make another process.
+    /// Replaces Maxima with a fresh process: every statement's change is
+    /// discarded, the contexts made for assumptions are made again when next
+    /// needed, and persistence resumes. Throws KernelError for a session built
+    /// without a factory, which has no way to make another process.
     void restart();
+
+    /// How many sets of assumptions keep a Maxima context at once.
+    static constexpr std::size_t kMaxContexts = 16;
+
+    /// How a failure to establish contradictory assumptions begins, so that
+    /// to_result can give it Cause::Inconsistent.
+    static constexpr std::string_view kInconsistent = "the assumptions are inconsistent: ";
 
     /// Builds the argv used to launch Maxima's SBCL image for `install`, with
     /// its paths in UTF-8. Exposed for testing; touches no filesystem and
@@ -274,11 +272,6 @@ public:
     static constexpr std::size_t kMaxFrameBytes = std::size_t{256} * 1024 * 1024;
 
 private:
-    struct JournalEntry {
-        std::uint64_t handle;
-        Payload payload;
-    };
-
     /// Which deadline a conversation runs on. A call's can be changed while it
     /// waits; the startup one, for the handshake and a replay, is fixed.
     enum class Deadline { Call, Startup };
@@ -286,8 +279,14 @@ private:
     /// Sends one request and reads its frame. The pipe lock must be held.
     Reply eval_locked(const Payload &payload, Deadline deadline);
 
-    /// eval_tracked's body. The pipe lock must be held.
-    Reply eval_tracked_locked(const Payload &payload);
+    /// Makes `environment`'s context current, establishing it first if it has
+    /// none. A failed Reply if that could not be done, nothing if it was. The
+    /// pipe lock must be held.
+    std::optional<Reply> select_environment(const Environment &environment);
+
+    /// Makes `name` Maxima's current context, if it is not already. The pipe
+    /// lock must be held.
+    Reply switch_context(const std::string &name);
 
     /// eval_locked on the call deadline, restarting the session if the
     /// conversation breaks down. The pipe lock must be held.
@@ -296,24 +295,19 @@ private:
     /// The timeout `deadline` currently stands for.
     std::chrono::milliseconds timeout_for(Deadline deadline) const;
 
-    /// Discards the dead transport, builds another, and restores the session:
-    /// handshake, then every remembered statement in the order it was made.
+    /// Discards the dead transport, builds another, and handshakes. The
+    /// contexts made for assumptions died with the old process.
     void recover();
 
     void handshake();
     void write_line(std::string_view line);
 
-    /// Everything a persistent key has to be qualified by: the two versions
-    /// and the assumption state, in a form that changes whenever any of them
-    /// does.
+    /// Everything a persistent key has to be qualified by beyond the question
+    /// and its assumptions: the two versions.
     std::string persistence_stamp() const;
 
     /// True when a persistent entry would describe this session honestly.
     bool using_persistence() const;
-
-    /// Rebuilds the persistent cache's stamp after the journal changed, so
-    /// later entries are keyed on the new assumption state rather than the old.
-    void restamp_persistence();
 
     /// Reads until the frame belonging to `id` is complete, discarding
     /// everything before it: banners, prompts, and any stale frame left over
@@ -325,15 +319,15 @@ private:
     /// The pipe lock is held for a whole conversation with Maxima, and guards
     /// the transport, the request ids and recovery. The state lock is only
     /// ever held briefly, and guards everything else that changes: the caches,
-    /// the journal, the persistence flags and the per-call timeout. There used
+    /// the persistence flags and the per-call timeout. There used
     /// to be one lock for both, so reading a statistic or changing the timeout
     /// waited behind a computation for as long as Config::timeout.
     std::mutex pipe_mutex_;
     mutable std::mutex state_mutex_;
 
-    /// Bumped by every change to Maxima's state or to the journal. An answer
-    /// is only cached if it was unchanged throughout the computation: with the
-    /// journal no longer waiting for the pipe, it can change mid-computation.
+    /// Bumped by every invalidation. An answer is only cached if it was
+    /// unchanged throughout the computation: invalidate_cache does not wait
+    /// for the pipe, so it can happen mid-computation.
     std::uint64_t state_generation_ = 0;
 
     Config config_;
@@ -350,13 +344,18 @@ private:
     std::string maxima_version_;
     std::size_t persistent_hits_ = 0;
 
-    /// False once something has changed Maxima's state without the journal
-    /// recording it, which makes a persistent key unable to describe the
-    /// session it was computed in.
+    /// False once a statement has changed Maxima's state in a way no key can
+    /// describe, until the next restart.
     bool state_accounted_ = true;
 
-    std::vector<JournalEntry> journal_;
-    std::uint64_t next_journal_handle_ = 0;
+    /// Guarded by the pipe lock: which context Maxima has current, empty when
+    /// unknown (after a statement, which may have changed it), and the
+    /// contexts made for assumptions, most recently used first.
+    std::string active_context_ = "initial";
+    std::list<std::pair<std::string, std::string>> contexts_; ///< (key, name)
+    std::unordered_map<std::string, std::list<std::pair<std::string, std::string>>::iterator>
+        context_index_;
+    std::uint64_t next_context_ = 0;
 
     /// Set while recovering, so that a failure during the handshake or replay
     /// does not set off another recovery inside the first.

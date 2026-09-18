@@ -48,8 +48,11 @@ enum class Cause {
     MaximaError,
     /// Maxima needed a fact it had not been told — "Is n equal to -1?" — and
     /// over a pipe cannot ask. The message names the question; the answer is
-    /// an assumption in a proxima::Context.
+    /// to ask again under proxima::Assumptions that settle it.
     NeedsAssumption,
+    /// The assumptions an operation was asked under contradict one another,
+    /// so it was not asked at all: `assuming({gt(x, 0), lt(x, 0)})`.
+    Inconsistent,
     /// integrate, sum, product or limit found no closed form: Maxima handed
     /// the operation back unevaluated.
     NoClosedForm,

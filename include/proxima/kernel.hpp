@@ -1,21 +1,73 @@
 #pragma once
 
+#include <proxima/assumptions.hpp>
 #include <proxima/config.hpp>
 #include <proxima/expr.hpp>
 #include <proxima/result.hpp>
 
+#include <fxt/utils/Unit.hpp>
+
 #include <chrono>
 #include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <variant>
 
 namespace proxima {
 
+class Kernel;
+class Query;
+
 namespace detail {
 class MaximaSession;
-}
+
+/// A question's answer as Maxima's wire text, before it is read into an
+/// Expr. For the library's own tests of the protocol; see kernel.cpp.
+result<std::string> ask_wire(Kernel &kernel, const Query &query,
+                             const Assumptions &assumptions);
+} // namespace detail
+
+/// A question for Maxima: something that changes nothing, so its answer can
+/// be cached and kept between runs.
+///
+/// The type is the promise. Kernel::ask takes only a Query, and a Query is
+/// only ever an expression or text the caller is asking about — so there is
+/// no "evaluate, and promise it is pure" to get wrong, and no way to write a
+/// statement where a question was meant without saying Statement.
+class Query {
+public:
+    /// An expression, sent as structure: its internal s-expression. What
+    /// every operation in proxima/ops.hpp asks.
+    static Query form(Expr expr) { return Query(std::move(expr)); }
+
+    /// Maxima source text, for anything an Expr cannot say:
+    /// `Query::text("gcd(12, 18)")`. Maxima parses it, inside the error
+    /// trap, so malformed text is an ordinary failure.
+    static Query text(std::string source) { return Query(std::move(source)); }
+
+private:
+    friend class Kernel;
+    friend result<std::string> detail::ask_wire(Kernel &, const Query &,
+                                                const Assumptions &);
+    explicit Query(std::variant<Expr, std::string> content) : content_(std::move(content)) {}
+    std::variant<Expr, std::string> content_;
+};
+
+/// Something for Maxima to do: an assignment, a definition, a change to how
+/// it simplifies. Kernel::tell is the only thing that takes one, and the only
+/// thing that can leave Maxima different from how it found it.
+class Statement {
+public:
+    static Statement form(Expr expr) { return Statement(std::move(expr)); }
+    static Statement text(std::string source) { return Statement(std::move(source)); }
+
+private:
+    friend class Kernel;
+    explicit Statement(std::variant<Expr, std::string> content)
+        : content_(std::move(content)) {}
+    std::variant<Expr, std::string> content_;
+};
 
 /// A persistent Maxima session.
 ///
@@ -23,16 +75,13 @@ class MaximaSession;
 /// single Kernel serves many queries without paying process startup each time.
 ///
 /// The operations in proxima/ops.hpp are the intended way in; this is the layer
-/// beneath them. Each entry point comes in two forms. One takes an Expr, which
-/// travels to Maxima as structure — its internal s-expression — and is the
-/// form the operations use. The other takes Maxima source text, for anything
-/// an Expr cannot say; Maxima parses it itself, inside the same error trap,
-/// so a malformed string is an ordinary failure rather than a stall. Both
-/// hand back the text of Maxima's internal reply, as a proxima::result: the
-/// wire form on success, and a Failure carrying Maxima's message — with
-/// Cause::MaximaError, or Cause::NeedsAssumption when Maxima wanted a fact —
-/// when Maxima signalled an error. proxima::to_expr reads the wire form into
-/// an Expr: `kernel.eval_pure(form) | fxt::and_then(proxima::to_expr)`.
+/// beneath them, with two verbs. ask answers a Query under a set of
+/// Assumptions, and is cached; tell carries out a Statement, and is not. Both
+/// report a Maxima error as the Failure — Cause::MaximaError, or
+/// Cause::NeedsAssumption when Maxima wanted a fact, or Cause::Inconsistent
+/// when the assumptions contradict one another — because failing to
+/// integrate something is an ordinary outcome. Only infrastructure failures
+/// throw: see proxima::KernelError.
 ///
 /// Thread-safe: calls are serialised, so concurrent callers take turns rather
 /// than interleaving requests on one pipe. That makes a Kernel safe to share,
@@ -40,8 +89,18 @@ class MaximaSession;
 /// For genuine parallelism, give each thread its own Kernel.
 ///
 /// Survives its own death. If Maxima hangs or exits, the failing call reports
-/// it and the kernel is restarted behind the scenes with its remembered state
-/// replayed, so the next call starts from a working session.
+/// it and the kernel is restarted behind the scenes, so the next call starts
+/// from a working session.
+///
+/// ## Assumptions, and why they are not state here
+///
+/// The assumptions travel with each question. The kernel gives each distinct
+/// set a Maxima context of its own the first time it is used, keeps the most
+/// recent sixteen, and switches between them as questions arrive; an answer
+/// is cached under the question *and* its assumptions. So nothing a caller
+/// does to one question can change the answer to another, on any thread,
+/// and a restart loses nothing that matters: the contexts are made again when
+/// next needed.
 class Kernel {
 public:
     explicit Kernel(Config config = {});
@@ -49,79 +108,33 @@ public:
 
     /// Moves the Maxima session. The kernel moved from has none left: it can
     /// be destroyed or assigned to, and any other call on it throws
-    /// proxima::KernelError. So does an proxima::Context still pointing at it.
+    /// proxima::KernelError.
     Kernel(Kernel &&) noexcept;
     Kernel &operator=(Kernel &&) noexcept;
 
     Kernel(const Kernel &) = delete;
     Kernel &operator=(const Kernel &) = delete;
 
-    /// Evaluates Maxima source text — `integrate(x^2, x)` — or, in the Expr
-    /// form, an expression sent as structure.
-    ///
-    /// A Maxima error is the Failure, because failing to integrate something
-    /// is an ordinary outcome. That includes text Maxima cannot even parse:
-    /// it is read inside the error trap, so `eval("(1")` fails with a message
-    /// rather than waiting out Config::timeout. Only infrastructure failures
-    /// throw: see proxima::KernelError.
-    ///
-    /// **Discards the reply cache.** This entry point can evaluate anything,
-    /// including statements that change Maxima's state — an assignment, a new
-    /// assumption, a redefined function — and there is no way to tell from the
-    /// text which. Assuming the worst is the only safe default: a cache that
-    /// returns a stale answer is a correctness bug, and a needlessly emptied
-    /// cache is merely slower. Use eval_pure for anything known to be a
-    /// question rather than an instruction.
-    ///
-    /// **Stops Config::cache_directory for this kernel,** for the same reason: a
-    /// persistent answer is keyed on the state this kernel has recorded, and an
-    /// eval may have changed Maxima in a way nothing recorded. It stays off
-    /// until restart(); persistence_active() says which way things stand.
-    result<std::string> eval(std::string_view expression);
-    result<std::string> eval(const Expr &form);
+    /// Answers a question under `assumptions`, from the reply cache when it
+    /// has been asked before under the same ones, and from
+    /// Config::cache_directory when a previous run asked it.
+    result<Expr> ask(const Query &query, const Assumptions &assumptions = {});
 
-    /// Evaluates a *pure* expression, consulting and filling the reply cache.
+    /// Carries out a statement: `Statement::text("a: 7")`.
     ///
-    /// The caller promises `expression` only asks a question: it must not
-    /// assign, assume, declare, define, or otherwise leave Maxima different
-    /// from how it found it. Break that promise and later callers will be
-    /// handed answers computed under conditions that no longer hold.
+    /// **Empties the reply cache, and stops Config::cache_directory for this
+    /// kernel until restart().** Nothing in a statement says what it changed,
+    /// and a cache that returns a stale answer is a correctness bug, where an
+    /// emptied one is merely slower. persistence_active() says which way
+    /// things stand.
     ///
-    /// Cached answers are still answers to *this* kernel's current state. The
-    /// cache is discarded whenever that state might have changed: any eval(),
-    /// any assumption added or dropped through proxima::Context.
-    result<std::string> eval_pure(std::string_view expression);
-    result<std::string> eval_pure(const Expr &form);
+    /// Runs outside every assumption context, so what it does is in force
+    /// under every set of assumptions — and is lost at restart(), which is the
+    /// way back to a Maxima the caches can describe.
+    result<fxt::unit> tell(const Statement &statement);
 
-    /// Evaluates a statement that changes Maxima's state in a way this
-    /// kernel's replay journal accounts for.
-    ///
-    /// The caller promises that the change is either being recorded through
-    /// remember(), or is undoing something that was. On that promise the
-    /// kernel's state stays fully described by its journal, which is what keeps
-    /// Config::cache_directory usable — a persistent entry is keyed on that
-    /// state, so an unrecorded change would make the key a lie.
-    ///
-    /// proxima::Context is the intended caller; there is rarely a reason to use this
-    /// directly. Use eval() for anything else, which assumes the worst.
-    result<std::string> eval_tracked(std::string_view statement);
-    result<std::string> eval_tracked(const Expr &form);
-
-    /// eval, with the reply read into an expression: the way to call a Maxima
-    /// function this library has not wrapped without reading s-expressions.
-    /// `kernel.eval_expr("gcd(12, 18)")` is 6.
-    ///
-    /// **This is a statement, not a query.** Like eval, every call discards the
-    /// reply cache and switches Config::cache_directory off for this kernel
-    /// until restart(), because the text might have changed anything. For a
-    /// question known to change nothing — `gcd(12, 18)` is one — read an
-    /// eval_pure reply with proxima::to_expr instead, which keeps both.
-    result<Expr> eval_expr(std::string_view expression);
-    result<Expr> eval_expr(const Expr &form);
-
-    /// Forgets every cached reply. Rarely needed directly — state changes made
-    /// through this library already do it — but the escape hatch if Maxima has
-    /// been changed some other way.
+    /// Forgets every cached reply. Rarely needed directly — tell already does
+    /// it — but the escape hatch if Maxima has been changed some other way.
     void invalidate_cache();
 
     /// Hits, misses and current size, for tuning and for tests. Does not
@@ -136,68 +149,76 @@ public:
     };
     CacheStats cache_stats() const;
 
-    /// Records a statement to replay if the kernel has to be restarted, and
-    /// returns a handle for removing it again.
-    ///
-    /// Maxima is a separate process holding mutable state — assumptions,
-    /// declarations, bindings — that a restart would otherwise silently lose,
-    /// making later results quietly wrong rather than obviously broken. Scoped
-    /// state such as proxima::Context registers itself here; there is rarely a
-    /// reason to call this directly.
-    std::uint64_t remember(std::string_view statement);
-    std::uint64_t remember(const Expr &form);
-
-    /// Stops replaying the statement `handle` names.
-    void forget(std::uint64_t handle);
-
     /// Changes the per-call deadline for this kernel — including for a call
     /// already waiting on Maxima, which is held to the new deadline within one
     /// poll. Does not wait for that call. Config::startup_timeout, which governs
     /// launching and restarting, is unaffected.
     void set_timeout(std::chrono::milliseconds timeout);
 
-    /// True while answers are read from and written to Config::cache_directory.
-    ///
-    /// False when no directory was configured, and also after a raw eval():
-    /// that call may have changed Maxima's state in a way nothing recorded,
-    /// and a persistent answer is keyed on the recorded state, so persistence
-    /// stops rather than file answers under conditions that may not hold.
-    /// restart() brings it back.
+    /// True while answers are read from and written to Config::cache_directory:
+    /// a directory was configured, and no tell() has changed Maxima since the
+    /// kernel started or was restarted.
     bool persistence_active() const;
 
-    /// Replaces Maxima with a fresh process and replays what this kernel
-    /// remembers — every proxima::Context's assumptions and declarations — so the
-    /// session is exactly what that record describes.
-    ///
-    /// Anything else is lost, which is the point: bindings and definitions made
-    /// through a raw eval() are discarded, and with them the reason persistence
-    /// had stopped, so it resumes. Costs a Maxima startup.
+    /// Replaces Maxima with a fresh process. Everything a tell() did is lost,
+    /// and with it the reason persistence had stopped, so it resumes. Costs a
+    /// Maxima startup.
     void restart();
 
 private:
-    friend class Context;
+    friend result<std::string> detail::ask_wire(Kernel &, const Query &,
+                                                const Assumptions &);
 
     /// The session, or KernelError for a kernel that has been moved from.
     detail::MaximaSession &session() const;
 
     std::unique_ptr<detail::MaximaSession> session_;
-
-    /// Alive exactly as long as this kernel's session, and moved along with
-    /// it. A Context keeps a weak reference, so one that outlives the kernel —
-    /// a static Context at exit, after shared_kernel() has been destroyed —
-    /// can tell, instead of calling into a destroyed object. Declared after
-    /// session_, so it expires first.
-    std::shared_ptr<const int> lifetime_ = std::make_shared<const int>(0);
 };
 
-/// Reads the wire form of a reply — the text of Maxima's internal
-/// s-expression, as eval and eval_pure hand it back — into an expression.
-/// Composes with a reply directly: `kernel.eval_pure(form) |
-/// fxt::and_then(proxima::to_expr)` is how every operation in proxima/ops.hpp
-/// reads its answer.
+/// The process-wide kernel, started on first use and shut down at exit.
 ///
-/// Throws proxima::ParseError if the text is not a Maxima term. No reply from
-/// a kernel should be one: it would mean the protocol itself had failed.
-result<Expr> to_expr(std::string_view wire);
+/// Convenient rather than obligatory: every operation takes an Env naming the
+/// kernel to use, defaulting to this one. Safe to use from several threads,
+/// like any Kernel: starting it on first use is thread-safe, and calls on it
+/// take turns.
+Kernel &shared_kernel();
+
+/// Where an operation runs: which kernel, under which assumptions.
+///
+/// Every operation in proxima/ops.hpp takes one as its last parameter,
+/// defaulting to shared_kernel() and no assumptions, and it converts from
+/// either half or both:
+///
+///     proxima::integrate(f, x);                         // shared kernel, nothing assumed
+///     proxima::integrate(f, x, assuming(gt(n, 0)));     // shared kernel, n > 0
+///     proxima::integrate(f, x, kernel);                 // this kernel, nothing assumed
+///     proxima::integrate(f, x, {assuming(gt(n, 0)), kernel});
+///
+/// A value: the environment is passed in, never looked up, so what an
+/// operation means is decided at the call.
+class Env {
+public:
+    Env() = default;
+    Env(Kernel &kernel) : kernel_(&kernel) {}                                // NOLINT: implicit on purpose
+    Env(Assumptions assumptions) : assumptions_(std::move(assumptions)) {}   // NOLINT: implicit on purpose
+    Env(Assumptions assumptions, Kernel &kernel)
+        : kernel_(&kernel), assumptions_(std::move(assumptions)) {}
+
+    /// The kernel: the one given, or shared_kernel().
+    Kernel &kernel() const { return kernel_ != nullptr ? *kernel_ : shared_kernel(); }
+
+    const Assumptions &assumptions() const { return assumptions_; }
+
+    /// The same kernel under these assumptions and `more`.
+    [[nodiscard]] Env with(const Assumptions &more) const {
+        Env wider = *this;
+        wider.assumptions_ = assumptions_.with(more);
+        return wider;
+    }
+
+private:
+    Kernel *kernel_ = nullptr;
+    Assumptions assumptions_;
+};
 
 } // namespace proxima

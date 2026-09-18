@@ -149,30 +149,18 @@ std::unique_ptr<ITransport> launch_maxima(const Config &config,
 } // namespace
 
 std::string MaximaSession::persistence_stamp() const {
-    // Everything an answer depends on, beyond the question itself. The
-    // assumption state is the one that is unsound to leave out: sqrt(x^2) is
-    // abs(x) normally and x under assume(x > 0), and a persistent entry outlives
-    // the scope that made the assumption.
+    // Everything an answer depends on beyond the question and the assumptions
+    // it was asked under, which are both in each entry's key. The assumptions
+    // used to be here too, as the journal of what was in force, which made
+    // every key depend on whatever scopes happened to be open.
     std::string stamp = "lib=";
     stamp += version;
-    stamp += "\nmaxima=" + maxima_version_ + "\nstate=";
-    for (const JournalEntry &entry : journal_) {
-        stamp += entry.payload.str();
-        stamp += ';';
-    }
+    stamp += "\nmaxima=" + maxima_version_;
     return stamp;
 }
 
 bool MaximaSession::using_persistence() const {
     return persistent_ != nullptr && persistent_->usable() && state_accounted_;
-}
-
-void MaximaSession::restamp_persistence() {
-    if (persistent_ != nullptr) {
-        // In place, not rebuilt: a rebuilt cache would rescan the directory to
-        // learn its size on its next write, once per assumption.
-        persistent_->restamp(persistence_stamp());
-    }
 }
 
 namespace {
@@ -463,52 +451,93 @@ Reply MaximaSession::eval(const Payload &payload) {
         // the worst is the only safe default: a stale cached answer is a
         // correctness bug, an emptied cache is merely slower.
         cache_.clear();
-        // And a change nobody recorded means the journal no longer describes
-        // this session, so a persistent key — which is built from the journal —
-        // would claim conditions that do not hold. Persistence stops here.
+        // And a change no key describes means a persistent entry could claim
+        // conditions that do not hold. Persistence stops here, until restart.
         state_accounted_ = false;
         ++state_generation_;
     }
-    return converse(payload);
-}
-
-Reply MaximaSession::eval_tracked(const Payload &payload) {
-    const std::lock_guard<std::mutex> pipe(pipe_mutex_);
-    return eval_tracked_locked(payload);
-}
-
-void MaximaSession::converse_atomically(
-    const std::function<void(Conversation &)> &steps) {
-    const std::lock_guard<std::mutex> pipe(pipe_mutex_);
-    Conversation conversation(*this);
-    steps(conversation);
-}
-
-Reply MaximaSession::Conversation::eval_tracked(const Payload &payload) {
-    return session_.eval_tracked_locked(payload);
-}
-
-// remember and forget take only the state lock, so they need nothing special
-// here: what makes them part of the conversation is the pipe lock the caller
-// already holds, which keeps every other request out until it is over.
-std::uint64_t MaximaSession::Conversation::remember(Payload payload) {
-    return session_.remember(std::move(payload));
-}
-
-void MaximaSession::Conversation::forget(std::uint64_t handle) {
-    session_.forget(handle);
-}
-
-Reply MaximaSession::eval_tracked_locked(const Payload &payload) {
-    {
-        const std::lock_guard<std::mutex> state(state_mutex_);
-        // A state change the journal accounts for. The in-memory cache still
-        // has to go — its entries were computed under the old state — but
-        // persistence survives, because the new state will be part of the key.
-        cache_.clear();
-        ++state_generation_;
+    // Outside every context made for assumptions, so that what a statement
+    // assumes or declares is not filed in one of them and lost when it is
+    // evicted.
+    if (const Reply switched = switch_context("initial"); !switched.ok) {
+        return switched;
     }
+    // The statement runs in `initial`, and the session goes on assuming it is
+    // still current: a statement that switches context itself is changing
+    // what questions without assumptions are asked under, which is its
+    // caller's business, and the caches it could mislead were emptied above.
     return converse(payload);
+}
+
+Reply MaximaSession::switch_context(const std::string &name) {
+    if (active_context_ == name) {
+        return {true, "", ""};
+    }
+    // Names are this session's own or `initial`, never the caller's, so
+    // they can travel as text.
+    Reply reply = converse(Payload::text("context: " + name));
+    active_context_ = reply.ok ? name : std::string();
+    return reply;
+}
+
+std::optional<Reply> MaximaSession::select_environment(const Environment &environment) {
+    if (environment.key.empty()) {
+        const Reply switched = switch_context("initial");
+        return switched.ok ? std::nullopt : std::optional<Reply>(switched);
+    }
+
+    if (const auto found = context_index_.find(environment.key);
+        found != context_index_.end()) {
+        contexts_.splice(contexts_.begin(), contexts_, found->second);
+        const Reply switched = switch_context(found->second->second);
+        return switched.ok ? std::nullopt : std::optional<Reply>(switched);
+    }
+
+    // A context of its own, under `initial` so that what a statement put
+    // there is in force here too. supcontext makes it current.
+    const std::string name = "proxima_a" + std::to_string(++next_context_);
+    Reply made = converse(Payload::text("supcontext(" + name + ", initial)"));
+    if (!made.ok) {
+        active_context_.clear();
+        return made;
+    }
+    active_context_ = name;
+
+    // A statement that fails, or facts that contradict one another, leave no
+    // context behind: a later call under the same assumptions tries again,
+    // and gets the same answer.
+    const auto discard = [&] {
+        switch_context("initial");
+        converse(Payload::text("killcontext(" + name + ")"));
+    };
+    for (const Environment::Statement &statement : environment.statements) {
+        Reply reply = converse(statement.payload);
+        if (!reply.ok) {
+            discard();
+            return reply;
+        }
+        // assume answers with a list saying what it did with each fact; a
+        // fact that contradicts those already in force is `inconsistent`, and
+        // is not added.
+        if (reply.value == "((MLIST SIMP) $INCONSISTENT)") {
+            discard();
+            return Reply{false, "",
+                         std::string(kInconsistent) + statement.description
+                             + " contradicts the assumptions before it"};
+        }
+    }
+
+    contexts_.emplace_front(environment.key, name);
+    context_index_.emplace(environment.key, contexts_.begin());
+    while (contexts_.size() > kMaxContexts) {
+        // Never the one just made, which is at the front and current.
+        const auto &[key, victim] = contexts_.back();
+        const Reply killed = converse(Payload::text("killcontext(" + victim + ")"));
+        static_cast<void>(killed); // A context Maxima no longer has is gone either way.
+        context_index_.erase(key);
+        contexts_.pop_back();
+    }
+    return std::nullopt;
 }
 
 Reply MaximaSession::eval_locked(const Payload &payload, Deadline deadline) {
@@ -517,13 +546,17 @@ Reply MaximaSession::eval_locked(const Payload &payload, Deadline deadline) {
     return read_frame(id, deadline);
 }
 
-Reply MaximaSession::eval_pure(const Payload &payload) {
-    // The pipe lock for the whole call, cache lookups included. That is what
-    // lets converse_atomically keep a statement and its record together: no
-    // question, cached or not, is answered between the two.
+Reply MaximaSession::eval_pure(const Payload &payload, const Environment &environment) {
+    // The pipe lock for the whole call, cache lookups included, so that no
+    // statement changes Maxima between a question and the caching of its
+    // answer.
     const std::lock_guard<std::mutex> pipe(pipe_mutex_);
 
-    const std::string &key = payload.str();
+    // The question and the assumptions it is asked under. With none, the
+    // question alone, as it always was.
+    const std::string key = environment.key.empty()
+                                ? payload.str()
+                                : environment.key + '\x1f' + payload.str();
     std::uint64_t generation = 0;
     {
         const std::lock_guard<std::mutex> state(state_mutex_);
@@ -541,13 +574,16 @@ Reply MaximaSession::eval_pure(const Payload &payload) {
         generation = state_generation_;
     }
 
+    // Not cached: a failure to establish the assumptions is not an answer to
+    // the question, and trying again is what should happen next time.
+    if (std::optional<Reply> refused = select_environment(environment)) {
+        return *refused;
+    }
     const Reply reply = converse(payload);
 
     const std::lock_guard<std::mutex> state(state_mutex_);
-    // Only kept if nothing changed the state while Maxima was working. That can
-    // happen now: remember() and forget() no longer wait for the pipe, so a
-    // Context ending on another thread can change the journal — and so the key
-    // — mid-computation, and this answer belongs to the state before it.
+    // Only kept if nothing was invalidated while Maxima was working:
+    // invalidate_cache does not wait for the pipe.
     if (state_generation_ == generation) {
         // Failures are cached too: "Maxima cannot integrate this" is as stable
         // an answer as any other, and re-asking costs the same round trip.
@@ -581,30 +617,6 @@ void MaximaSession::set_timeout(std::chrono::milliseconds timeout) {
     config_.timeout = timeout;
 }
 
-std::uint64_t MaximaSession::remember(Payload payload) {
-    const std::lock_guard<std::mutex> state(state_mutex_);
-    // Remembering a statement means Maxima's state is about to change, or just
-    // has: every cached answer was computed under the old one.
-    cache_.clear();
-    ++state_generation_;
-    const std::uint64_t handle = ++next_journal_handle_;
-    journal_.push_back({handle, std::move(payload)});
-    restamp_persistence();
-    return handle;
-}
-
-void MaximaSession::forget(std::uint64_t handle) {
-    const std::lock_guard<std::mutex> state(state_mutex_);
-    // An assumption going out of scope invalidates just as much as one coming
-    // into it.
-    cache_.clear();
-    ++state_generation_;
-    std::erase_if(journal_, [handle](const JournalEntry &entry) {
-        return entry.handle == handle;
-    });
-    restamp_persistence();
-}
-
 void MaximaSession::recover() {
     recovering_ = true;
     struct Restore {
@@ -632,31 +644,16 @@ void MaximaSession::recover() {
 
     handshake();
 
-    // A copy, taken under the state lock and replayed without it: replaying is
-    // a conversation, and holding the state lock through it would block every
-    // caller that only wanted to read a statistic.
-    std::vector<JournalEntry> replay;
-    {
-        const std::lock_guard<std::mutex> state(state_mutex_);
-        replay = journal_;
-    }
+    // The contexts made for assumptions died with the old process; they are
+    // made again when next asked for. So did whatever a statement changed,
+    // which is why persistence can resume: the new process is exactly what
+    // the keys describe. It used to stay off for good, even across restarts
+    // that had discarded the change. The in-memory answers belonged to the
+    // old process and go with it.
+    active_context_ = "initial";
+    contexts_.clear();
+    context_index_.clear();
 
-    // Replayed in the order it was made, which is what reconstructs nested
-    // assumption scopes correctly: each supcontext activates the scope that the
-    // assumptions after it belong to.
-    for (const JournalEntry &entry : replay) {
-        const Reply reply = eval_locked(entry.payload, Deadline::Startup);
-        if (!reply.ok) {
-            throw KernelError("could not restore session state after a restart: "
-                              + entry.payload.str() + " failed: " + reply.reason);
-        }
-    }
-
-    // A fresh process with the journal replayed is exactly what the journal
-    // describes. Whatever unrecorded change once switched persistence off died
-    // with the old process, so it can resume — it used to stay off for good,
-    // even across restarts that had discarded the change. The in-memory
-    // answers belonged to the old process and go with it.
     const std::lock_guard<std::mutex> state(state_mutex_);
     cache_.clear();
     ++state_generation_;

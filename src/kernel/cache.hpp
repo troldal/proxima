@@ -21,7 +21,7 @@ namespace proxima::detail {
 /// two different callers.
 ///
 /// Holds no opinion about *when* an entry stops being true — see
-/// Kernel::eval_pure and Kernel::invalidate_cache for that, which is the part
+/// Kernel::ask, Kernel::tell and Kernel::invalidate_cache for that, which is the part
 /// that has to be right.
 class ReplyCache {
 public:

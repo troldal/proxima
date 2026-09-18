@@ -1,5 +1,6 @@
 #include <proxima/kernel.hpp>
 
+#include "kernel/kernel_internal.hpp"
 #include "kernel/reply.hpp"
 #include "kernel/session.hpp"
 #include "wire/from_maxima.hpp"
@@ -9,11 +10,72 @@
 #include <proxima/errors.hpp>
 #include <proxima/expr.hpp>
 
+#include <string>
 #include <utility>
+#include <variant>
 
 namespace proxima {
+namespace {
 
-using detail::to_result;
+/// The payload a query or statement travels as: a cppread of its form, or an
+/// eval_string of its text. Either way the session only ever sees a call on
+/// a string literal it escaped itself.
+detail::Payload payload_of(const std::variant<Expr, std::string> &content) {
+    if (const auto *form = std::get_if<Expr>(&content)) {
+        return detail::Payload::form(detail::to_maxima(*form));
+    }
+    return detail::Payload::text(std::get<std::string>(content));
+}
+
+Expr call(std::string head, std::vector<Expr> args) {
+    return Expr::function(std::move(head), std::move(args));
+}
+
+} // namespace
+
+namespace detail {
+
+result<Expr> to_expr(std::string_view wire) {
+    return from_maxima(parse_sexpr(wire));
+}
+
+Environment environment_for(const Assumptions &assumptions) {
+    Environment environment;
+    if (assumptions.empty()) {
+        return environment;
+    }
+    // Declarations first, so that a fact can rely on one: `n > 0` for an
+    // `n` declared an integer. Both travel as forms, the symbol and the facts
+    // being the caller's; the key is the same text, which is canonical
+    // because the Assumptions are.
+    for (const Declaration &declaration : assumptions.declarations()) {
+        const Expr statement
+            = call("declare", {declaration.symbol,
+                               Expr::symbol(std::string(name_of(declaration.feature)))});
+        std::string form = to_maxima(statement);
+        environment.key += form;
+        environment.key += '\n';
+        environment.statements.push_back(
+            {Payload::form(form), declaration.symbol.name() + " declared "
+                                      + std::string(name_of(declaration.feature))});
+    }
+    for (const Expr &fact : assumptions.facts()) {
+        const Expr statement = call("assume", {fact});
+        std::string form = to_maxima(statement);
+        environment.key += form;
+        environment.key += '\n';
+        environment.statements.push_back({Payload::form(form), fact.str()});
+    }
+    return environment;
+}
+
+result<std::string> ask_wire(Kernel &kernel, const Query &query,
+                             const Assumptions &assumptions) {
+    return to_result(kernel.session().eval_pure(payload_of(query.content_),
+                                                environment_for(assumptions)));
+}
+
+} // namespace detail
 
 // The special members are defined here rather than in the header because
 // detail::MaximaSession is incomplete at the point of declaration.
@@ -28,8 +90,7 @@ Kernel &Kernel::operator=(Kernel &&) noexcept = default;
 
 detail::MaximaSession &Kernel::session() const {
     // Moving a Kernel moves its session, and every method used to dereference
-    // the empty pointer left behind. A Context holding a pointer to a Kernel
-    // that has since been moved from reaches here too.
+    // the empty pointer left behind.
     if (!session_) {
         throw KernelError("this Kernel has been moved from and has no Maxima "
                           "session; use the Kernel it was moved into");
@@ -37,43 +98,13 @@ detail::MaximaSession &Kernel::session() const {
     return *session_;
 }
 
-// Text becomes an eval_string payload, an Expr a cppread one. Either way the
-// session only ever sees a call on a string literal it escaped itself.
-
-result<std::string> Kernel::eval(std::string_view expression) {
-    return to_result(session().eval(detail::Payload::text(expression)));
+result<Expr> Kernel::ask(const Query &query, const Assumptions &assumptions) {
+    return detail::ask_wire(*this, query, assumptions).and_then(detail::to_expr);
 }
 
-result<std::string> Kernel::eval(const Expr &form) {
-    return to_result(session().eval(detail::Payload::form(detail::to_maxima(form))));
-}
-
-result<std::string> Kernel::eval_pure(std::string_view expression) {
-    return to_result(session().eval_pure(detail::Payload::text(expression)));
-}
-
-result<std::string> Kernel::eval_pure(const Expr &form) {
-    return to_result(session().eval_pure(detail::Payload::form(detail::to_maxima(form))));
-}
-
-result<std::string> Kernel::eval_tracked(std::string_view statement) {
-    return to_result(session().eval_tracked(detail::Payload::text(statement)));
-}
-
-result<std::string> Kernel::eval_tracked(const Expr &form) {
-    return to_result(session().eval_tracked(detail::Payload::form(detail::to_maxima(form))));
-}
-
-result<Expr> Kernel::eval_expr(std::string_view expression) {
-    return eval(expression).and_then(to_expr);
-}
-
-result<Expr> Kernel::eval_expr(const Expr &form) {
-    return eval(form).and_then(to_expr);
-}
-
-result<Expr> to_expr(std::string_view wire) {
-    return detail::from_maxima(detail::parse_sexpr(wire));
+result<fxt::unit> Kernel::tell(const Statement &statement) {
+    return detail::to_result(session().eval(payload_of(statement.content_)))
+        .transform([](const std::string &) { return fxt::unit{}; });
 }
 
 void Kernel::invalidate_cache() {
@@ -83,18 +114,6 @@ void Kernel::invalidate_cache() {
 Kernel::CacheStats Kernel::cache_stats() const {
     const detail::MaximaSession::CacheStats stats = session().cache_stats();
     return {stats.hits, stats.misses, stats.entries, stats.persistent_hits};
-}
-
-std::uint64_t Kernel::remember(std::string_view statement) {
-    return session().remember(detail::Payload::text(statement));
-}
-
-std::uint64_t Kernel::remember(const Expr &form) {
-    return session().remember(detail::Payload::form(detail::to_maxima(form)));
-}
-
-void Kernel::forget(std::uint64_t handle) {
-    session().forget(handle);
 }
 
 void Kernel::set_timeout(std::chrono::milliseconds timeout) {
