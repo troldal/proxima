@@ -1888,6 +1888,25 @@ to the kernel. That is where the work is.
   *Outcome:* updated in `f34d8db`, and again in `f220f71` now that §9.6 is
   done.
 
+- [x] **`src/core` held five subsystems, only one of them core.** The
+  expression model (`expr.cpp`, `node.hpp`, the normaliser, `Integer`) sat
+  beside the offline parser, the renderers, `std::format` support and numeric
+  evaluation, which include nothing but public headers: clients of the model,
+  not part of it. `tex.cpp` says as much, written "the way a user of this
+  library would write one".
+
+  *Outcome:* one folder per subsystem, matching ARCH.md: `src/expr` (the
+  model, traversal, `Assumptions`), `src/parse`, `src/render`,
+  `src/numeric`; `kernel`, `wire`, `transport` and `util` unchanged, with
+  `ops.cpp` staying in `kernel/` as thin wrappers over `Kernel::ask`. The
+  public headers stay flat. The local side includes nothing from the kernel
+  side, and CI's format job now checks that. Entries above this one name
+  files by their `src/core` paths, as they were when written. Still open, and
+  an API change: `Expr::str()` and `Expr::parse` are members of `Expr`
+  defined in `render/` and `parse/`, and `expr/` calls `str()` in error
+  messages, so `expr/` could not become a library of its own without making
+  them free functions.
+
 ### 9.6 A functional shape for the API, with FXT as the model
 
 What is already functional, and should be said so in the documentation as the

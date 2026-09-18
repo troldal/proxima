@@ -81,7 +81,7 @@ concept HandlesEveryKind = std::invocable<Visitor &, const node::Integer &>
                            && std::invocable<Visitor &, const node::Opaque &>;
 
 /// Wraps a finished node in an Expr. The single point at which the shared
-/// representation enters the value type, so nothing outside src/core can build
+/// representation enters the value type, so nothing outside src/expr can build
 /// one directly.
 Expr make_expr(std::shared_ptr<const Node> node);
 

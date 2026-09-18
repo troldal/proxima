@@ -23,7 +23,7 @@ namespace proxima {
 /// is set as that letter.
 ///
 /// Written as an ordinary user of proxima/render.hpp, like to_tex(); see
-/// src/core/mathml.cpp.
+/// src/render/mathml.cpp.
 std::string to_mathml(const Expr &expr);
 
 } // namespace proxima

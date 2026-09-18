@@ -1,8 +1,8 @@
-#include "core/node.hpp"
+#include "expr/node.hpp"
 
 #include <proxima/symbol.hpp>
 
-#include "core/normalize.hpp"
+#include "expr/normalize.hpp"
 
 #include <proxima/errors.hpp>
 

@@ -3,7 +3,7 @@
 
 #include <doctest/doctest.h>
 
-#include "core/normalize.hpp"
+#include "expr/normalize.hpp"
 
 #include <proxima/expr.hpp>
 #include <proxima/functions.hpp>

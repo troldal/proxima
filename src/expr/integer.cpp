@@ -1,7 +1,7 @@
 #include <proxima/errors.hpp>
 #include <proxima/integer.hpp>
 
-#include "core/big_int.hpp"
+#include "expr/big_int.hpp"
 
 #include <algorithm>
 #include <limits>

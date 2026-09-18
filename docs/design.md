@@ -414,7 +414,7 @@ usable before the normaliser exists. Everything else is step 10.
 
 ### Step 9. Translation, both directions
 
-The outbound half already existed: `Expr::str()` (`src/core/printer.cpp`) emits
+The outbound half already existed: `Expr::str()` (`src/render/printer.cpp`) emits
 Maxima infix, and step 8 validated it against live Maxima on cases where
 dropping a parenthesis still parses but changes the value. Step 9 is the inbound
 half, `src/wire/from_maxima.cpp`.
@@ -1245,7 +1245,7 @@ TeX. So the extension point is not "walk the tree" — that was always possible
 and was never the hard part — but "receive the presentation decisions already
 made".
 
-Three layers, in `include/proxima/render.hpp` and `src/core/render.cpp`:
+Three layers, in `include/proxima/render.hpp` and `src/render/render.cpp`:
 
 1. **Presentation.** `Expr` becomes a display tree: a leading negative constant
    moves so `x - 1` does not read `-1 + x`; a product splits above and below the

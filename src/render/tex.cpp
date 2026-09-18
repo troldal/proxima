@@ -13,7 +13,7 @@
 // plain struct with the operations proxima/render.hpp asks for, inheriting nothing
 // and knowing nothing about the library's internals.
 //
-// Worth reading beside src/core/printer.cpp. The two produce entirely
+// Worth reading beside src/render/printer.cpp. The two produce entirely
 // different notation from the same walk, and the only structural differences
 // between them are the two queries at the bottom — `\frac{}{}` and `\sqrt{}`
 // carry their own braces, so TeX needs brackets in places infix text does not,

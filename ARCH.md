@@ -23,13 +23,13 @@ child process, and brings the answer back as an expression.
  |  (sin, pi, ...), traversal, result,  |  |  taylor factor is parse ...  |
  |  Assumptions                         |  |  build a form, ask, read it  |
  +--------------------------------------+  +------------------------------+
- | LOCAL SERVICES          src/core/    |  | KERNEL           kernel.hpp  |
- |  parser    Expr::parse, offline      |  |  ask(query, assumptions)     |
- |  render    infix, TeX, MathML, yours |  |  tell(statement)             |
- |  numeric   eval_numeric, compile     |  |  Env: which kernel, and      |
- |  format    operator<<, std::format   |  |  under which assumptions     |
+ | LOCAL SERVICES          src/*/       |  | KERNEL           kernel.hpp  |
+ |  parse/    Expr::parse, offline      |  |  ask(query, assumptions)     |
+ |  render/   infix, TeX, MathML, yours |  |  tell(statement)             |
+ |           operator<<, std::format    |  |  Env: which kernel, and      |
+ |  numeric/  eval_numeric, compile     |  |  under which assumptions     |
  +--------------------------------------+  +------------------------------+
- | CORE                    src/core/    |  | SESSION         src/kernel/  |
+ | CORE                    src/expr/    |  | SESSION         src/kernel/  |
  |  immutable node tree                 |  |  reply caches, memory + disk |
  |  normaliser: one canonical form      |  |  a Maxima context per        |
  |  Integer: int64, or a big integer    |  |  assumption set; protocol;   |
@@ -225,8 +225,11 @@ makes hashing and comparison cheap.
 
 ```
  include/proxima/   the public API: everything a user includes
- src/core/          expressions, the normaliser, Integer, the offline parser,
-                    rendering, numeric evaluation, traversal
+ src/expr/          the expression model: Expr, the normaliser, Integer,
+                    traversal, Assumptions
+ src/parse/         the offline parser, Expr::parse
+ src/render/        the rendering walk; infix, TeX, MathML; std::format
+ src/numeric/       eval_numeric, compile
  src/kernel/        Kernel, the operations, the session, caches, discovery
  src/wire/          s-expression reader, and the Expr <-> Maxima mapping
  src/transport/     ITransport, the child process, the scripted fake

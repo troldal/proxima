@@ -118,19 +118,22 @@ target_include_directories(fxt SYSTEM INTERFACE
 target_compile_features(fxt INTERFACE cxx_std_23)
 add_library(fxt::fxt ALIAS fxt)
 
+# One folder per subsystem; ARCH.md draws how they stack. expr, parse, render
+# and numeric are the local side and include nothing from kernel, wire or
+# transport, which CI checks.
 add_library(proxima
-        src/core/assumptions.cpp
-        src/core/expr.cpp
-        src/core/format.cpp
-        src/core/integer.cpp
-        src/core/normalize.cpp
-        src/core/numeric.cpp
-        src/core/parser.cpp
-        src/core/printer.cpp
-        src/core/render.cpp
-        src/core/tex.cpp
-        src/core/traverse.cpp
-        src/core/mathml.cpp
+        src/expr/assumptions.cpp
+        src/expr/expr.cpp
+        src/expr/integer.cpp
+        src/expr/normalize.cpp
+        src/expr/traverse.cpp
+        src/parse/parser.cpp
+        src/render/format.cpp
+        src/render/mathml.cpp
+        src/render/printer.cpp
+        src/render/render.cpp
+        src/render/tex.cpp
+        src/numeric/numeric.cpp
         src/kernel/cache.cpp
         src/kernel/discovery.cpp
         src/kernel/persistent_cache.cpp
@@ -154,8 +157,8 @@ add_library(proxima
 target_link_libraries(proxima PUBLIC $<BUILD_INTERFACE:fxt::fxt>)
 
 # PRIVATE, and only while building: multiprecision is header-only, and only
-# src/core/integer.cpp and the normaliser include it, through
-# src/core/big_int.hpp. proxima::Integer names its large-value type without
+# src/expr/integer.cpp and the normaliser include it, through
+# src/expr/big_int.hpp. proxima::Integer names its large-value type without
 # defining it, so no public header needs Boost. BUILD_INTERFACE keeps the
 # target out of the exported link interface, so an installed Proxima does not
 # ask its consumers for it. It used to be PUBLIC, and cost every consumer

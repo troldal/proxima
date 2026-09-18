@@ -236,7 +236,7 @@ namespace detail {
 ///
 /// In a public header because the walk below is a template on the renderer's
 /// output type and so has to be visible — the same reason detail::Instruction
-/// is in proxima/numeric.hpp. Nothing outside src/core builds one.
+/// is in proxima/numeric.hpp. Nothing outside src/render builds one.
 enum class DisplayKind {
     Integer,
     Real,

@@ -251,7 +251,7 @@ Because `result<T>` is FXT's `expected`, FXT's adaptors work on it directly:
         <|------ MathMLRenderer    ==> std::string    to_mathml(), {:mathml}
         <|------ your own          ==> any T (a 2-D text box, say)
 
- The three built in are internal (src/core/); what they offer publicly is
+ The three built in are internal (src/render/); what they offer publicly is
  the function or format spec on the right.
 
  Renderer<T>   holds any one RendererFor<R, T> as a single type

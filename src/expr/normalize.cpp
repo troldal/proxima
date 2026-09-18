@@ -1,6 +1,6 @@
-#include "core/normalize.hpp"
+#include "expr/normalize.hpp"
 
-#include "core/big_int.hpp"
+#include "expr/big_int.hpp"
 
 #include <proxima/errors.hpp>
 

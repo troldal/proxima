@@ -8,7 +8,7 @@
 #   windows   MSVC, the Maxima-free suite, warnings as errors.
 #   tidy      clang-tidy over the library, as .clang-tidy configures it.
 #   format    every C++ file as .clang-format has it, with the version the
-#             tree was formatted with.
+#             tree was formatted with; and the layering ARCH.md describes.
 #   fuzz      the two hand-written parsers under libFuzzer, briefly.
 #
 # Clang is 19 rather than Ubuntu 24.04's default 18: clang 18 cannot use
@@ -155,6 +155,17 @@ jobs:
 
       - name: Check formatting
         run: git ls-files '*.cpp' '*.hpp' | xargs clang-format --dry-run --Werror
+
+      # The local side (expr, parse, render, numeric) works with no Maxima, so
+      # it includes nothing from the kernel side: not kernel/, wire/ or
+      # transport/, nor the kernel's public headers.
+      - name: Check layering
+        run: |
+          if grep -rnE '#include ["<]((kernel|wire|transport)/|proxima/(kernel|ops|config)\.hpp)' \
+               src/expr src/parse src/render src/numeric; then
+            echo "the local side includes kernel-side code"
+            exit 1
+          fi
 
   fuzz:
     runs-on: ubuntu-24.04
