@@ -146,7 +146,7 @@ Work since, and what it turned up that the review had not found:
 Suite: 322 cases / 4734 assertions on Windows (GCC and clang-cl), 323 / 4732 on
 Linux (222 when the review was written).
 
-Every section is closed except §7's CI item, which is left for later.
+Every section is closed; §7's CI item was done with §9.5.
 
 A second full review, made after the rename to Proxima, is §9 at the end of
 this file. It is where the open work now is. §9.1 is done except the two
@@ -1036,12 +1036,14 @@ candidates, most valuable first.
   `uint64_t`, `unsigned long` there, raises. All four compilers now build it
   with no warning in this project's code.
 
-- [ ] **No CI.** Three toolchains were verified by hand for the Boost
+- [x] **No CI.** Three toolchains were verified by hand for the Boost
   change (GCC/Windows, clang-cl/Windows, GCC/Linux). A GitHub Actions
   matrix running `ctest -LE maxima` (no Maxima needed) on all three, plus
   one job with Maxima installed for the integration suite, would make
   that automatic. The LP64 `long long` ambiguity that only Linux caught is
   the argument.
+
+  *Outcome:* `.github/workflows/ci.yml`, in `816a9cc`; see §9.5.
 
 - [x] **No `.clang-format` / `.clang-tidy`.** The code is consistently
   styled, which means a format file already exists in someone's head;
@@ -1767,7 +1769,7 @@ to the kernel. That is where the work is.
   throughout this work — GCC and clang-cl on Windows, MSVC, GCC on Linux,
   `clang-tidy`, the fuzz corpora — is exactly the matrix to automate.
 
-  *Outcome:* `.github/workflows/ci.yml` in COMMIT, four jobs on every push
+  *Outcome:* `.github/workflows/ci.yml` in `816a9cc`, four jobs on every push
   and pull request: Linux with GCC 13 — the oldest compiler supported — and
   Maxima from the distribution, running the whole suite with warnings as
   errors; Windows with MSVC, running the Maxima-free suite, likewise; a
