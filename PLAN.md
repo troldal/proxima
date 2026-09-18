@@ -915,7 +915,13 @@ parser printed.
 
 ### Genuinely undecided
 
-Nothing outstanding.
+The rest of TODO §9.6 — pipe adaptors for every operation (item 3), `match`
+over expressions with optional accessors (4), assumptions as immutable
+values in place of the RAII `Context` (5), queries and statements as types
+in place of the `eval` verbs (6), traversal as folds and ranges (7) — is
+decided in direction and not in detail. Decided and built: the result type
+is FXT's (`fxt::result<T>` with a `proxima::Cause` as context; §9.6 items 1,
+2, 10 and 11), names are snake_case, and Boost is out of the public headers.
 
 ### The persistent cache, and what its key has to contain
 
