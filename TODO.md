@@ -1607,7 +1607,7 @@ to the kernel. That is where the work is.
   throughout this work — GCC and clang-cl on Windows, MSVC, GCC on Linux,
   `clang-tidy`, the fuzz corpora — is exactly the matrix to automate.
 
-- [ ] **Property tests for the invariants the design rests on.** Every
+- [x] **Property tests for the invariants the design rests on.** Every
   guarantee below is asserted on hand-picked cases and none on generated
   ones: normalisation is idempotent (`Expr::add(e.args()) == e` for every
   `Add`); `a == b` ⇔ `canonical_order(a, b) == 0` ⇔ `a.hash() == b.hash()`;
@@ -1617,9 +1617,29 @@ to the kernel. That is where the work is.
   checked over random trees. A generator over `Kind` with a size bound, and
   a few hundred trees per run.
 
-- [ ] **Every `Feature` against a live kernel** — the test that would have
+  *Outcome:* done in `301b59e`, `tests/test_properties.cpp`: all five of
+  these and three more — `contains` agrees with a search of the tree,
+  replacing a symbol by itself changes nothing, and every renderer accepts
+  every tree. One correction to the statement above: equal hashes do not
+  imply equality, so the check is `a == b` ⇔ `canonical_order(a, b) == 0`,
+  and `a == b` ⇒ equal hashes. Idempotence is checked on every node kind,
+  not only `Add`, by rebuilding the whole tree from its parts. No library
+  code needed changing: 20,000 trees per property on three random seeds
+  found nothing. That is only worth something if the properties can fail,
+  so three deliberate bugs were made and reverted in turn, and each was
+  caught by exactly the property aimed at it. One of them — an ordering that
+  trusts doubles, the §1 bug — is only reachable with integers that round to
+  the same double, so the generator draws neighbours of 2^53, 2^64 and
+  2^100 on purpose, and a further test pins the generator's reach so the
+  properties cannot quietly become vacuous. 400 trees by default (0.2 s);
+  `PROXIMA_PROPERTY_CASES` and `PROXIMA_PROPERTY_SEED` widen a run.
+
+- [x] **Every `Feature` against a live kernel** — the test that would have
   caught `Prime`. And once the user directory is fixed, a test that the
   default is private.
+
+  *Outcome:* both done with the §9.1 fixes: "Maxima accepts every Feature"
+  in `3292b45`, and the private-directory tests in `fb16850`.
 
 - [ ] **The render vtable serves no use the code has.** `Renderer<T>` is 300
   lines of hand-written vtable and small-buffer storage so that one type can
