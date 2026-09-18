@@ -269,8 +269,14 @@ TEST_CASE("!! is the double factorial, not a factorial taken twice") {
     SUBCASE("and binding as tightly as !") {
         CHECK(*Expr::parse("x^2!!") == pow(x, dfact(Expr(2))));
     }
-    SUBCASE("printed as the function name Maxima reads back") {
-        CHECK(Expr::parse("x!!")->str() == "double_factorial(x)");
+    SUBCASE("printed postfix, as they are read, with the space two need") {
+        CHECK(Expr::parse("x!!")->str() == "x!!");
+        CHECK(fact(fact(x)).str() == "x! !");
+        CHECK(dfact(fact(x)).str() == "x! !!");
+        CHECK(fact(dfact(x)).str() == "x!! !");
+        for (const Expr &e : {fact(fact(x)), dfact(fact(x)), fact(dfact(x))}) {
+            CHECK(*Expr::parse(e.str()) == e);
+        }
     }
 }
 
@@ -342,10 +348,9 @@ TEST_CASE("text nested too deep is refused, not a stack overflow") {
     }
 }
 
-TEST_CASE("a chain of factorials is counted as the nesting it prints as") {
+TEST_CASE("a chain of factorials is counted as the nesting it builds") {
     // Found by fuzzing: postfix operators were read in a loop, with no depth
-    // counted, but print as nested calls. `x!!!…` parsed at any length and
-    // printed text too deep to read back, and a few thousand long it
+    // counted. `x!!!…` parsed at any length, and a few thousand long it
     // overflowed the stack while printing.
     const auto chain
         = [](std::size_t bangs) { return "x" + std::string(bangs, '!'); };
@@ -356,6 +361,20 @@ TEST_CASE("a chain of factorials is counted as the nesting it prints as") {
         const auto again = Expr::parse(parsed->str());
         REQUIRE(again.has_value());
         CHECK(*again == *parsed);
+    }
+    SUBCASE("and deep inside other nesting, as the fuzzer found next") {
+        // Printed as calls, a chain here parsed and then could not be read
+        // back under AddressSanitizer, whose frames grow deep in a recursion.
+        std::string text;
+        for (int i = 0; i < 260; ++i) {
+            text += "x^";
+        }
+        text += "x" + std::string(34, '!');
+        if (const auto parsed = Expr::parse(text)) {
+            const auto again = Expr::parse(parsed->str());
+            REQUIRE(again.has_value());
+            CHECK(*again == *parsed);
+        }
     }
     SUBCASE("a longer one is refused as too deep, not a crash") {
         CHECK(refused(chain(300), "nested too deep"));

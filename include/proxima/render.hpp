@@ -42,6 +42,9 @@ enum class Construct {
     Power,
     Root,
     Call,
+    /// `x!` and `x!!`: factorial and double factorial, for a renderer with a
+    /// postfix notation. One without is handed them as calls.
+    Postfix,
     List,
     Relation,
 };
@@ -64,6 +67,8 @@ enum class Slot {
     Radicand,
     Argument,
     RelationSide,
+    /// The operand of a postfix operator: `(x^2)!`, but `x!` and `f(x)!`.
+    PostfixOperand,
 };
 
 /// Binding strength for an infix notation with no delimiters of its own. The
@@ -86,10 +91,12 @@ constexpr Strength default_strength(Construct construct) {
     case Construct::Root:
     case Construct::Call:
     case Construct::List:
+    case Construct::Postfix:
         break;
     }
     // Root, Call and List carry their own delimiters; the leaves are atoms
-    // outright.
+    // outright. A postfix operator binds tighter than anything else, `^`
+    // included: `x!^2` is `(x!)^2` and `2^x!` is `2^(x!)`.
     return Strength::Atom;
 }
 
@@ -111,6 +118,9 @@ constexpr Strength default_context(Slot slot) {
         return Strength::PowerBase;
     case Slot::RelationSide:
         return Strength::Sum;
+    case Slot::PostfixOperand:
+        // Nothing but an atom goes under a postfix operator ungrouped.
+        return Strength::Atom;
     case Slot::Radicand:
     case Slot::Argument:
         break;
@@ -194,6 +204,13 @@ concept RendersNegation = requires(R &r, const T &a) {
     { r.negate(a) } -> std::same_as<T>;
 };
 
+/// `x!` and `x!!`, given the rendered operand and the operator. A renderer
+/// without it has factorials rendered as the calls they are, `factorial(x)`.
+template <typename R, typename T>
+concept RendersPostfix = requires(R &r, const T &a) {
+    { r.postfix(a, std::string_view{}) } -> std::same_as<T>;
+};
+
 template <typename R>
 concept DeclaresStrength = requires(R &r) {
     { r.strength_of(Construct::Sum) } -> std::same_as<Strength>;
@@ -251,6 +268,8 @@ enum class DisplayKind {
     List,
     Relation,
     Negate,
+    /// A factorial or double factorial; `text` is the function's name.
+    Postfix,
 };
 
 struct DisplayNode {
@@ -290,6 +309,8 @@ constexpr Construct construct_of(DisplayKind kind) {
         return Construct::Root;
     case DisplayKind::Call:
         return Construct::Call;
+    case DisplayKind::Postfix:
+        return Construct::Postfix;
     case DisplayKind::List:
         return Construct::List;
     case DisplayKind::Relation:
@@ -328,6 +349,16 @@ struct Resolved {
                   "parenthesise");
 
     R &renderer;
+
+    T postfix(const T &operand, std::string_view op) {
+        if constexpr (RendersPostfix<R, T>) {
+            return renderer.postfix(operand, op);
+        } else {
+            static_cast<void>(operand);
+            static_cast<void>(op);
+            return renderer.verbatim(std::string_view{}); // Unreachable.
+        }
+    }
 
     T root(const T &radicand, unsigned index) {
         if constexpr (RendersRoot<R, T>) {
@@ -403,6 +434,20 @@ inline DisplayNode root_as_power(const DisplayNode &root) {
     return power;
 }
 
+/// A postfix node as the call it stands for, for a renderer with no postfix
+/// notation: `factorial(x)`, with its operand grouped as an argument rather
+/// than as an operand.
+inline DisplayNode postfix_as_call(const DisplayNode &postfix) {
+    DisplayNode call = postfix;
+    call.kind = DisplayKind::Call;
+    return call;
+}
+
+/// The operator a postfix node is written with.
+inline std::string_view postfix_operator(const DisplayNode &postfix) {
+    return postfix.text == "double_factorial" ? "!!" : "!";
+}
+
 /// Layer two: the walk, with grouping applied. A template on the concrete
 /// renderer, so every operation is a direct call the compiler can inline.
 ///
@@ -417,6 +462,11 @@ T render_node(const DisplayNode &node, Strength context, Resolved<R, T> &resolve
     if constexpr (!RendersRoot<R, T>) {
         if (node.kind == DisplayKind::Root) {
             return render_node(root_as_power(node), context, resolved);
+        }
+    }
+    if constexpr (!RendersPostfix<R, T>) {
+        if (node.kind == DisplayKind::Postfix) {
+            return render_node(postfix_as_call(node), context, resolved);
         }
     }
 
@@ -474,6 +524,10 @@ T render_node(const DisplayNode &node, Strength context, Resolved<R, T> &resolve
         case DisplayKind::Root:
             return resolved.root(child(node.children[0], Slot::Radicand),
                                  node.index);
+
+        case DisplayKind::Postfix:
+            return resolved.postfix(child(node.children[0], Slot::PostfixOperand),
+                                    postfix_operator(node));
 
         case DisplayKind::Call: {
             const std::vector<T> args = children(Slot::Argument);

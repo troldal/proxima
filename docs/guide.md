@@ -159,7 +159,8 @@ owes this library no base class. Conformance is a concept, and `render` walks yo
 directly; `proxima::Renderer<T>` erases it, for when one value must hold any of
 them. Supply `integer`, `real`,
 `symbol`, `verbatim`, `sum`, `product`, `fraction`, `power`, `call`, `relation`
-and `group`; `root`, `list` and `negate` are synthesised from those if you omit
+and `group`; `root`, `list`, `negate` and `postfix` (for `x!`, which is
+otherwise a call) are synthesised from those if you omit
 them. Pass `std::ref(yours)` instead of the object to keep a renderer that
 accumulates state.
 

@@ -273,6 +273,15 @@ Signed signed_display(const Expr &expr) {
             result.node = compound(DisplayKind::List, std::move(args));
             return result;
         }
+        // Written `x!` and `x!!` by a renderer that has the notation, and
+        // Expr::parse reads it: the infix printer uses it so that a factorial
+        // prints in the shape it is parsed from.
+        if ((expr.name() == "factorial" || expr.name() == "double_factorial")
+            && args.size() == 1) {
+            result.node = compound(DisplayKind::Postfix, std::move(args));
+            result.node.text = expr.name();
+            return result;
+        }
         result.node = compound(DisplayKind::Call, std::move(args));
         result.node.text = expr.name();
         return result;

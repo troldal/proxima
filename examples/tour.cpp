@@ -221,7 +221,8 @@ void parsing_offline() {
     show("Expr::parse(\"-x^2\")", negated);
     show("  is it -(x^2)?", negated == -pow(x, 2) ? "true" : "false");
 
-    // It parses; it does not evaluate. 5! stays factorial(5). proxima::parse, in
+    // It parses; it does not evaluate. 5! stays 5!, a factorial not yet taken,
+    // and prints as it was written. proxima::parse, in
     // part two, hands text to Maxima's own parser instead, which evaluates
     // as it reads and accepts everything Maxima does.
     show("Expr::parse(\"5!\")", *proxima::Expr::parse("5!"));

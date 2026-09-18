@@ -1803,6 +1803,19 @@ to the kernel. That is where the work is.
   limit and the stack budget, with the operand's height included; the input
   is in the corpus as `found-postfix-chain`.
 
+  It found the same gap again two runs later, deeper: a chain inside a long
+  power chain parsed, and its printed form, a nest of calls, could not be
+  read back. The charge per level was a guess at the stack a printed call
+  costs, and AddressSanitizer's frames grow from about 1 KB to 4 KB deep in
+  a recursion, so no fixed guess holds. The cause was the asymmetry itself:
+  the parser reads `x!` in a loop and the printer wrote `factorial(x)`, which
+  is read by recursion. The printer now writes factorials postfix — `x!`,
+  `x!!`, `x! !` for two, `(x^2)!` grouped — so what it prints is read the
+  way the original was. The display layer gained a postfix construct for
+  it; a renderer without one (TeX, MathML, a user's) gets the call, as
+  before. Swept under AddressSanitizer, with and without its fake stack:
+  every chain the parser accepts at every depth reads back.
+
 - [x] **Property tests for the invariants the design rests on.** Every
   guarantee below is asserted on hand-picked cases and none on generated
   ones: normalisation is idempotent (`Expr::add(e.args()) == e` for every

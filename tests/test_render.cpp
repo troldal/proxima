@@ -507,6 +507,37 @@ TEST_CASE("a renderer can be held by reference and read afterwards") {
     }
 }
 
+TEST_CASE("factorials print postfix, grouped only where they must be") {
+    const Symbol x("x");
+    const auto fact = [](const Expr &e) { return Expr::function("factorial", {e}); };
+    const auto dfact
+        = [](const Expr &e) { return Expr::function("double_factorial", {e}); };
+
+    CHECK(fact(Expr(5)).str() == "5!");
+    CHECK(dfact(Expr(x)).str() == "x!!");
+    CHECK(fact(Expr::function("f", {Expr(x)})).str() == "f(x)!");
+    // Anything but an atom is grouped under the operator.
+    CHECK(fact(pow(x, 2)).str() == "(x^2)!");
+    CHECK(fact(Expr(x) + 1).str() == "(1 + x)!");
+    CHECK(fact(-Expr(x)).str() == "(-x)!");
+    CHECK(fact(Expr(-3)).str() == "(-3)!");
+    // And it binds tighter than `^` on either side, and than a minus.
+    CHECK(pow(fact(Expr(x)), 2).str() == "x!^2");
+    CHECK(pow(Expr(2), fact(Expr(x))).str() == "2^x!");
+    CHECK((-fact(Expr(x))).str() == "-x!");
+
+    for (const Expr &e : {fact(pow(x, 2)), fact(Expr(-3)), pow(fact(Expr(x)), 2),
+                          pow(Expr(2), fact(Expr(x))), -fact(Expr(x))}) {
+        CHECK(*Expr::parse(e.str()) == e);
+    }
+
+    SUBCASE("a renderer without a postfix notation gets the call") {
+        CHECK(proxima::to_tex(fact(pow(x, 2))).find("factorial")
+              != std::string::npos);
+        CHECK(proxima::to_tex(fact(pow(x, 2))).find("!") == std::string::npos);
+    }
+}
+
 TEST_CASE("the erased renderer is a movable value") {
     struct Trivial {
         std::string integer(const proxima::Integer &v) { return v.to_string(); }

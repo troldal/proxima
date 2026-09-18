@@ -53,6 +53,11 @@ std::string joined(std::span<const std::string> parts, std::string_view separato
 
 /// Maxima-compatible infix.
 ///
+/// Factorials are postfix, `x!` and `x!!`, as Expr::parse reads them. Not
+/// `factorial(x)`: the parser reads a postfix operator in a loop but a call by
+/// recursion, and near its depth limit text printed as calls could not be
+/// read back although the text it came from could. Found by fuzzing.
+///
 /// Note what is *absent*: no `root()`. The default synthesises one as
 /// `base^(1/n)`, which is what both Maxima and Expr::parse understand — there
 /// is no sqrt node in either, so emitting `sqrt(x)` here would print something
@@ -108,6 +113,12 @@ struct InfixRenderer {
 
     std::string relation(RelOp op, const std::string &lhs, const std::string &rhs) {
         return lhs + " " + std::string(symbol_for(op)) + " " + rhs;
+    }
+
+    std::string postfix(const std::string &operand, std::string_view op) {
+        // `x! !`, not `x!!`: the lexer reads `!!` greedily, as Maxima's does,
+        // so two factorials need the space between them.
+        return operand + (operand.ends_with('!') ? " " : "") + std::string(op);
     }
 
     std::string group(const std::string &inner) { return "(" + inner + ")"; }

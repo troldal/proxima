@@ -302,13 +302,14 @@ constexpr std::size_t kMaxParseDepth = 1000;
 /// by not doing it.
 constexpr std::uintptr_t kParseStackBudget = std::uintptr_t{256} * 1024;
 
-/// The stack charged for each level a postfix operator's printed form needs.
+/// The stack charged for each level of nesting a postfix operator adds.
 ///
-/// The printer writes `x!` as `factorial(x)`, and reading that back recurses
-/// once per call; parsing `x!` did not recurse at all. Measured, a nested
-/// call costs about 1.5 KB of stack in an MSVC Debug build, the most of any
-/// build, and under 1 KB in GCC's Debug builds and under AddressSanitizer.
-constexpr std::uintptr_t kStackPerPrintedLevel = std::uintptr_t{2} * 1024;
+/// Parsing `x!` does not recurse, but everything that later walks the tree
+/// does — printing, rendering, comparing, destroying — once per level. So a
+/// postfix level is charged as a recursive one would be. 2 KB is above what
+/// a level of this parser costs in any build measured but AddressSanitizer
+/// deep in its recursion, where it reaches 4 KB.
+constexpr std::uintptr_t kStackPerPostfixLevel = std::uintptr_t{2} * 1024;
 
 /// How many levels deep `expr` is, 1 for a leaf. Walked with a stack of its
 /// own rather than by recursion.
@@ -427,12 +428,11 @@ private:
     ///
     /// `!` and `!!` nest the tree a level each, like a call, but are read in
     /// expression()'s loop rather than by recursing, so nothing else counts
-    /// them. Their printed form is a call, and a reparse reads it by
-    /// recursion: `depth_` levels in, as this is, and then one level per
-    /// node of the operand and its operators. So they are counted here
-    /// against the same limits. Found by fuzzing: `x!!!…` parsed at any
-    /// length, and printed as text too deeply nested to read back — a few
-    /// thousand long, it overflowed the stack printing.
+    /// them: `depth_` levels in, as this is, and then one level per node of
+    /// the operand and its operators. So they are counted here against the
+    /// same limits. Found by fuzzing: `x!!!…` parsed at any length, and a few
+    /// thousand long overflowed the stack printing. The printer writes them
+    /// back as postfix, so the text it prints is counted the same way.
     std::size_t postfix_level(const Expr &operand, std::size_t known_height) {
         const std::size_t levels
             = (known_height == 0 ? height(operand) : known_height) + 1;
@@ -440,7 +440,7 @@ private:
         const std::uintptr_t used
             = here < stack_base_ ? stack_base_ - here : here - stack_base_;
         if (depth_ + levels > kMaxParseDepth
-            || used + levels * kStackPerPrintedLevel > kParseStackBudget) {
+            || used + levels * kStackPerPostfixLevel > kParseStackBudget) {
             throw ParseError("expression nested too deep at offset "
                              + std::to_string(current_.at));
         }
