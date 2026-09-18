@@ -1666,7 +1666,7 @@ to the kernel. That is where the work is.
   past it. Move the history into `docs/decisions/`, one file per decision in
   ADR style, and cut the README to the first two hundred lines. Process item.
 
-  *Outcome:* in COMMIT, the middle way its author chose. The README is 152
+  *Outcome:* in `33ba116`, the middle way its author chose. The README is 152
   lines: what Proxima is, the first example, a one-screen summary of what it
   does, requirements, building, installing, and where to read more. Its
   reference sections moved unchanged to `docs/guide.md`, whose examples the
