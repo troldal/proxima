@@ -24,7 +24,8 @@ namespace {
 /// `saying`. A refusal is a value, not an exception.
 bool refused(std::string_view source, std::string_view saying = {}) {
     const auto parsed = Expr::parse(source);
-    return !parsed.has_value() && proxima::cause_of(parsed.error()) == proxima::Cause::Parse
+    return !parsed.has_value()
+           && proxima::cause_of(parsed.error()) == proxima::Cause::Parse
            && parsed.error().message().find(saying) != std::string::npos;
 }
 
@@ -96,7 +97,10 @@ TEST_CASE("a long sum or product is built once, not once per operator") {
         terms.push_back(term);
         negated.push_back(i % 2 == 0 ? term : -term);
         sum += (i ? " + x" : "x") + std::to_string(i);
-        alternating += (i == 0 ? "x" : i % 2 == 0 ? " + x" : " - x") + std::to_string(i);
+        alternating += (i == 0       ? "x"
+                        : i % 2 == 0 ? " + x"
+                                     : " - x")
+                       + std::to_string(i);
         product += (i ? " * x" : "x") + std::to_string(i);
     }
     CHECK(*Expr::parse(sum) == Expr::add(terms));
@@ -111,7 +115,8 @@ TEST_CASE("runs of operators mean what chained operators mean") {
     const Symbol d("d");
     CHECK(*Expr::parse("a - b + c - d") == Expr(a) - b + c - d);
     CHECK(*Expr::parse("a / b * c / d") == Expr(a) / b * c / d);
-    CHECK(*Expr::parse("a*b + c/d - a^2*b") == Expr(a) * b + Expr(c) / d - pow(Expr(a), 2) * b);
+    CHECK(*Expr::parse("a*b + c/d - a^2*b")
+          == Expr(a) * b + Expr(c) / d - pow(Expr(a), 2) * b);
     CHECK(*Expr::parse("-a - b") == -Expr(a) - b);
     CHECK(*Expr::parse("2/3*a/4") == Expr::rational(1, 6) * a);
     CHECK(*Expr::parse("a/0.5/2") == Expr(a) / Expr(0.5) / Expr(2));
@@ -222,12 +227,14 @@ TEST_CASE("relations") {
         CHECK(*Expr::parse("a = (b = c)") == eq(Expr(a), eq(Expr(b), Expr(c))));
         CHECK(*Expr::parse("f(a < b)")
               == Expr::function("f", {lt(Expr(a), Expr(b))}));
-        CHECK(*Expr::parse("[a = b, b < c]")
-              == Expr::function("list", {eq(Expr(a), Expr(b)), lt(Expr(b), Expr(c))}));
+        CHECK(
+            *Expr::parse("[a = b, b < c]")
+            == Expr::function("list", {eq(Expr(a), Expr(b)), lt(Expr(b), Expr(c))}));
 
         // And print with the parentheses kept, or the printed text would be
         // exactly what is refused above.
-        for (const char *source : {"(a < b) < c", "a = (b = c)", "(a = b) # (b = c)"}) {
+        for (const char *source :
+             {"(a < b) < c", "a = (b = c)", "(a = b) # (b = c)"}) {
             CAPTURE(std::string(source));
             const Expr once = *Expr::parse(source);
             CAPTURE(once.str());
@@ -239,14 +246,14 @@ TEST_CASE("relations") {
 TEST_CASE("postfix factorial") {
     CHECK(*Expr::parse("5!") == Expr::function("factorial", {Expr(5)}));
     // Binds tighter than multiplication.
-    CHECK(*Expr::parse("2*3!")
-          == 2 * Expr::function("factorial", {Expr(3)}));
+    CHECK(*Expr::parse("2*3!") == 2 * Expr::function("factorial", {Expr(3)}));
 }
 
 TEST_CASE("!! is the double factorial, not a factorial taken twice") {
     // Each expectation is what Maxima's own reader produces for the same text.
     const Expr x = Expr::symbol("x");
-    const auto fact = [](Expr e) { return Expr::function("factorial", {std::move(e)}); };
+    const auto fact
+        = [](Expr e) { return Expr::function("factorial", {std::move(e)}); };
     const auto dfact
         = [](Expr e) { return Expr::function("double_factorial", {std::move(e)}); };
 
@@ -303,7 +310,8 @@ TEST_CASE("text nested too deep is refused, not a stack overflow") {
     // Found by fuzzing: 200,000 opening parentheses, unary minuses or a chain
     // of powers each recursed once per level and crashed the process.
     const std::size_t levels = 200'000;
-    const std::string parens = std::string(levels, '(') + "x" + std::string(levels, ')');
+    const std::string parens
+        = std::string(levels, '(') + "x" + std::string(levels, ')');
     const std::string minuses = std::string(levels, '-') + "x";
     std::string powers = "x";
     for (std::size_t i = 0; i < levels; ++i) {
@@ -320,9 +328,10 @@ TEST_CASE("text nested too deep is refused, not a stack overflow") {
         // stack per level that a Release build does, and has a 1 MB stack. A
         // fixed limit of 1000 levels overflowed there before it was reached.
         const std::size_t modest = 100;
-        CHECK_NOTHROW(static_cast<void>(
-            *Expr::parse(std::string(modest, '(') + "x" + std::string(modest, ')'))));
-        CHECK_NOTHROW(static_cast<void>(Expr::parse(std::string(modest, '-') + "x")));
+        CHECK_NOTHROW(static_cast<void>(*Expr::parse(std::string(modest, '(') + "x"
+                                                     + std::string(modest, ')'))));
+        CHECK_NOTHROW(
+            static_cast<void>(Expr::parse(std::string(modest, '-') + "x")));
         // Sums loop rather than recurse, so length is not depth. Longer than
         // the limit, but not much: each + rebuilds the sum so far.
         std::string sum = "x";
@@ -348,15 +357,26 @@ TEST_CASE("every Maxima operator outside the subset is refused") {
     // syntax it does not take — proxima::parse hands such text to Maxima — and each
     // must be refused, not read as something else.
     for (const char *source : {
-             "a: 7", "a :: 7", "f(x) := x^2", "f(x) ::= x",  // assignment, definitions
-             "'x", "''x",                                    // quoting
-             "a . b", "a ^^ 2",                              // non-commutative product, power
-             "a[1]",                                         // subscripts
-             "a and b", "a or b", "not a",                   // logic
-             "if a then b else c", "for i thru 3 do x",      // control flow
-             "x;", "x$",                                     // statement terminators
-             "?print(x)",                                    // a Lisp escape
-             "a ~ b", "a -> b", "a | b",                     // operators Maxima does not have
+             "a: 7",
+             "a :: 7",
+             "f(x) := x^2",
+             "f(x) ::= x", // assignment, definitions
+             "'x",
+             "''x", // quoting
+             "a . b",
+             "a ^^ 2", // non-commutative product, power
+             "a[1]",   // subscripts
+             "a and b",
+             "a or b",
+             "not a", // logic
+             "if a then b else c",
+             "for i thru 3 do x", // control flow
+             "x;",
+             "x$",        // statement terminators
+             "?print(x)", // a Lisp escape
+             "a ~ b",
+             "a -> b",
+             "a | b", // operators Maxima does not have
          }) {
         CAPTURE(std::string(source));
         CHECK(refused(source));
@@ -401,30 +421,12 @@ TEST_CASE("the offline parser agrees with Maxima's own") {
     // an evaluation. So both sides are put through Maxima: its reading of the
     // original text, against its reading of what the offline parser printed.
     for (const char *source : {
-             "x + 1",
-             "2*x*sin(x)",
-             "x^2 - 3*x + 2",
-             "1/3 + 2/5",
-             "(x + 1)^2",
-             "x^2^3",
-             "-x^2",
-             "-3^2",
-             "x**2",
-             "8/4/2",
-             "x - y - 1",
-             "1/2*x",
-             "sin(cos(x))",
-             "f(x, y)",
-             "[1, 2, 3]",
-             "x = 1",
-             "x >= 2*y",
-             "5!",
-             "5!!",
-             "x!!",
-             "x!!!",
-             "x! !",
-             "2*x!!",
-             "1.5*x",
+             "x + 1",       "2*x*sin(x)", "x^2 - 3*x + 2", "1/3 + 2/5",
+             "(x + 1)^2",   "x^2^3",      "-x^2",          "-3^2",
+             "x**2",        "8/4/2",      "x - y - 1",     "1/2*x",
+             "sin(cos(x))", "f(x, y)",    "[1, 2, 3]",     "x = 1",
+             "x >= 2*y",    "5!",         "5!!",           "x!!",
+             "x!!!",        "x! !",       "2*x!!",         "1.5*x",
          }) {
         const std::string text = source;
         CAPTURE(text);

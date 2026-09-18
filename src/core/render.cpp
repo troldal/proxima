@@ -142,8 +142,7 @@ Signed from_product(const std::vector<Expr> &args) {
         result.negated = true;
         const Expr magnitude = magnitude_of(factors.front());
         // A coefficient of exactly -1 is pure sign and leaves nothing behind.
-        if (magnitude.is(Kind::Integer)
-            && magnitude.integer_value() == Integer(1)) {
+        if (magnitude.is(Kind::Integer) && magnitude.integer_value() == Integer(1)) {
             factors.erase(factors.begin());
         } else {
             factors.front() = magnitude;
@@ -217,7 +216,7 @@ Signed signed_display(const Expr &expr) {
     case Kind::Integer:
         result.negated = expr.integer_value().is_negative();
         result.node = integer_node(result.negated ? -expr.integer_value()
-                                                 : expr.integer_value());
+                                                  : expr.integer_value());
         return result;
 
     case Kind::Real:
@@ -233,8 +232,8 @@ Signed signed_display(const Expr &expr) {
     case Kind::Rational: {
         result.negated = expr.numerator().is_negative();
         std::vector<DisplayNode> parts;
-        parts.push_back(integer_node(result.negated ? -expr.numerator()
-                                                   : expr.numerator()));
+        parts.push_back(
+            integer_node(result.negated ? -expr.numerator() : expr.numerator()));
         parts.push_back(integer_node(expr.denominator()));
         result.node = compound(DisplayKind::Fraction, std::move(parts));
         return result;

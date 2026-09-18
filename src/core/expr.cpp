@@ -44,7 +44,8 @@ std::size_t hash_of(const Node &node) {
         // 0.0 == -0.0, so the two must hash alike, and MSVC's std::hash<double>
         // hashes the bit pattern, which differs. (NaN, the other value whose
         // equality and bits disagree, is refused by Expr::real.)
-        hash_combine(seed, std::hash<double>{}(node.real() == 0.0 ? 0.0 : node.real()));
+        hash_combine(seed,
+                     std::hash<double>{}(node.real() == 0.0 ? 0.0 : node.real()));
         break;
     case Kind::Symbol:
     case Kind::Opaque:
@@ -240,11 +241,21 @@ bool Expr::is_negative_number() const {
     }
 }
 
-const Integer &Expr::integer_ref() const { return node_->integer(); }
-const Fraction &Expr::fraction_ref() const { return node_->fraction(); }
-double Expr::real_ref() const { return node_->real(); }
-const std::string &Expr::text_ref() const { return node_->text(); }
-RelOp Expr::relation_ref() const { return node_->rel_op; }
+const Integer &Expr::integer_ref() const {
+    return node_->integer();
+}
+const Fraction &Expr::fraction_ref() const {
+    return node_->fraction();
+}
+double Expr::real_ref() const {
+    return node_->real();
+}
+const std::string &Expr::text_ref() const {
+    return node_->text();
+}
+RelOp Expr::relation_ref() const {
+    return node_->rel_op;
+}
 
 std::optional<Integer> Expr::as_integer() const {
     if (node_->kind != Kind::Integer) {

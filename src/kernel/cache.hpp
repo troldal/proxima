@@ -21,8 +21,8 @@ namespace proxima::detail {
 /// two different callers.
 ///
 /// Holds no opinion about *when* an entry stops being true — see
-/// Kernel::ask, Kernel::tell and Kernel::invalidate_cache for that, which is the part
-/// that has to be right.
+/// Kernel::ask, Kernel::tell and Kernel::invalidate_cache for that, which is the
+/// part that has to be right.
 class ReplyCache {
 public:
     /// Holds at most `capacity` replies occupying at most `byte_limit` bytes

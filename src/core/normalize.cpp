@@ -142,8 +142,8 @@ Expr fold(std::span<const Expr> numbers, bool is_product) {
     if (numbers.size() == 1) {
         const Expr &only = numbers.front();
         const bool negative_zero_in_sum = !is_product && only.is(Kind::Real)
-                                       && only.real_value() == 0.0
-                                       && std::signbit(only.real_value());
+                                          && only.real_value() == 0.0
+                                          && std::signbit(only.real_value());
         if (!negative_zero_in_sum) {
             return only;
         }
@@ -174,15 +174,15 @@ Expr fold(std::span<const Expr> numbers, bool is_product) {
     // Inexactness is contagious, as it is in Maxima: one float makes the whole
     // constant a float.
     if (saw_real) {
-        const double folded = is_product ? inexact * exact.approx()
-                                        : inexact + exact.approx();
+        const double folded
+            = is_product ? inexact * exact.approx() : inexact + exact.approx();
         // No Real operand is infinite, so a result that is not finite is an
         // overflow: 1e308 * 10.0, or an integer of a few hundred digits made a
         // double. It used to become infinity silently; Maxima refuses it too.
         if (!std::isfinite(folded)) {
             throw OverflowError("floating-point overflow: the numbers in this "
-                        + std::string(is_product ? "product" : "sum")
-                        + " do not fit in a double");
+                                + std::string(is_product ? "product" : "sum")
+                                + " do not fit in a double");
         }
         return Expr::real(folded);
     }
@@ -241,7 +241,8 @@ std::vector<Expr> normalize(std::vector<Expr> operands, Kind kind) {
     if (numbers_end != operands.begin()) {
         std::sort(operands.begin(), numbers_end, canonically_before);
         const auto count = static_cast<std::size_t>(numbers_end - operands.begin());
-        Expr constant = fold(std::span<const Expr>(operands.data(), count), is_product);
+        Expr constant
+            = fold(std::span<const Expr>(operands.data(), count), is_product);
         operands.erase(operands.begin(), numbers_end);
 
         if (is_product && is_exact_zero(constant)) {
@@ -303,7 +304,7 @@ int compare_expr(const Expr &lhs, const Expr &rhs) {
         // included — are equal expressions too.
         if (lhs.kind() != rhs.kind()) {
             return static_cast<int>(lhs.kind()) < static_cast<int>(rhs.kind()) ? -1
-                                                                              : 1;
+                                                                               : 1;
         }
         return 0;
     }

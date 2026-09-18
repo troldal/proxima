@@ -1,8 +1,8 @@
 // Every public header, and nothing else, so the checks below see only what a
 // consumer's translation unit would.
 
-#include <proxima/config.hpp>
 #include <proxima/assumptions.hpp>
+#include <proxima/config.hpp>
 #include <proxima/errors.hpp>
 #include <proxima/expr.hpp>
 #include <proxima/functions.hpp>
@@ -11,8 +11,8 @@
 #include <proxima/mathml.hpp>
 #include <proxima/numeric.hpp>
 #include <proxima/ops.hpp>
-#include <proxima/result.hpp>
 #include <proxima/render.hpp>
+#include <proxima/result.hpp>
 #include <proxima/symbol.hpp>
 #include <proxima/tex.hpp>
 #include <proxima/traverse.hpp>

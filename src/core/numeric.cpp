@@ -115,18 +115,18 @@ double minimum_of(const double *args, std::size_t count) {
 }
 
 constexpr Builtin kBuiltins[] = {
-    {"sin", 1, unary<std::sin>},       {"cos", 1, unary<std::cos>},
-    {"tan", 1, unary<std::tan>},       {"asin", 1, unary<std::asin>},
-    {"acos", 1, unary<std::acos>},     {"atan", 1, unary<std::atan>},
-    {"sinh", 1, unary<std::sinh>},     {"cosh", 1, unary<std::cosh>},
-    {"tanh", 1, unary<std::tanh>},     {"asinh", 1, unary<std::asinh>},
-    {"acosh", 1, unary<std::acosh>},   {"atanh", 1, unary<std::atanh>},
-    {"exp", 1, unary<std::exp>},       {"log", 1, unary<std::log>},
-    {"sqrt", 1, unary<std::sqrt>},     {"abs", 1, unary<std::fabs>},
-    {"floor", 1, unary<std::floor>},   {"ceiling", 1, unary<std::ceil>},
-    {"round", 1, round_half_to_even},     {"erf", 1, unary<std::erf>},
-    {"signum", 1, signum_of},           {"atan2", 2, binary<std::atan2>},
-    {"mod", 2, floored_modulo},         {"max", -1, maximum_of},
+    {"sin", 1, unary<std::sin>},      {"cos", 1, unary<std::cos>},
+    {"tan", 1, unary<std::tan>},      {"asin", 1, unary<std::asin>},
+    {"acos", 1, unary<std::acos>},    {"atan", 1, unary<std::atan>},
+    {"sinh", 1, unary<std::sinh>},    {"cosh", 1, unary<std::cosh>},
+    {"tanh", 1, unary<std::tanh>},    {"asinh", 1, unary<std::asinh>},
+    {"acosh", 1, unary<std::acosh>},  {"atanh", 1, unary<std::atanh>},
+    {"exp", 1, unary<std::exp>},      {"log", 1, unary<std::log>},
+    {"sqrt", 1, unary<std::sqrt>},    {"abs", 1, unary<std::fabs>},
+    {"floor", 1, unary<std::floor>},  {"ceiling", 1, unary<std::ceil>},
+    {"round", 1, round_half_to_even}, {"erf", 1, unary<std::erf>},
+    {"signum", 1, signum_of},         {"atan2", 2, binary<std::atan2>},
+    {"mod", 2, floored_modulo},       {"max", -1, maximum_of},
     {"min", -1, minimum_of},
 };
 
@@ -172,8 +172,8 @@ bool named_constant(std::string_view name, double &value) {
 /// which for e of 2 or -1 is an order of magnitude more work than it needs.
 double integer_power(double base, std::int32_t exponent) {
     const bool invert = exponent < 0;
-    auto remaining = static_cast<std::uint32_t>(invert ? -static_cast<std::int64_t>(exponent)
-                                                       : exponent);
+    auto remaining = static_cast<std::uint32_t>(
+        invert ? -static_cast<std::int64_t>(exponent) : exponent);
     double result = 1.0;
     while (remaining != 0) {
         if ((remaining & 1u) != 0) {
@@ -237,7 +237,8 @@ bool walk(const Expr &expr, const Bindings &bindings, double &result,
         if (named_constant(expr.name(), result)) {
             return true;
         }
-        return fail(failure, [&] { return "no value for the symbol " + expr.name(); });
+        return fail(failure,
+                    [&] { return "no value for the symbol " + expr.name(); });
     }
 
     case Kind::Add:
@@ -293,8 +294,9 @@ bool walk(const Expr &expr, const Bindings &bindings, double &result,
     }
 
     case Kind::Relation:
-        return fail(failure,
-                    [&] { return "a relation has no numeric value: " + expr.str(); });
+        return fail(failure, [&] {
+            return "a relation has no numeric value: " + expr.str();
+        });
 
     case Kind::Opaque:
         // Maxima source this library never interpreted, which is exactly why
@@ -332,8 +334,7 @@ class Compiler {
 public:
     Compiler(std::vector<Instruction> &code, std::vector<double> &constants,
              const std::vector<std::string> &variables, const Bindings &bound)
-        : code_(code), constants_(constants), variables_(variables),
-          bound_(bound) {}
+        : code_(code), constants_(constants), variables_(variables), bound_(bound) {}
 
     std::size_t max_depth() const { return max_depth_; }
 
@@ -372,11 +373,11 @@ public:
                 = exponent.is(Kind::Integer) ? exponent.integer_value().to_int64()
                                              : std::nullopt;
             if (small && *small >= -64 && *small <= 64) {
-                append({Instruction::Op::IntegerPower,
-                        static_cast<std::uint32_t>(
-                            static_cast<std::int32_t>(*small)),
-                        1},
-                       1);
+                append(
+                    {Instruction::Op::IntegerPower,
+                     static_cast<std::uint32_t>(static_cast<std::int32_t>(*small)),
+                     1},
+                    1);
                 return;
             }
             emit(exponent);
@@ -395,9 +396,9 @@ public:
                                 + " numerically with " + std::to_string(count)
                                 + " argument(s)");
             }
-            append({Instruction::Op::Call, static_cast<std::uint32_t>(*builtin),
-                    count},
-                   count);
+            append(
+                {Instruction::Op::Call, static_cast<std::uint32_t>(*builtin), count},
+                count);
             return;
         }
 
@@ -433,13 +434,13 @@ private:
 
     void push_constant(double value) {
         // Folded here, so the same literal appearing twice costs one slot.
-        const auto existing
-            = std::find_if(constants_.begin(), constants_.end(),
-                           [value](double constant) { return same_constant(constant, value); });
-        const auto index = existing != constants_.end()
-                               ? static_cast<std::uint32_t>(
-                                     existing - constants_.begin())
-                               : static_cast<std::uint32_t>(constants_.size());
+        const auto existing = std::find_if(
+            constants_.begin(), constants_.end(),
+            [value](double constant) { return same_constant(constant, value); });
+        const auto index
+            = existing != constants_.end()
+                  ? static_cast<std::uint32_t>(existing - constants_.begin())
+                  : static_cast<std::uint32_t>(constants_.size());
         if (existing == constants_.end()) {
             constants_.push_back(value);
         }
@@ -553,8 +554,8 @@ double Compiled::operator()(std::span<const double> values) const {
 
         case Instruction::Op::Call:
             top -= instruction.count;
-            stack[top] = kBuiltins[instruction.index].apply(stack + top,
-                                                            instruction.count);
+            stack[top]
+                = kBuiltins[instruction.index].apply(stack + top, instruction.count);
             ++top;
             break;
         }
@@ -583,7 +584,8 @@ result<Compiled> compile(const Expr &expr, const Symbol &variable,
     return compile(expr, std::span<const Symbol>(variables), constants);
 }
 
-Compiled as_function(const Expr &expr, const Symbol &variable, const Bindings &fixed) {
+Compiled as_function(const Expr &expr, const Symbol &variable,
+                     const Bindings &fixed) {
     return Compiled(expr, variable, fixed);
 }
 

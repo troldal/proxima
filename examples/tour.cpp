@@ -18,18 +18,18 @@
 // The companion examples/demo.cpp is the short version. This is the long one.
 
 #include <proxima/assumptions.hpp> // proxima::Assumptions — facts, as a value
-#include <proxima/errors.hpp>    // proxima::Error and its family
-#include <proxima/expr.hpp>      // proxima::Expr — the expression value type
-#include <proxima/functions.hpp> // sin, cos, exp, sqrt, pi, inf, ...
-#include <proxima/integer.hpp>   // proxima::Integer — exact, unbounded integers
-#include <proxima/kernel.hpp>    // proxima::Kernel — a Maxima session
-#include <proxima/mathml.hpp>    // proxima::to_mathml
-#include <proxima/numeric.hpp>   // eval_numeric, Compiled, as_function
-#include <proxima/ops.hpp>       // diff, integrate, solve, limit, ...
-#include <proxima/render.hpp>    // proxima::render — for renderers of your own
-#include <proxima/symbol.hpp>    // proxima::Symbol — a named unknown
-#include <proxima/tex.hpp>       // proxima::to_tex
-#include <proxima/version.hpp>   // proxima::version
+#include <proxima/errors.hpp>      // proxima::Error and its family
+#include <proxima/expr.hpp>        // proxima::Expr — the expression value type
+#include <proxima/functions.hpp>   // sin, cos, exp, sqrt, pi, inf, ...
+#include <proxima/integer.hpp>     // proxima::Integer — exact, unbounded integers
+#include <proxima/kernel.hpp>      // proxima::Kernel — a Maxima session
+#include <proxima/mathml.hpp>      // proxima::to_mathml
+#include <proxima/numeric.hpp>     // eval_numeric, Compiled, as_function
+#include <proxima/ops.hpp>         // diff, integrate, solve, limit, ...
+#include <proxima/render.hpp>      // proxima::render — for renderers of your own
+#include <proxima/symbol.hpp>      // proxima::Symbol — a named unknown
+#include <proxima/tex.hpp>         // proxima::to_tex
+#include <proxima/version.hpp>     // proxima::version
 
 // Proxima's results are FXT's, so FXT's adaptors apply to them directly.
 #include <fxt/monads/AndThen.hpp>
@@ -76,7 +76,6 @@ std::string joined(const std::vector<proxima::Expr> &items) {
     }
     return out.empty() ? "(none)" : out;
 }
-
 
 // ===========================================================================
 // PART ONE — no Maxima needed
@@ -145,8 +144,8 @@ void symbols_and_expressions() {
     // wrong question, rather than returning something meaningless.
     show("f.kind()", kind_name(f.kind()));
     for (const proxima::Expr &term : f.args()) {
-        show("  term", term.str() + "   (" + std::string(kind_name(term.kind()))
-                           + ")");
+        show("  term",
+             term.str() + "   (" + std::string(kind_name(term.kind())) + ")");
     }
 
     // A function the library has no builder for is still an expression: an
@@ -215,8 +214,9 @@ void parsing_offline() {
     // explicitly to see how they were grouped.
     const proxima::Expr tower = *proxima::Expr::parse("2^3^2");
     show("Expr::parse(\"2^3^2\")", tower);
-    show("  is it 2^(3^2)?",
-         tower == pow(proxima::Expr(2), pow(proxima::Expr(3), 2)) ? "true" : "false");
+    show("  is it 2^(3^2)?", tower == pow(proxima::Expr(2), pow(proxima::Expr(3), 2))
+                                 ? "true"
+                                 : "false");
     const proxima::Expr negated = *proxima::Expr::parse("-x^2");
     show("Expr::parse(\"-x^2\")", negated);
     show("  is it -(x^2)?", negated == -pow(x, 2) ? "true" : "false");
@@ -236,7 +236,8 @@ void parsing_offline() {
     show("Expr::parse(\"x + * 2\") has a value", malformed ? "yes" : "no");
     show("  its failure says", malformed.error().message());
     show("  and its cause is Parse",
-         proxima::cause_of(malformed.error()) == proxima::Cause::Parse ? "yes" : "no");
+         proxima::cause_of(malformed.error()) == proxima::Cause::Parse ? "yes"
+                                                                       : "no");
 }
 
 // --- 4. Functions and constants ---------------------------------------------
@@ -261,8 +262,9 @@ void functions_and_constants() {
     show("exp(x)", proxima::exp(x));
 
     // Constants are spelled as Maxima names them.
-    show("pi(), e(), i(), inf()", proxima::pi().str() + ", " + proxima::e().str() + ", "
-                                      + proxima::i().str() + ", " + proxima::inf().str());
+    show("pi(), e(), i(), inf()", proxima::pi().str() + ", " + proxima::e().str()
+                                      + ", " + proxima::i().str() + ", "
+                                      + proxima::inf().str());
 }
 
 // --- 5. Rendering, including a renderer of your own -------------------------
@@ -318,7 +320,8 @@ struct PrefixRenderer {
     }
     std::string relation(proxima::RelOp op, const std::string &lhs,
                          const std::string &rhs) {
-        return "(" + std::string(proxima::symbol_for(op)) + " " + lhs + " " + rhs + ")";
+        return "(" + std::string(proxima::symbol_for(op)) + " " + lhs + " " + rhs
+               + ")";
     }
 
     /// How to parenthesise. The library decides *when*; this decides *how*.
@@ -336,7 +339,9 @@ struct PrefixRenderer {
     /// Also optional: how tightly each construct binds. Saying that
     /// everything is an atom tells the library never to ask for brackets,
     /// which is right for a notation that brackets everything already.
-    proxima::Strength strength_of(proxima::Construct) { return proxima::Strength::Atom; }
+    proxima::Strength strength_of(proxima::Construct) {
+        return proxima::Strength::Atom;
+    }
 
 private:
     static std::string prefix(std::string_view head,
@@ -369,7 +374,8 @@ void rendering() {
     show("proxima::render(e, PrefixRenderer{})",
          proxima::render(quotient, PrefixRenderer{}));
     show("  and -(x + 1)", proxima::render(-(x + 1), PrefixRenderer{}));
-    show("  and sqrt(x), with no root()", proxima::render(proxima::sqrt(x), PrefixRenderer{}));
+    show("  and sqrt(x), with no root()",
+         proxima::render(proxima::sqrt(x), PrefixRenderer{}));
 
     // proxima::render copies a named renderer, so state it collects is gone
     // once it returns. Wrap it in std::ref to keep your own object.
@@ -381,7 +387,8 @@ void rendering() {
     // choose one at run time, keep it in a member, pass it around. It is
     // move-only, and stores small renderers without allocating.
     proxima::Renderer<std::string> chosen = PrefixRenderer{};
-    show("through proxima::Renderer<std::string>", proxima::render(eq(x, 2), chosen));
+    show("through proxima::Renderer<std::string>",
+         proxima::render(eq(x, 2), chosen));
 }
 
 // --- 6. Numbers from expressions ----------------------------------------------
@@ -400,10 +407,12 @@ void numeric_evaluation() {
     // constants (%pi, %e, inf) need no binding.
     show("eval_numeric(f, {x: 1, a: 2})",
          std::to_string(*proxima::eval_numeric(f, {{"x", 1.0}, {"a", 2.0}})));
-    show("eval_numeric(pi() / 2)", std::to_string(*proxima::eval_numeric(proxima::pi() / 2)));
+    show("eval_numeric(pi() / 2)",
+         std::to_string(*proxima::eval_numeric(proxima::pi() / 2)));
 
     // is_evaluable asks first, without throwing.
-    show("is_evaluable(f) with nothing bound", proxima::is_evaluable(f) ? "yes" : "no");
+    show("is_evaluable(f) with nothing bound",
+         proxima::is_evaluable(f) ? "yes" : "no");
 
     // Otherwise, anything that cannot become a number is a Failure with
     // Cause::Eval: an unbound symbol, a function with no numeric meaning
@@ -465,7 +474,8 @@ void calculus_and_algebra() {
     // Results are expressions like any other, so they compare structurally
     // with ones you build yourself.
     show("expand((x+1)^2) == x^2 + 2x + 1",
-         *proxima::expand(pow(x + 1, 2)) == pow(x, 2) + 2 * x + 1 ? "true" : "false");
+         *proxima::expand(pow(x + 1, 2)) == pow(x, 2) + 2 * x + 1 ? "true"
+                                                                  : "false");
 
     // Operations that can legitimately fail return std::expected. Check it
     // before using the value.
@@ -480,10 +490,12 @@ void calculus_and_algebra() {
     if (const auto l = proxima::limit(proxima::sin(x) / x, x, 0)) {
         show("limit(sin(x)/x, x, 0)", *l);
     }
-    if (const auto l = proxima::limit(proxima::Expr(1) / x, x, 0, proxima::Side::FromAbove)) {
+    if (const auto l
+        = proxima::limit(proxima::Expr(1) / x, x, 0, proxima::Side::FromAbove)) {
         show("limit(1/x, x, 0, FromAbove)", *l);
     }
-    if (const auto l = proxima::limit(proxima::Expr(1) / x, x, 0, proxima::Side::FromBelow)) {
+    if (const auto l
+        = proxima::limit(proxima::Expr(1) / x, x, 0, proxima::Side::FromBelow)) {
         show("limit(1/x, x, 0, FromBelow)", *l);
     }
 
@@ -543,7 +555,8 @@ void when_there_is_no_answer() {
     // infinity, not the inf and minf of the one-sided limits in section 7.
     const auto both_sides = proxima::limit(proxima::Expr(1) / x, x, 0);
     show("limit(1/x, x, 0), both sides",
-         both_sides ? both_sides->str() : "Failure: " + both_sides.error().message());
+         both_sides ? both_sides->str()
+                    : "Failure: " + both_sides.error().message());
 
     // A limit that does not exist is a Failure, however Maxima puts it.
     // abs(x)/x is -1 on one side of 0 and 1 on the other: Maxima answers `ind`,
@@ -553,7 +566,8 @@ void when_there_is_no_answer() {
     const auto bounded = proxima::limit(proxima::abs(x) / x, x, 0);
     show("limit(abs(x)/x, x, 0)",
          bounded ? bounded->str() : "Failure: " + bounded.error().message());
-    const auto one_sided = proxima::limit(proxima::abs(x) / x, x, 0, proxima::Side::FromAbove);
+    const auto one_sided
+        = proxima::limit(proxima::abs(x) / x, x, 0, proxima::Side::FromAbove);
     show("limit(abs(x)/x, x, 0, FromAbove)",
          one_sided ? one_sided->str() : "Failure: " + one_sided.error().message());
 
@@ -570,10 +584,11 @@ void when_there_is_no_answer() {
     // The results are FXT's, so they compose with FXT's adaptors directly:
     // and_then, transform, value_or and the rest, and a chain stops at the
     // first failure.
-    const auto chained = proxima::diff(pow(x, 3), x)
-                         | fxt::and_then([](const proxima::Expr &d) { return proxima::factor(d); })
-                         | fxt::transform([](const proxima::Expr &e) { return e.str(); })
-                         | fxt::value_or(std::string("no answer"));
+    const auto chained
+        = proxima::diff(pow(x, 3), x)
+          | fxt::and_then([](const proxima::Expr &d) { return proxima::factor(d); })
+          | fxt::transform([](const proxima::Expr &e) { return e.str(); })
+          | fxt::value_or(std::string("no answer"));
     show("diff(x^3) | and_then(factor) | str", chained);
 }
 
@@ -604,22 +619,26 @@ void assumptions() {
     // The same expression can simplify differently under different facts.
     const proxima::Expr root = proxima::sqrt(pow(x, 2));
     show("  sqrt(x^2), nothing assumed of x", *proxima::expand(root));
-    show("  sqrt(x^2), under x > 0", *proxima::expand(root, proxima::assuming(gt(x, 0))));
-    show("  sqrt(x^2), under x < 0", *proxima::expand(root, proxima::assuming(lt(x, 0))));
+    show("  sqrt(x^2), under x > 0",
+         *proxima::expand(root, proxima::assuming(gt(x, 0))));
+    show("  sqrt(x^2), under x < 0",
+         *proxima::expand(root, proxima::assuming(lt(x, 0))));
 
     // Assumptions grow by making new values. declaring records a property of
     // a symbol, rather than a relation.
     const auto more = positive_n.with(gt(x, 0)).with(k, proxima::Feature::Integer);
     show("  sin(k*pi), k declared integer",
          *proxima::expand(proxima::sin(k * proxima::pi()), more));
-    show("  sin(k*pi), nothing declared", *proxima::expand(proxima::sin(k * proxima::pi())));
+    show("  sin(k*pi), nothing declared",
+         *proxima::expand(proxima::sin(k * proxima::pi())));
     show("  more.facts()", joined({more.facts().begin(), more.facts().end()}));
 
     // A value compares by what it says, not how it was built, so the same
     // facts in another order are the same assumptions — the same Maxima
     // context, and the same cached answers.
     show("  order does not matter",
-         proxima::assuming(gt(x, 0)).with(gt(n, 0)) == proxima::assuming(gt(n, 0)).with(gt(x, 0))
+         proxima::assuming(gt(x, 0)).with(gt(n, 0))
+                 == proxima::assuming(gt(n, 0)).with(gt(x, 0))
              ? "true"
              : "false");
 
@@ -634,7 +653,8 @@ void assumptions() {
         = proxima::expand(root, proxima::assuming({gt(x, 0), lt(x, 0)}));
     show("  under x > 0 and x < 0",
          contradiction ? contradiction->str()
-                       : std::string(proxima::to_string(proxima::cause_of(contradiction.error()))));
+                       : std::string(proxima::to_string(
+                             proxima::cause_of(contradiction.error()))));
 }
 
 // --- 10. The kernel, configuration and caching --------------------------------
@@ -687,7 +707,8 @@ void the_kernel() {
     }
     proxima::Kernel second(config); // A fresh Maxima process, same directory.
     const auto from_disk = proxima::integrate(question, x, second);
-    show("integrate(x^5 e^x), second kernel", from_disk ? from_disk->str() : "Failure");
+    show("integrate(x^5 e^x), second kernel",
+         from_disk ? from_disk->str() : "Failure");
     show("  answers that came from disk",
          std::to_string(second.cache_stats().persistent_hits));
 
@@ -703,13 +724,16 @@ void the_kernel() {
     // An Expr can be sent instead of text; it travels as structure, so
     // nothing about it can be misread — and under assumptions, as any
     // operation can.
-    const auto via_expr = second.ask(proxima::Query::form(proxima::sin(proxima::pi() / 6)));
-    show("ask(sin(pi()/6))", via_expr ? via_expr->str() : via_expr.error().message());
+    const auto via_expr
+        = second.ask(proxima::Query::form(proxima::sin(proxima::pi() / 6)));
+    show("ask(sin(pi()/6))",
+         via_expr ? via_expr->str() : via_expr.error().message());
 
     // Text Maxima cannot parse is an ordinary failure with a reason, not an
     // exception, and costs one round trip.
     const auto broken = second.ask(proxima::Query::text("(1"));
-    show("ask(\"(1\") has a value?", broken ? "yes" : "no: " + broken.error().message());
+    show("ask(\"(1\") has a value?",
+         broken ? "yes" : "no: " + broken.error().message());
 
     // Asking the same question again is answered from memory.
     const auto before = second.cache_stats();
@@ -724,7 +748,8 @@ void the_kernel() {
     // until restart(). Use it only when you mean it.
     const auto assigned = second.tell(proxima::Statement::text("tour_value: 42"));
     show("tell(tour_value: 42)", assigned ? "done" : assigned.error().message());
-    show("  then ask(tour_value)", second.ask(proxima::Query::text("tour_value"))->str());
+    show("  then ask(tour_value)",
+         second.ask(proxima::Query::text("tour_value"))->str());
 
     // --- timeouts and recovery -------------------------------------------
     //

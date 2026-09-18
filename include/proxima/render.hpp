@@ -219,8 +219,9 @@ struct Unwrap<std::reference_wrapper<U>> {
 
 /// The output type a renderer produces, deduced from its simplest operation.
 template <typename R>
-using RenderResult = decltype(std::declval<typename detail::Unwrap<R>::type &>()
-                                  .integer(std::declval<const Integer &>()));
+using RenderResult
+    = decltype(std::declval<typename detail::Unwrap<R>::type &>().integer(
+        std::declval<const Integer &>()));
 
 namespace detail {
 
@@ -410,8 +411,7 @@ inline DisplayNode root_as_power(const DisplayNode &root) {
 /// baseline, not strings, and an interface fixed to std::string would
 /// foreclose exactly the renderer that needs it most.
 template <typename R, typename T>
-T render_node(const DisplayNode &node, Strength context,
-              Resolved<R, T> &resolved) {
+T render_node(const DisplayNode &node, Strength context, Resolved<R, T> &resolved) {
     R &renderer = resolved.renderer;
 
     if constexpr (!RendersRoot<R, T>) {
@@ -447,12 +447,10 @@ T render_node(const DisplayNode &node, Strength context,
             std::vector<Term<T>> terms;
             terms.reserve(node.children.size());
             for (std::size_t i = 0; i < node.children.size(); ++i) {
-                const bool negated
-                    = i < node.negated.size() && node.negated[i];
-                terms.push_back(
-                    {child(node.children[i],
-                           negated ? Slot::NegatedTerm : Slot::SumTerm),
-                     negated});
+                const bool negated = i < node.negated.size() && node.negated[i];
+                terms.push_back({child(node.children[i],
+                                       negated ? Slot::NegatedTerm : Slot::SumTerm),
+                                 negated});
             }
             return renderer.sum(std::span<const Term<T>>(terms));
         }
@@ -491,8 +489,7 @@ T render_node(const DisplayNode &node, Strength context,
         case DisplayKind::Relation:
             return renderer.relation(node.rel_op,
                                      child(node.children[0], Slot::RelationSide),
-                                     child(node.children[1],
-                                           Slot::RelationSide));
+                                     child(node.children[1], Slot::RelationSide));
         }
         return renderer.verbatim(std::string_view{});
     }();
@@ -654,8 +651,8 @@ private:
             M::put(storage_, std::forward<R>(renderer));
             object_ = storage_;
         } else {
-            void *raw = ::operator new(sizeof(Stored),
-                                       std::align_val_t{alignof(Stored)});
+            void *raw
+                = ::operator new(sizeof(Stored), std::align_val_t{alignof(Stored)});
             M::put(raw, std::forward<R>(renderer));
             object_ = raw;
         }

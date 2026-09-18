@@ -11,9 +11,9 @@
 #include <boost/asio/readable_pipe.hpp>
 #include <boost/asio/writable_pipe.hpp>
 #include <boost/asio/write.hpp>
+#include <boost/process/v2/environment.hpp>
 #include <boost/process/v2/process.hpp>
 #include <boost/process/v2/stdio.hpp>
-#include <boost/process/v2/environment.hpp>
 #if defined(_WIN32)
 #include <boost/process/v2/windows/creation_flags.hpp>
 #else
@@ -155,8 +155,7 @@ ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &arg
 
     try {
         impl_->process.emplace(
-            impl_->context.get_executor(), *executable,
-            arguments,
+            impl_->context.get_executor(), *executable, arguments,
             // The same write end twice. On Windows it then appears twice,
             // consecutively, in the list of handles the child inherits; the
             // launcher drops adjacent duplicates before CreateProcessW sees the
@@ -166,7 +165,8 @@ ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &arg
 #if defined(_WIN32)
             // No console window: a library should not flash one up each time
             // it starts a kernel.
-            , bp::windows::process_creation_flags<CREATE_NO_WINDOW>()
+            ,
+            bp::windows::process_creation_flags<CREATE_NO_WINDOW>()
 #endif
         );
     } catch (const boost::system::system_error &error) {

@@ -77,9 +77,10 @@ struct Config {
     /// used answers are deleted. Zero means no limit.
     ///
     /// Recency is each entry's modification time, which reading it back
-    /// refreshes when the recorded use is an hour old or more. Over the limit, entries are deleted oldest first until the
-    /// directory is at three quarters of it. Each process enforces the limit on
-    /// what it sees, so processes sharing a directory can overshoot it briefly.
+    /// refreshes when the recorded use is an hour old or more. Over the limit,
+    /// entries are deleted oldest first until the directory is at three quarters of
+    /// it. Each process enforces the limit on what it sees, so processes sharing a
+    /// directory can overshoot it briefly.
     std::uintmax_t cache_directory_limit = std::uintmax_t{256} * 1024 * 1024;
 
     /// Whether to let Maxima load the user's maxima-init.mac at startup.

@@ -37,11 +37,13 @@ public:
         double value;
     };
 
-    using const_iterator = std::map<std::string, double, std::less<>>::const_iterator;
+    using const_iterator
+        = std::map<std::string, double, std::less<>>::const_iterator;
 
     Bindings() = default;
 
-    Bindings(std::initializer_list<Entry> entries) { // NOLINT: `{{x, 1.0}}` is the point.
+    Bindings(
+        std::initializer_list<Entry> entries) { // NOLINT: `{{x, 1.0}}` is the point.
         for (const Entry &entry : entries) {
             values_.insert_or_assign(entry.name, entry.value);
         }
@@ -70,10 +72,14 @@ public:
     }
 
     /// The entry for a symbol, or end().
-    const_iterator find(std::string_view symbol_name) const { return values_.find(symbol_name); }
+    const_iterator find(std::string_view symbol_name) const {
+        return values_.find(symbol_name);
+    }
     const_iterator find(const Symbol &symbol) const { return find(symbol.name()); }
 
-    bool contains(std::string_view symbol_name) const { return values_.contains(symbol_name); }
+    bool contains(std::string_view symbol_name) const {
+        return values_.contains(symbol_name);
+    }
     bool contains(const Symbol &symbol) const { return contains(symbol.name()); }
 
     /// Name–value pairs, in name order.
@@ -132,7 +138,7 @@ struct Instruction {
         /// and an exponent known at compile time is extremely common — `x^2`,
         /// and every division, which is a power of -1.
         IntegerPower,
-        Call,     ///< Apply builtin `index` to the top `count` values.
+        Call, ///< Apply builtin `index` to the top `count` values.
     };
 
     Op op = Op::Constant;
@@ -208,6 +214,7 @@ result<Compiled> compile(const Expr &expr, const Symbol &variable,
 /// converts to a std::function<double(double)> wherever one is wanted.
 /// Throws proxima::EvalError, as Compiled's constructor does; compile() is the
 /// same preparation as a result.
-Compiled as_function(const Expr &expr, const Symbol &variable, const Bindings &fixed = {});
+Compiled as_function(const Expr &expr, const Symbol &variable,
+                     const Bindings &fixed = {});
 
 } // namespace proxima

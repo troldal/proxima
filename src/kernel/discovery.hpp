@@ -47,7 +47,7 @@ EnvLookup system_env();
 /// Performs no filesystem access, so the precedence chain is testable against
 /// an injected environment rather than the real one.
 std::vector<std::filesystem::path> candidate_roots(const Config &config,
-                                                  const EnvLookup &env);
+                                                   const EnvLookup &env);
 
 /// Conventional install locations, discovered by listing rather than guessing
 /// (on Windows, C:\maxima-* and the Program Files variants). Consulted only

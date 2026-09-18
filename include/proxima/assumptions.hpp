@@ -129,7 +129,8 @@ Assumptions assuming(Expr fact);
 /// Assumptions holding every one of `facts`: `assuming({gt(x, 0), lt(x, 1)})`.
 Assumptions assuming(std::initializer_list<Expr> facts);
 
-/// Assumptions declaring `symbol` to have `feature`: `declaring(n, Feature::Integer)`.
+/// Assumptions declaring `symbol` to have `feature`: `declaring(n,
+/// Feature::Integer)`.
 Assumptions declaring(const Symbol &symbol, Feature feature);
 
 } // namespace proxima

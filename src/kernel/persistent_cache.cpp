@@ -4,14 +4,14 @@
 
 #include <algorithm>
 #include <atomic>
+#include <charconv>
 #include <chrono>
 #include <cstdint>
 #include <exception>
 #include <fstream>
-#include <string_view>
 #include <iterator>
-#include <charconv>
 #include <random>
+#include <string_view>
 #include <system_error>
 #include <vector>
 
@@ -130,8 +130,8 @@ std::string stable_hash(std::string_view text) {
     return hex;
 }
 
-PersistentCache::PersistentCache(std::filesystem::path directory,
-                                 std::string stamp, std::uintmax_t byte_limit)
+PersistentCache::PersistentCache(std::filesystem::path directory, std::string stamp,
+                                 std::uintmax_t byte_limit)
     : directory_(std::move(directory)), stamp_(std::move(stamp)),
       byte_limit_(byte_limit) {
     std::error_code ec;
@@ -232,7 +232,8 @@ std::optional<Reply> PersistentCache::find(std::string_view source) const {
         if (!in) {
             return std::nullopt;
         }
-        contents.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+        contents.assign(std::istreambuf_iterator<char>(in),
+                        std::istreambuf_iterator<char>());
     }
 
     std::string_view rest = contents;
@@ -251,7 +252,8 @@ std::optional<Reply> PersistentCache::find(std::string_view source) const {
     std::string_view ok;
     std::string_view value;
     std::string_view reason;
-    if (!take_field(rest, ok) || !take_field(rest, value) || !take_field(rest, reason)) {
+    if (!take_field(rest, ok) || !take_field(rest, value)
+        || !take_field(rest, reason)) {
         return std::nullopt; // Truncated, most likely a partial write.
     }
 

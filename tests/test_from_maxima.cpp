@@ -89,15 +89,14 @@ TEST_CASE("a rational with large parts is still a rational") {
     // printing.
     // 31 rather than 3: 30! is divisible by 3, so that would reduce away and
     // test the wrong thing. 31 is prime and larger than 30, so it does not.
-    const Expr value = map_expr(
-        "((RAT SIMP) 265252859812191058636308480000000 31)");
+    const Expr value = map_expr("((RAT SIMP) 265252859812191058636308480000000 31)");
     CHECK(value.kind() == Kind::Rational);
     CHECK(value.numerator().to_string() == "265252859812191058636308480000000");
     CHECK(value.denominator() == proxima::Integer(31));
 
     SUBCASE("and a reducible one is reduced") {
-        const Expr reducible = map_expr(
-            "((RAT SIMP) 265252859812191058636308480000000 3)");
+        const Expr reducible
+            = map_expr("((RAT SIMP) 265252859812191058636308480000000 3)");
         CHECK(reducible.numerator().to_string()
               == "88417619937397019545436160000000");
         CHECK(reducible.denominator() == proxima::Integer(1));
@@ -153,8 +152,7 @@ TEST_CASE("a noun whose display name differs from its head is renamed") {
     // 'diff(f(x), x) has internal head %DERIVATIVE. Printing derivative(...)
     // would be an undefined function rather than a derivative, and dropping the
     // quote would ask Maxima to evaluate it.
-    CHECK(mapped("((%DERIVATIVE SIMP) (($F SIMP) $X) $X 1)")
-          == "'diff(f(x), x, 1)");
+    CHECK(mapped("((%DERIVATIVE SIMP) (($F SIMP) $X) $X 1)") == "'diff(f(x), x, 1)");
 }
 
 TEST_CASE("lists print in the only syntax Maxima has for them") {
@@ -185,9 +183,12 @@ TEST_CASE("a malformed term is rejected rather than half-mapped") {
     SUBCASE("including a rational that is not one") {
         // These used to become Opaque text, "(1/0)" and "($X/2)", and so
         // survived as something that looked like an answer.
-        CHECK_THROWS_AS(from_maxima(parse_sexpr("((RAT SIMP) 1 0)")), proxima::ParseError);
-        CHECK_THROWS_AS(from_maxima(parse_sexpr("((RAT SIMP) $X 2)")), proxima::ParseError);
-        CHECK_THROWS_AS(from_maxima(parse_sexpr("((RAT SIMP) 1)")), proxima::ParseError);
+        CHECK_THROWS_AS(from_maxima(parse_sexpr("((RAT SIMP) 1 0)")),
+                        proxima::ParseError);
+        CHECK_THROWS_AS(from_maxima(parse_sexpr("((RAT SIMP) $X 2)")),
+                        proxima::ParseError);
+        CHECK_THROWS_AS(from_maxima(parse_sexpr("((RAT SIMP) 1)")),
+                        proxima::ParseError);
     }
 }
 

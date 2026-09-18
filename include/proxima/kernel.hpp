@@ -50,7 +50,8 @@ private:
     friend class Kernel;
     friend result<std::string> detail::ask_wire(Kernel &, const Query &,
                                                 const Assumptions &);
-    explicit Query(std::variant<Expr, std::string> content) : content_(std::move(content)) {}
+    explicit Query(std::variant<Expr, std::string> content)
+        : content_(std::move(content)) {}
     std::variant<Expr, std::string> content_;
 };
 
@@ -60,7 +61,9 @@ private:
 class Statement {
 public:
     static Statement form(Expr expr) { return Statement(std::move(expr)); }
-    static Statement text(std::string source) { return Statement(std::move(source)); }
+    static Statement text(std::string source) {
+        return Statement(std::move(source));
+    }
 
 private:
     friend class Kernel;
@@ -189,23 +192,26 @@ Kernel &shared_kernel();
 /// defaulting to shared_kernel() and no assumptions, and it converts from
 /// either half or both:
 ///
-///     proxima::integrate(f, x);                         // shared kernel, nothing assumed
-///     proxima::integrate(f, x, assuming(gt(n, 0)));     // shared kernel, n > 0
-///     proxima::integrate(f, x, kernel);                 // this kernel, nothing assumed
-///     proxima::integrate(f, x, {assuming(gt(n, 0)), kernel});
+///     proxima::integrate(f, x);                         // shared kernel, nothing
+///     assumed proxima::integrate(f, x, assuming(gt(n, 0)));     // shared kernel, n
+///     > 0 proxima::integrate(f, x, kernel);                 // this kernel, nothing
+///     assumed proxima::integrate(f, x, {assuming(gt(n, 0)), kernel});
 ///
 /// A value: the environment is passed in, never looked up, so what an
 /// operation means is decided at the call.
 class Env {
 public:
     Env() = default;
-    Env(Kernel &kernel) : kernel_(&kernel) {}                                // NOLINT: implicit on purpose
-    Env(Assumptions assumptions) : assumptions_(std::move(assumptions)) {}   // NOLINT: implicit on purpose
+    Env(Kernel &kernel) : kernel_(&kernel) {} // NOLINT: implicit on purpose
+    Env(Assumptions assumptions)
+        : assumptions_(std::move(assumptions)) {} // NOLINT: implicit on purpose
     Env(Assumptions assumptions, Kernel &kernel)
         : kernel_(&kernel), assumptions_(std::move(assumptions)) {}
 
     /// The kernel: the one given, or shared_kernel().
-    Kernel &kernel() const { return kernel_ != nullptr ? *kernel_ : shared_kernel(); }
+    Kernel &kernel() const {
+        return kernel_ != nullptr ? *kernel_ : shared_kernel();
+    }
 
     const Assumptions &assumptions() const { return assumptions_; }
 

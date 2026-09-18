@@ -72,8 +72,8 @@ std::string path_var(std::initializer_list<const char *> entries) {
 /// An environment built from a literal map, so precedence is tested without
 /// touching the process's own variables.
 EnvLookup fake_env(std::map<std::string, std::string, std::less<>> vars) {
-    return [vars = std::move(vars)](
-               std::string_view name) -> std::optional<std::string> {
+    return [vars
+            = std::move(vars)](std::string_view name) -> std::optional<std::string> {
         if (const auto it = vars.find(name); it != vars.end()) {
             return it->second;
         }
@@ -87,7 +87,7 @@ MaximaInstall fake_install(bool raise_dynamic_space_size = true) {
     install.root = abs("maxima-5.50.0");
     install.sbcl_exe = abs("maxima-5.50.0") / "bin" / kSbclName;
     install.maxima_core = abs("maxima-5.50.0") / "lib" / "maxima" / "5.50.0"
-                         / "binary-sbcl" / "maxima.core";
+                          / "binary-sbcl" / "maxima.core";
     install.version_tag = "5.50.0";
     install.raise_dynamic_space_size = raise_dynamic_space_size;
     return install;
@@ -111,8 +111,8 @@ TEST_CASE("candidate roots follow the documented precedence") {
     const auto roots = candidate_roots(
         config,
         fake_env({{"MAXIMA_ROOT", abs("from_root_var").string()},
-                 {"MAXIMA_PREFIX", abs("from_prefix_var").string()},
-                 {"PATH", path_var({"somewhere", "maxima-x/bin", "other"})}}));
+                  {"MAXIMA_PREFIX", abs("from_prefix_var").string()},
+                  {"PATH", path_var({"somewhere", "maxima-x/bin", "other"})}}));
 
     REQUIRE(roots.size() == 4);
     CHECK(roots[0] == abs("explicit"));
@@ -152,9 +152,9 @@ TEST_CASE("the PATH separator is the platform's own") {
 TEST_CASE("duplicate candidates are collapsed") {
     proxima::Config config;
     config.maxima_root = abs("same");
-    const auto roots
-        = candidate_roots(config, fake_env({{"MAXIMA_ROOT", abs("same").string()},
-                                          {"MAXIMA_PREFIX", abs("same").string()}}));
+    const auto roots = candidate_roots(
+        config, fake_env({{"MAXIMA_ROOT", abs("same").string()},
+                          {"MAXIMA_PREFIX", abs("same").string()}}));
     CHECK(roots.size() == 1);
 }
 
@@ -183,7 +183,8 @@ TEST_CASE("an explicit but wrong root is an error, not a reason to search on") {
         CHECK(message.find(abs("nowhere/at/all").string()) != std::string::npos);
         CHECK(message.find("maxima.core") != std::string::npos);
         // And it names this platform's executable, not always the Windows one.
-        CHECK(message.find(std::string("/bin/") + kSbclName + " ") != std::string::npos);
+        CHECK(message.find(std::string("/bin/") + kSbclName + " ")
+              != std::string::npos);
 #ifndef _WIN32
         CHECK(message.find("sbcl.exe") == std::string::npos);
 #endif
@@ -197,8 +198,7 @@ TEST_CASE("discovery with nothing configured names the locations it tried") {
     proxima::Config config;
     try {
         const auto install = proxima::detail::discover_maxima(
-            config,
-            fake_env({{"MAXIMA_ROOT", abs("nowhere/at/all").string()}}));
+            config, fake_env({{"MAXIMA_ROOT", abs("nowhere/at/all").string()}}));
         // If it succeeded it must have produced something coherent.
         CHECK(std::filesystem::is_regular_file(install.sbcl_exe));
         CHECK(std::filesystem::is_regular_file(install.maxima_core));
@@ -304,8 +304,7 @@ TEST_CASE("launch environment isolates the user's maxima-init.mac by default") {
 #ifdef _WIN32
     // The Windows bundle keeps sbcl.core beside sbcl.exe, so maxima.bat points
     // SBCL_HOME at <root>/bin.
-    CHECK(find("SBCL_HOME")
-          == (abs("maxima-5.50.0") / "bin").generic_string());
+    CHECK(find("SBCL_HOME") == (abs("maxima-5.50.0") / "bin").generic_string());
 #else
     // A distribution SBCL has its home compiled in (/usr/lib/sbcl on openSUSE),
     // which is not <root>/bin. Overriding it would break contrib loading, so
@@ -346,10 +345,11 @@ TEST_CASE("the default user directory is private to the user") {
     for (const std::string &dir :
          {user_dir, std::filesystem::path(user_dir).parent_path().string()}) {
         CAPTURE(dir);
-        struct stat info {};
+        struct stat info{};
         REQUIRE(::lstat(dir.c_str(), &info) == 0);
         CHECK(info.st_uid == ::geteuid());
-        CHECK((info.st_mode & static_cast<mode_t>(0777)) == static_cast<mode_t>(0700));
+        CHECK((info.st_mode & static_cast<mode_t>(0777))
+              == static_cast<mode_t>(0700));
     }
 #endif
 }
@@ -359,8 +359,9 @@ TEST_CASE("a user directory that is not private to the user is refused") {
     namespace fs = std::filesystem;
     using proxima::detail::ensure_private_directory;
 
-    const fs::path base = fs::temp_directory_path()
-                          / ("proxima_private_dir_tests_" + std::to_string(::getpid()));
+    const fs::path base
+        = fs::temp_directory_path()
+          / ("proxima_private_dir_tests_" + std::to_string(::getpid()));
     std::error_code ec;
     fs::remove_all(base, ec);
     fs::create_directories(base, ec);
@@ -369,9 +370,10 @@ TEST_CASE("a user directory that is not private to the user is refused") {
     SUBCASE("created private, and accepted again") {
         const fs::path fresh = base / "fresh";
         CHECK_NOTHROW(ensure_private_directory(fresh));
-        struct stat info {};
+        struct stat info{};
         REQUIRE(::lstat(fresh.c_str(), &info) == 0);
-        CHECK((info.st_mode & static_cast<mode_t>(0777)) == static_cast<mode_t>(0700));
+        CHECK((info.st_mode & static_cast<mode_t>(0777))
+              == static_cast<mode_t>(0700));
         CHECK_NOTHROW(ensure_private_directory(fresh));
     }
     SUBCASE("open to others") {
@@ -416,14 +418,17 @@ namespace {
 
 /// The name's UTF-8 bytes, written out so the expectation is not computed by
 /// the code under test.
-constexpr const char *kUnicodeNameBytes
-    = "m" "\xC3\xA6" "xima_" "\xE4\xB8\xAD" "\xE6\x96\x87";
+constexpr const char *kUnicodeNameBytes = "m"
+                                          "\xC3\xA6"
+                                          "xima_"
+                                          "\xE4\xB8\xAD"
+                                          "\xE6\x96\x87";
 
 #ifdef _WIN32
 /// The same name as UTF-16 code units, which is what a Windows path holds.
-const std::wstring kUnicodeNameWide = {L'm', wchar_t{0x00E6}, L'x', L'i', L'm',
-                                       L'a', L'_', wchar_t{0x4E2D},
-                                       wchar_t{0x6587}};
+const std::wstring kUnicodeNameWide
+    = {L'm', wchar_t{0x00E6}, L'x',           L'i', L'm', L'a',
+       L'_', wchar_t{0x4E2D}, wchar_t{0x6587}};
 #endif
 
 /// The name as a path, built without the conversions under test: from code
@@ -458,13 +463,16 @@ TEST_CASE("paths convert to and from UTF-8 exactly") {
 #ifdef _WIN32
     // And the native, wide, spelling it produces is the right one — not bytes
     // widened one at a time, which would round-trip just as well.
-    CHECK(proxima::detail::path_from_utf8(kUnicodeNameBytes).native() == kUnicodeNameWide);
+    CHECK(proxima::detail::path_from_utf8(kUnicodeNameBytes).native()
+          == kUnicodeNameWide);
 #endif
 
     // Text that is not UTF-8 is refused, not guessed at. Only Windows has to
     // transcode, so only Windows can notice.
 #ifdef _WIN32
-    CHECK_FALSE(proxima::detail::try_path_from_utf8("bad\xFF" "byte").has_value());
+    CHECK_FALSE(proxima::detail::try_path_from_utf8("bad\xFF"
+                                                    "byte")
+                    .has_value());
 #endif
     CHECK(proxima::detail::describe_path(name) == kUnicodeNameBytes);
 }
@@ -491,9 +499,8 @@ TEST_CASE("the real environment is read without loss") {
 
 TEST_CASE("non-ASCII environment values become the right candidate roots") {
     const auto roots = candidate_roots(
-        proxima::Config{},
-        fake_env({{"MAXIMA_ROOT", utf8(unicode_path("root"))},
-                 {"PATH", utf8(unicode_path("tools/bin"))}}));
+        proxima::Config{}, fake_env({{"MAXIMA_ROOT", utf8(unicode_path("root"))},
+                                     {"PATH", utf8(unicode_path("tools/bin"))}}));
 
     REQUIRE(roots.size() == 2);
     CHECK(roots[0] == unicode_path("root"));
@@ -505,12 +512,14 @@ TEST_CASE("an environment value that is not UTF-8 is skipped, not thrown") {
     // converted to UTF-8 on the way in — but discovery must not turn it into
     // an exception that is not a KernelError.
     // Built as a string: a path cannot hold it on Windows, which is the point.
-    const std::string bad = std::string(kPrefix) + "bad\xFF" "root";
+    const std::string bad = std::string(kPrefix)
+                            + "bad\xFF"
+                              "root";
     std::vector<std::filesystem::path> roots;
-    CHECK_NOTHROW(roots = candidate_roots(proxima::Config{},
-                                         fake_env({{"MAXIMA_ROOT", bad},
-                                                  {"MAXIMA_PREFIX",
-                                                   abs("good").generic_string()}})));
+    CHECK_NOTHROW(roots = candidate_roots(
+                      proxima::Config{},
+                      fake_env({{"MAXIMA_ROOT", bad},
+                                {"MAXIMA_PREFIX", abs("good").generic_string()}})));
     CHECK(std::find(roots.begin(), roots.end(), abs("good")) != roots.end());
 }
 
@@ -518,8 +527,8 @@ TEST_CASE("the launch recipe carries non-ASCII paths as UTF-8") {
     MaximaInstall install = fake_install();
     install.root = unicode_path("maxima-5.50.0");
     install.sbcl_exe = install.root / "bin" / kSbclName;
-    install.maxima_core = install.root / "lib" / "maxima" / "5.50.0"
-                         / "binary-sbcl" / "maxima.core";
+    install.maxima_core
+        = install.root / "lib" / "maxima" / "5.50.0" / "binary-sbcl" / "maxima.core";
 
     const std::vector<std::string> argv = MaximaSession::launch_command(install);
     REQUIRE(argv.size() > 2);

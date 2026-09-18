@@ -207,9 +207,9 @@ TEST_CASE("uninterpreted applications carry anything Maxima knows") {
     // A matrix or a derivative needs no new node type either. Note that
     // "list" is the one head the printer knows by name, because Maxima has no
     // textual list(...) constructor — [a, b] is the only spelling.
-    const Expr matrix = Expr::function(
-        "matrix", {Expr::function("list", {Expr(1), Expr(2)}),
-                   Expr::function("list", {Expr(3), Expr(4)})});
+    const Expr matrix
+        = Expr::function("matrix", {Expr::function("list", {Expr(1), Expr(2)}),
+                                    Expr::function("list", {Expr(3), Expr(4)})});
     CHECK(matrix.str() == "matrix([1, 2], [3, 4])");
 }
 
@@ -298,8 +298,10 @@ TEST_CASE("a Real is never NaN or infinite") {
         // silently to infinity, from finite numbers.
         // A distinct exception, so a caller can tell it from misuse; the
         // parser, which can return a value, reports it as Cause::Overflow.
-        CHECK_THROWS_AS(static_cast<void>(Expr(1e308) * Expr(10.0)), proxima::OverflowError);
-        CHECK_THROWS_AS(static_cast<void>(Expr(1e308) + Expr(1e308)), proxima::OverflowError);
+        CHECK_THROWS_AS(static_cast<void>(Expr(1e308) * Expr(10.0)),
+                        proxima::OverflowError);
+        CHECK_THROWS_AS(static_cast<void>(Expr(1e308) + Expr(1e308)),
+                        proxima::OverflowError);
         const Expr huge(proxima::Integer("1" + std::string(400, '0')));
         CHECK_THROWS_AS(static_cast<void>(huge * Expr(1.0)), proxima::OverflowError);
         const auto parsed = Expr::parse("1" + std::string(400, '0') + "/5.0");
@@ -430,7 +432,8 @@ std::string kind_of(const Expr &expr) {
 // check is a concept, so it can be asked here rather than only seen as an
 // error.
 template <typename... Handlers>
-concept Matches = requires(const Expr &e, Handlers... handlers) { e.match(handlers...); };
+concept Matches
+    = requires(const Expr &e, Handlers... handlers) { e.match(handlers...); };
 
 constexpr auto kIntegerOnly = [](const node::Integer &) { return 0; };
 constexpr auto kAnything = [](const auto &) { return 0; };
@@ -462,13 +465,14 @@ TEST_CASE("match hands over the node's parts, in canonical order") {
 
     SUBCASE("leaves") {
         const auto value = [](const Expr &e) {
-            return e.match([](const node::Integer &n) { return n.value.to_string(); },
-                           [](const node::Rational &q) {
-                               return q.numerator.to_string() + "/" + q.denominator.to_string();
-                           },
-                           [](const node::Symbol &s) { return s.name; },
-                           [](const node::Opaque &o) { return o.text; },
-                           [](const auto &) { return std::string("?"); });
+            return e.match(
+                [](const node::Integer &n) { return n.value.to_string(); },
+                [](const node::Rational &q) {
+                    return q.numerator.to_string() + "/" + q.denominator.to_string();
+                },
+                [](const node::Symbol &s) { return s.name; },
+                [](const node::Opaque &o) { return o.text; },
+                [](const auto &) { return std::string("?"); });
         };
         CHECK(value(Expr(proxima::Integer("265252859812191058636308480000000")))
               == "265252859812191058636308480000000");
@@ -481,12 +485,14 @@ TEST_CASE("match hands over the node's parts, in canonical order") {
     }
     SUBCASE("operands") {
         // x + y + 1 is stored with the number first.
-        const std::size_t terms = (Expr(y) + x + 1).match(
-            [](const node::Sum &s) {
-                CHECK(s.terms[0] == Expr(1));
-                return s.terms.size();
-            },
-            [](const auto &) { return std::size_t{0}; });
+        const std::size_t terms
+            = (Expr(y) + x + 1)
+                  .match(
+                      [](const node::Sum &s) {
+                          CHECK(s.terms[0] == Expr(1));
+                          return s.terms.size();
+                      },
+                      [](const auto &) { return std::size_t{0}; });
         CHECK(terms == 3);
 
         const Expr power = pow(Expr(x), 3);
@@ -497,13 +503,14 @@ TEST_CASE("match hands over the node's parts, in canonical order") {
             },
             [](const auto &) { FAIL("not a power"); });
 
-        lt(Expr(x), Expr(y)).match(
-            [&](const node::Relation &r) {
-                CHECK(r.op == proxima::RelOp::Less);
-                CHECK(r.lhs == Expr(x));
-                CHECK(r.rhs == Expr(y));
-            },
-            [](const auto &) { FAIL("not a relation"); });
+        lt(Expr(x), Expr(y))
+            .match(
+                [&](const node::Relation &r) {
+                    CHECK(r.op == proxima::RelOp::Less);
+                    CHECK(r.lhs == Expr(x));
+                    CHECK(r.rhs == Expr(y));
+                },
+                [](const auto &) { FAIL("not a relation"); });
 
         Expr::function("f", {Expr(x), Expr(y)})
             .match(
@@ -517,8 +524,9 @@ TEST_CASE("match hands over the node's parts, in canonical order") {
     SUBCASE("by reference, not by copy") {
         // The view is the node's own storage.
         const Expr e = Expr::function("f", {Expr(x)});
-        e.match([&](const node::Call &c) { CHECK(c.args.data() == e.args().data()); },
-                [](const auto &) {});
+        e.match(
+            [&](const node::Call &c) { CHECK(c.args.data() == e.args().data()); },
+            [](const auto &) {});
     }
 }
 
@@ -554,16 +562,19 @@ TEST_CASE("the optional accessors answer for any kind, without throwing") {
     CHECK_FALSE((x + 1).as_symbol().has_value());
 
     // C++23's monadic optional composes with them.
-    CHECK(Expr(21).as_integer().transform([](const proxima::Integer &n) { return n * 2; })
-          == proxima::Integer(42));
-    CHECK(Expr(x).as_integer().value_or(proxima::Integer(-1)) == proxima::Integer(-1));
+    CHECK(Expr(21).as_integer().transform([](const proxima::Integer &n) {
+        return n * 2;
+    }) == proxima::Integer(42));
+    CHECK(Expr(x).as_integer().value_or(proxima::Integer(-1))
+          == proxima::Integer(-1));
 }
 
 TEST_CASE("add and mul take any range of expressions") {
     const Symbol x("x");
     const Symbol y("y");
     const std::vector<Expr> xs{Expr(x), Expr(y), Expr(2)};
-    const auto squares = xs | std::views::transform([](const Expr &e) { return e * e; });
+    const auto squares
+        = xs | std::views::transform([](const Expr &e) { return e * e; });
     CHECK(Expr::add(squares) == Expr(x) * x + Expr(y) * y + 4);
     CHECK(Expr::mul(xs | std::views::take(2)) == Expr(x) * y);
     // A vector still goes straight to the vector overload.

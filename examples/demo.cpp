@@ -42,11 +42,13 @@ std::string indented(const std::string &block, std::size_t by) {
 
 /// One expression, in each of the four renderers.
 void show_rendered(const char *label, const proxima::Expr &expr) {
-    std::cout << '\n' << label << '\n'
+    std::cout << '\n'
+              << label << '\n'
               << "  str()      " << expr.str() << '\n'
               << "  to_tex()    " << proxima::to_tex(expr) << '\n'
               << "  to_mathml() " << proxima::to_mathml(expr) << '\n'
-              << "  text2d\n" << indented(text2d::draw(expr), 4) << '\n';
+              << "  text2d\n"
+              << indented(text2d::draw(expr), 4) << '\n';
 }
 
 } // namespace
@@ -63,19 +65,21 @@ int main() {
         std::cout << "f                = " << f.str() << '\n';
         std::cout << "  from text      = " << from_text.str() << "   "
                   << (from_text == f ? "(the same expression)"
-                                    : "(a different one!)")
+                                     : "(a different one!)")
                   << '\n';
         std::cout << "f'               = " << proxima::diff(f, x)->str() << '\n';
         std::cout << "f(5)             = "
                   << proxima::subst(f, x, proxima::Expr(5))->str() << '\n';
-        std::cout << "expand((x+1)^3)  = "
-                  << proxima::expand(pow(x + 1, 3))->str() << '\n';
-        std::cout << "factor(x^2-1)    = "
-                  << proxima::factor(pow(x, 2) - 1)->str() << '\n';
+        std::cout << "expand((x+1)^3)  = " << proxima::expand(pow(x + 1, 3))->str()
+                  << '\n';
+        std::cout << "factor(x^2-1)    = " << proxima::factor(pow(x, 2) - 1)->str()
+                  << '\n';
 
         // Exact arithmetic: not 0.7333...
         std::cout << "1/3 + 2/5        = "
-                  << (proxima::Expr(1) / proxima::Expr(3) + proxima::Expr(2) / proxima::Expr(5)).str()
+                  << (proxima::Expr(1) / proxima::Expr(3)
+                      + proxima::Expr(2) / proxima::Expr(5))
+                         .str()
                   << '\n';
 
         // An integral, and the derivative of the result to check it.
@@ -83,14 +87,17 @@ int main() {
         if (const auto integral = proxima::integrate(integrand, x)) {
             std::cout << "int x^2 sin(x)   = " << integral->str() << '\n';
             std::cout << "  differentiated = "
-                      << proxima::ratsimp(*proxima::diff(*integral, x))->str() << '\n';
+                      << proxima::ratsimp(*proxima::diff(*integral, x))->str()
+                      << '\n';
         }
 
-        if (const auto area = proxima::integrate(x * x, x, proxima::Expr(0), proxima::Expr(1))) {
+        if (const auto area
+            = proxima::integrate(x * x, x, proxima::Expr(0), proxima::Expr(1))) {
             std::cout << "int_0^1 x^2      = " << area->str() << '\n';
         }
 
-        if (const auto l = proxima::limit(proxima::sin(x) / x, x, proxima::Expr(0))) {
+        if (const auto l
+            = proxima::limit(proxima::sin(x) / x, x, proxima::Expr(0))) {
             std::cout << "lim sin(x)/x     = " << l->str() << '\n';
         }
 
@@ -105,7 +112,7 @@ int main() {
         // A system. Values come back in the order the unknowns were asked for.
         const proxima::Symbol y("y");
         const std::vector<proxima::Expr> system{eq(x + y, proxima::Expr(3)),
-                                           eq(x - y, proxima::Expr(1))};
+                                                eq(x - y, proxima::Expr(1))};
         const std::vector<proxima::Symbol> unknowns{x, y};
         if (const auto found = proxima::solve(system, unknowns)) {
             for (const proxima::Solution &solution : *found) {
@@ -123,7 +130,7 @@ int main() {
         const proxima::Symbol b("b");
         const proxima::Symbol c("c");
         if (const auto quadratic
-                = proxima::solve(eq(a * pow(x, 2) + b * x + c, proxima::Expr(0)), x);
+            = proxima::solve(eq(a * pow(x, 2) + b * x + c, proxima::Expr(0)), x);
             quadratic && !quadratic->empty()) {
             show_rendered("a root of a*x^2 + b*x + c = 0:", quadratic->back());
         }
@@ -160,7 +167,8 @@ int main() {
                   << '\n';
 
         // Supplying it with the question.
-        if (const auto known = proxima::integrate(power, x, proxima::assuming(gt(n, 0)))) {
+        if (const auto known
+            = proxima::integrate(power, x, proxima::assuming(gt(n, 0)))) {
             std::cout << "  assuming n > 0 = " << known->str() << '\n';
         }
 

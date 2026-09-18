@@ -7,9 +7,9 @@
 
 #include <proxima/expr.hpp>
 #include <proxima/functions.hpp>
+#include <proxima/mathml.hpp>
 #include <proxima/render.hpp>
 #include <proxima/symbol.hpp>
-#include <proxima/mathml.hpp>
 #include <proxima/tex.hpp>
 
 #include <algorithm>
@@ -224,9 +224,8 @@ Box aligned(const Box &box, std::size_t above, std::size_t height) {
 /// Side by side, baselines aligned.
 Box beside(const Box &left, const Box &right) {
     const std::size_t above = std::max(left.baseline, right.baseline);
-    const std::size_t below
-        = std::max(left.lines.size() - left.baseline,
-                   right.lines.size() - right.baseline);
+    const std::size_t below = std::max(left.lines.size() - left.baseline,
+                                       right.lines.size() - right.baseline);
     const std::size_t height = above + below;
 
     const Box a = aligned(left, above, height);
@@ -271,8 +270,7 @@ struct Layout {
     /// The whole reason for boxes: the numerator sits above the rule and the
     /// baseline lands on the rule, so surrounding terms line up with it.
     Box fraction(const Box &numerator, const Box &denominator) {
-        const std::size_t width
-            = std::max(numerator.width(), denominator.width());
+        const std::size_t width = std::max(numerator.width(), denominator.width());
         Box out;
         out.lines.clear();
         const auto centred = [width](const std::string &line) {
@@ -323,8 +321,9 @@ struct Layout {
     }
 
     Box relation(proxima::RelOp op, const Box &lhs, const Box &rhs) {
-        return beside(beside(lhs, text(" " + std::string(proxima::symbol_for(op)) + " ")),
-                      rhs);
+        return beside(
+            beside(lhs, text(" " + std::string(proxima::symbol_for(op)) + " ")),
+            rhs);
     }
 
     /// Brackets that grow with what they contain.
@@ -352,8 +351,9 @@ struct Layout {
 
     Strength strength_of(Construct construct) {
         // A drawn fraction needs no brackets of its own.
-        return construct == Construct::Fraction ? Strength::Atom
-                                                : proxima::default_strength(construct);
+        return construct == Construct::Fraction
+                   ? Strength::Atom
+                   : proxima::default_strength(construct);
     }
 
     Strength context_for(Slot slot) {
@@ -467,8 +467,7 @@ TEST_CASE("a renderer can be held by reference and read afterwards") {
         std::string power(const std::string &a, const std::string &b) {
             return a + "^" + b;
         }
-        std::string call(std::string_view head,
-                         std::span<const std::string> args) {
+        std::string call(std::string_view head, std::span<const std::string> args) {
             std::string out(head);
             out += "(";
             for (const std::string &arg : args) {
@@ -519,9 +518,7 @@ TEST_CASE("the erased renderer is a movable value") {
         std::string fraction(const std::string &, const std::string &) {
             return "/";
         }
-        std::string power(const std::string &, const std::string &) {
-            return "^";
-        }
+        std::string power(const std::string &, const std::string &) { return "^"; }
         std::string call(std::string_view, std::span<const std::string>) {
             return "f";
         }
@@ -572,9 +569,9 @@ std::string mathml(const Expr &expr) {
 /// <mfrac>, <msup> or <mroot> without exactly two children, a bare ampersand,
 /// or a byte outside ASCII.
 std::string well_formed(const std::string &xml) {
-    static constexpr std::string_view kKnown[] = {
-        "math", "mrow", "mi", "mn", "mo", "mtext", "mfrac", "msup", "msqrt",
-        "mroot"};
+    static constexpr std::string_view kKnown[]
+        = {"math",  "mrow",  "mi",   "mn",    "mo",
+           "mtext", "mfrac", "msup", "msqrt", "mroot"};
     struct Open {
         std::string tag;
         int children = 0;
@@ -639,7 +636,8 @@ TEST_CASE("MathML") {
     const Symbol x("x");
     const Symbol y("y");
 
-    CHECK(mathml(Expr(x) - 1) == "<mrow><mi>x</mi><mo>&#x2212;</mo><mn>1</mn></mrow>");
+    CHECK(mathml(Expr(x) - 1)
+          == "<mrow><mi>x</mi><mo>&#x2212;</mo><mn>1</mn></mrow>");
     CHECK(mathml(2 * Expr(x))
           == "<mrow><mn>2</mn><mo>&#x2062;</mo><mi>x</mi></mrow>");
     CHECK(mathml(proxima::pi()) == "<mi>&#x3C0;</mi>");
@@ -656,8 +654,9 @@ TEST_CASE("MathML") {
         CHECK(mathml((Expr(x) + 1) / (Expr(x) - 1))
               == "<mfrac><mrow><mn>1</mn><mo>+</mo><mi>x</mi></mrow>"
                  "<mrow><mi>x</mi><mo>&#x2212;</mo><mn>1</mn></mrow></mfrac>");
-        CHECK(mathml(pow(Expr(x), Expr(y) + 1))
-              == "<msup><mi>x</mi><mrow><mn>1</mn><mo>+</mo><mi>y</mi></mrow></msup>");
+        CHECK(
+            mathml(pow(Expr(x), Expr(y) + 1))
+            == "<msup><mi>x</mi><mrow><mn>1</mn><mo>+</mo><mi>y</mi></mrow></msup>");
     }
     SUBCASE("but the base of a power does") {
         // Without the brackets, a 2 raised beside x+1 would not say whether
@@ -668,7 +667,8 @@ TEST_CASE("MathML") {
     }
     SUBCASE("text is escaped") {
         CHECK(mathml(Expr(Symbol("a<b"))) == "<mi>a&lt;b</mi>");
-        CHECK(mathml(Expr::opaque("\"R&D\"")) == "<mtext>&quot;R&amp;D&quot;</mtext>");
+        CHECK(mathml(Expr::opaque("\"R&D\""))
+              == "<mtext>&quot;R&amp;D&quot;</mtext>");
     }
     SUBCASE("a small real has an unpadded exponent") {
         // to_chars writes 1e-07. TeX had the same padding.

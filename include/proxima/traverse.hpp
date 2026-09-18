@@ -37,8 +37,8 @@ Expr with_operands(const Expr &expr, std::vector<Expr> operands);
 /// its operands, operands in order. An input range over `const Expr &`, so
 /// the standard algorithms and views apply:
 ///
-///     std::ranges::any_of(nodes(e), [](const Expr &n) { return n.is(Kind::Opaque); });
-///     std::ranges::distance(nodes(e));                 // the size of the tree
+///     std::ranges::any_of(nodes(e), [](const Expr &n) { return n.is(Kind::Opaque);
+///     }); std::ranges::distance(nodes(e));                 // the size of the tree
 ///
 /// Holds its own copy of `expr`, so a temporary is safe to walk. Not
 /// std::generator, which GCC 13's library and libc++ do not have: an explicit
@@ -59,7 +59,8 @@ public:
             // The children come next, then whatever was pending. The spans
             // point into nodes the root keeps alive, so they are stable
             // however this iterator is moved.
-            if (const std::vector<Expr> &operands = current_.args(); !operands.empty()) {
+            if (const std::vector<Expr> &operands = current_.args();
+                !operands.empty()) {
                 pending_.emplace_back(operands);
             }
             while (!pending_.empty() && pending_.back().empty()) {
@@ -76,13 +77,15 @@ public:
         }
         void operator++(int) { ++*this; }
 
-        friend bool operator==(const iterator &it, std::default_sentinel_t) { return it.done_; }
+        friend bool operator==(const iterator &it, std::default_sentinel_t) {
+            return it.done_;
+        }
 
     private:
         friend class Nodes;
         explicit iterator(const Expr &root) : root_(root), current_(root) {}
 
-        Expr root_;    ///< Keeps the whole tree alive, so the spans below stay valid.
+        Expr root_; ///< Keeps the whole tree alive, so the spans below stay valid.
         Expr current_;
         std::vector<std::span<const Expr>> pending_;
         bool done_ = false;
@@ -124,7 +127,8 @@ R fold(const Expr &expr, Algebra &&algebra) {
         for (std::size_t i = 0; i < operands.size(); ++i) {
             folded[i] = fold<R>(operands[i], algebra);
         }
-        return std::invoke(algebra, expr, std::span<const bool>(folded.get(), operands.size()));
+        return std::invoke(algebra, expr,
+                           std::span<const bool>(folded.get(), operands.size()));
     } else {
         std::vector<R> folded;
         folded.reserve(operands.size());

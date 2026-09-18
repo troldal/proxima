@@ -51,8 +51,7 @@ std::string noise(int prompt_number) {
 std::vector<std::string> handshake_script() {
     return {"Maxima 5.50.0 https://maxima.sourceforge.io\n"
             "using Lisp SBCL 2.6.8\n"
-            + noise(1) + noise(2) + noise(3) + noise(4)
-            + frame(1, true, "$TRUE")};
+            + noise(1) + noise(2) + noise(3) + noise(4) + frame(1, true, "$TRUE")};
 }
 
 /// Builds a session over a scripted transport, keeping a borrowed pointer to
@@ -64,7 +63,8 @@ struct ScriptedSession {
 
         auto owned = std::make_unique<FakeTransport>(std::move(script));
         transport = owned.get();
-        session = std::make_unique<MaximaSession>(std::move(owned), proxima::Config{}, kKey);
+        session = std::make_unique<MaximaSession>(std::move(owned),
+                                                  proxima::Config{}, kKey);
     }
 
     FakeTransport *transport = nullptr;
@@ -103,7 +103,8 @@ TEST_CASE("a successful reply yields the internal s-expression") {
     ScriptedSession scripted(
         {frame(2, true, "((MTIMES SIMP) 2 $X ((%SIN SIMP) $X))")});
 
-    const proxima::detail::Reply reply = scripted.session->eval(Payload::text("2*x*sin(x)"));
+    const proxima::detail::Reply reply
+        = scripted.session->eval(Payload::text("2*x*sin(x)"));
     CHECK(reply.ok);
     CHECK(reply.value == "((MTIMES SIMP) 2 $X ((%SIN SIMP) $X))");
     CHECK(reply.reason.empty());
@@ -112,11 +113,11 @@ TEST_CASE("a successful reply yields the internal s-expression") {
 TEST_CASE("a Maxima error is a value, not an exception") {
     // Failing to integrate something is an ordinary outcome. Only
     // infrastructure failures throw.
-    ScriptedSession scripted(
-        {frame(2, false, "NIL",
-               "integrate: variable must not be a number; found: 5")});
+    ScriptedSession scripted({frame(
+        2, false, "NIL", "integrate: variable must not be a number; found: 5")});
 
-    const proxima::detail::Reply reply = scripted.session->eval(Payload::text("integrate(x, 5)"));
+    const proxima::detail::Reply reply
+        = scripted.session->eval(Payload::text("integrate(x, 5)"));
     CHECK_FALSE(reply.ok);
     CHECK(reply.reason == "integrate: variable must not be a number; found: 5");
     CHECK(reply.value.empty());
@@ -126,7 +127,8 @@ TEST_CASE("exact rationals survive the round trip") {
     // The whole reason for using the internal form rather than display output:
     // 1/3 stays a rational instead of becoming 0.333...
     ScriptedSession scripted({frame(2, true, "((RAT SIMP) 11 15)")});
-    CHECK(scripted.session->eval(Payload::text("1/3 + 2/5")).value == "((RAT SIMP) 11 15)");
+    CHECK(scripted.session->eval(Payload::text("1/3 + 2/5")).value
+          == "((RAT SIMP) 11 15)");
 }
 
 TEST_CASE("prompts and banner text between frames are discarded") {
@@ -140,10 +142,10 @@ TEST_CASE("a reply split across several reads is reassembled") {
     const std::string whole = frame(2, true, "((MPLUS SIMP) 1 $X)");
     const size_t third = whole.size() / 3;
 
-    ScriptedSession scripted({whole.substr(0, third),
-                              whole.substr(third, third),
+    ScriptedSession scripted({whole.substr(0, third), whole.substr(third, third),
                               whole.substr(2 * third)});
-    CHECK(scripted.session->eval(Payload::text("x+1")).value == "((MPLUS SIMP) 1 $X)");
+    CHECK(scripted.session->eval(Payload::text("x+1")).value
+          == "((MPLUS SIMP) 1 $X)");
 }
 
 TEST_CASE("a delimiter split across two reads is still recognised") {
@@ -160,10 +162,11 @@ TEST_CASE("a stale frame from an earlier request is skipped") {
     // This is what the correlation id buys. Without it a leftover reply would
     // be returned as the answer to the wrong question — silently, and with a
     // perfectly plausible-looking value.
-    ScriptedSession scripted({frame(1, true, "$STALE_ANSWER")
-                              + frame(2, true, "$CORRECT_ANSWER")});
+    ScriptedSession scripted(
+        {frame(1, true, "$STALE_ANSWER") + frame(2, true, "$CORRECT_ANSWER")});
 
-    CHECK(scripted.session->eval(Payload::text("something")).value == "$CORRECT_ANSWER");
+    CHECK(scripted.session->eval(Payload::text("something")).value
+          == "$CORRECT_ANSWER");
 }
 
 TEST_CASE("a value containing delimiter-like text is not truncated") {
@@ -197,18 +200,21 @@ TEST_CASE("a reply that never completes is abandoned at the size limit") {
     // Without the limit this read would continue until Config::timeout.
     const std::string half(MaximaSession::kMaxFrameBytes / 2 + 1, 'x');
     ScriptedSession scripted({frame(2, true, "1").substr(0, 20) + half, half});
-    CHECK_THROWS_AS(scripted.session->eval(Payload::text("x")), proxima::KernelError);
+    CHECK_THROWS_AS(scripted.session->eval(Payload::text("x")),
+                    proxima::KernelError);
 }
 
 TEST_CASE("a closing delimiter with no opening one is a protocol error") {
     ScriptedSession scripted({MaximaSession::frame_end(kKey, 2) + "\n"});
-    CHECK_THROWS_AS(scripted.session->eval(Payload::text("x")), proxima::KernelError);
+    CHECK_THROWS_AS(scripted.session->eval(Payload::text("x")),
+                    proxima::KernelError);
 }
 
 TEST_CASE("a frame missing its field separators is a protocol error") {
     ScriptedSession scripted({MaximaSession::frame_begin(kKey, 2) + "T"
                               + MaximaSession::frame_end(kKey, 2)});
-    CHECK_THROWS_AS(scripted.session->eval(Payload::text("x")), proxima::KernelError);
+    CHECK_THROWS_AS(scripted.session->eval(Payload::text("x")),
+                    proxima::KernelError);
 }
 
 TEST_CASE("a session whose child has died reports a KernelError") {
@@ -216,15 +222,17 @@ TEST_CASE("a session whose child has died reports a KernelError") {
     // signal a real transport gives when the child exits.
     ScriptedSession scripted({});
     REQUIRE(scripted.transport->script_exhausted());
-    CHECK_THROWS_AS(scripted.session->eval(Payload::text("1+1")), proxima::KernelError);
+    CHECK_THROWS_AS(scripted.session->eval(Payload::text("1+1")),
+                    proxima::KernelError);
 }
 
 TEST_CASE("a null transport is rejected rather than dereferenced") {
-    CHECK_THROWS_AS(
-        MaximaSession(std::unique_ptr<proxima::detail::ITransport>(), proxima::Config{}, kKey),
-        proxima::KernelError);
-    CHECK_THROWS_AS(MaximaSession(MaximaSession::TransportFactory{}, proxima::Config{}, kKey),
+    CHECK_THROWS_AS(MaximaSession(std::unique_ptr<proxima::detail::ITransport>(),
+                                  proxima::Config{}, kKey),
                     proxima::KernelError);
+    CHECK_THROWS_AS(
+        MaximaSession(MaximaSession::TransportFactory{}, proxima::Config{}, kKey),
+        proxima::KernelError);
 }
 
 TEST_CASE("a session that cannot answer restarts") {
@@ -327,9 +335,8 @@ TEST_CASE("bookkeeping does not wait behind a call in progress") {
     });
     std::this_thread::sleep_for(200ms); // Well into its wait for a reply.
 
-    auto stats = std::async(std::launch::async, [&session] {
-        return session.cache_stats();
-    });
+    auto stats = std::async(std::launch::async,
+                            [&session] { return session.cache_stats(); });
     CHECK(stats.wait_for(2s) == std::future_status::ready);
 
     session.set_timeout(50ms);
@@ -396,9 +403,8 @@ TEST_CASE("an answer computed across an invalidation is not cached") {
         std::this_thread::sleep_for(1ms);
     }
 
-    auto invalidating = std::async(std::launch::async, [&session] {
-        session.invalidate_cache();
-    });
+    auto invalidating
+        = std::async(std::launch::async, [&session] { session.invalidate_cache(); });
     // Does not wait for the computation, which is still held back.
     CHECK(invalidating.wait_for(2s) == std::future_status::ready);
 
@@ -413,7 +419,8 @@ namespace {
 /// An environment of one assumption, as Kernel builds one: its key, and the
 /// statement that establishes it.
 Environment assuming(const std::string &fact) {
-    return {"assume(" + fact + ")\n", {{Payload::text("assume(" + fact + ")"), fact}}};
+    return {"assume(" + fact + ")\n",
+            {{Payload::text("assume(" + fact + ")"), fact}}};
 }
 
 } // namespace
@@ -423,14 +430,14 @@ TEST_CASE("a set of assumptions gets a context once, and is switched to") {
     // makes a context for it; later ones find it current, or switch to it,
     // and a question under no assumptions runs in `initial`.
     ScriptedSession scripted({
-        frame(2, true, "$PROXIMA_A1"),                   // supcontext
+        frame(2, true, "$PROXIMA_A1"),                            // supcontext
         frame(3, true, "((MLIST SIMP) ((MGREATERP SIMP) $X 0))"), // assume
-        frame(4, true, "$ONE"),                          // question one, under x > 0
-        frame(5, true, "$TWO"),                          // question two: no switch needed
-        frame(6, true, "$INITIAL"),                      // context: initial
-        frame(7, true, "$BARE"),                         // question one, under nothing
-        frame(8, true, "$PROXIMA_A1"),                   // context: proxima_a1
-        frame(9, true, "$THREE"),                        // question three, under x > 0
+        frame(4, true, "$ONE"),        // question one, under x > 0
+        frame(5, true, "$TWO"),        // question two: no switch needed
+        frame(6, true, "$INITIAL"),    // context: initial
+        frame(7, true, "$BARE"),       // question one, under nothing
+        frame(8, true, "$PROXIMA_A1"), // context: proxima_a1
+        frame(9, true, "$THREE"),      // question three, under x > 0
     });
     MaximaSession &session = *scripted.session;
     const Environment positive = assuming("x > 0");
@@ -454,10 +461,10 @@ TEST_CASE("a set of assumptions gets a context once, and is switched to") {
 
 TEST_CASE("contradictory assumptions are refused, and leave no context behind") {
     ScriptedSession scripted({
-        frame(2, true, "$PROXIMA_A1"),                   // supcontext
-        frame(3, true, "((MLIST SIMP) $INCONSISTENT)"),  // assume: contradicts
-        frame(4, true, "$INITIAL"),                      // context: initial
-        frame(5, true, "$DONE"),                         // killcontext
+        frame(2, true, "$PROXIMA_A1"),                  // supcontext
+        frame(3, true, "((MLIST SIMP) $INCONSISTENT)"), // assume: contradicts
+        frame(4, true, "$INITIAL"),                     // context: initial
+        frame(5, true, "$DONE"),                        // killcontext
     });
     MaximaSession &session = *scripted.session;
 
@@ -491,10 +498,11 @@ TEST_CASE("past the limit, the least recently used context is killed") {
     }
     ScriptedSession scripted(script);
     for (std::size_t i = 0; i <= MaximaSession::kMaxContexts; ++i) {
-        CHECK(scripted.session
-                  ->eval_pure(Payload::text("q"), assuming("x > " + std::to_string(i)))
-                  .value
-              == "$ANSWER");
+        CHECK(
+            scripted.session
+                ->eval_pure(Payload::text("q"), assuming("x > " + std::to_string(i)))
+                .value
+            == "$ANSWER");
     }
     const std::string sent = scripted.transport->sent_text();
     CHECK(sent.find("killcontext(proxima_a1)") != std::string::npos);
@@ -504,12 +512,15 @@ TEST_CASE("past the limit, the least recently used context is killed") {
 TEST_CASE("a session with no way to build another transport does not restart") {
     ScriptedSession scripted({});
     REQUIRE(scripted.transport->script_exhausted());
-    CHECK_THROWS_AS(scripted.session->eval(Payload::text("1+1")), proxima::KernelError);
+    CHECK_THROWS_AS(scripted.session->eval(Payload::text("1+1")),
+                    proxima::KernelError);
     // Still dead, and honestly so, rather than pretending to recover.
-    CHECK_THROWS_AS(scripted.session->eval(Payload::text("1+1")), proxima::KernelError);
+    CHECK_THROWS_AS(scripted.session->eval(Payload::text("1+1")),
+                    proxima::KernelError);
 }
 
-TEST_CASE("restart() replaces the process, and contexts are made again when needed") {
+TEST_CASE(
+    "restart() replaces the process, and contexts are made again when needed") {
     int built = 0;
     auto factory = [&]() -> std::unique_ptr<proxima::detail::ITransport> {
         ++built;
@@ -528,14 +539,14 @@ TEST_CASE("restart() replaces the process, and contexts are made again when need
     CHECK(built == 2);
     // The cache went with the old process, and so did its context: the new
     // one is made before the question is asked again.
-    CHECK(session.eval_pure(Payload::text("q"), assuming("x > 0")).value == "$FRESH");
+    CHECK(session.eval_pure(Payload::text("q"), assuming("x > 0")).value
+          == "$FRESH");
 
     SUBCASE("unless there is no way to start another") {
         ScriptedSession scripted({});
         CHECK_THROWS_AS(scripted.session->restart(), proxima::KernelError);
     }
 }
-
 
 TEST_CASE("a failed handshake is reported at construction") {
     // If the session cannot be made machine-readable there is no point letting

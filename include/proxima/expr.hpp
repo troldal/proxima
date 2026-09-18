@@ -278,7 +278,8 @@ public:
     ///     const std::string what = e.match(
     ///         [](const node::Integer &n) { return n.value.to_string(); },
     ///         [](const node::Symbol &s) { return s.name; },
-    ///         [](const node::Sum &s) { return std::to_string(s.terms.size()) + " terms"; },
+    ///         [](const node::Sum &s) { return std::to_string(s.terms.size()) + "
+    ///         terms"; },
     ///         [](const auto &) { return std::string("something else"); });
     ///
     /// **Total.** A set of handlers that misses a kind does not compile, so a
@@ -373,7 +374,8 @@ private:
         : node_(std::move(node)) {}
 
     friend Expr detail::make_expr(std::shared_ptr<const detail::Node> node);
-    friend bool detail::same_representation(const Expr &lhs, const Expr &rhs) noexcept;
+    friend bool detail::same_representation(const Expr &lhs,
+                                            const Expr &rhs) noexcept;
 
     std::shared_ptr<const detail::Node> node_;
 };
@@ -389,7 +391,8 @@ struct Integer {
 
 struct Rational {
     const proxima::Integer &numerator;
-    const proxima::Integer &denominator; ///< Positive, and coprime with the numerator.
+    const proxima::Integer
+        &denominator; ///< Positive, and coprime with the numerator.
 };
 
 struct Real {
@@ -435,25 +438,28 @@ struct Opaque {
 template <typename... Handlers>
     requires detail::HandlesEveryKind<fxt::overload<std::decay_t<Handlers>...>>
 decltype(auto) Expr::match(Handlers &&...handlers) const {
-    fxt::overload<std::decay_t<Handlers>...> visit{std::forward<Handlers>(handlers)...};
+    fxt::overload<std::decay_t<Handlers>...> visit{
+        std::forward<Handlers>(handlers)...};
     using Visitor = decltype(visit);
-    using Result = std::common_type_t<std::invoke_result_t<Visitor &, const node::Integer &>,
-                                      std::invoke_result_t<Visitor &, const node::Rational &>,
-                                      std::invoke_result_t<Visitor &, const node::Real &>,
-                                      std::invoke_result_t<Visitor &, const node::Symbol &>,
-                                      std::invoke_result_t<Visitor &, const node::Sum &>,
-                                      std::invoke_result_t<Visitor &, const node::Product &>,
-                                      std::invoke_result_t<Visitor &, const node::Power &>,
-                                      std::invoke_result_t<Visitor &, const node::Call &>,
-                                      std::invoke_result_t<Visitor &, const node::Relation &>,
-                                      std::invoke_result_t<Visitor &, const node::Opaque &>>;
+    using Result
+        = std::common_type_t<std::invoke_result_t<Visitor &, const node::Integer &>,
+                             std::invoke_result_t<Visitor &, const node::Rational &>,
+                             std::invoke_result_t<Visitor &, const node::Real &>,
+                             std::invoke_result_t<Visitor &, const node::Symbol &>,
+                             std::invoke_result_t<Visitor &, const node::Sum &>,
+                             std::invoke_result_t<Visitor &, const node::Product &>,
+                             std::invoke_result_t<Visitor &, const node::Power &>,
+                             std::invoke_result_t<Visitor &, const node::Call &>,
+                             std::invoke_result_t<Visitor &, const node::Relation &>,
+                             std::invoke_result_t<Visitor &, const node::Opaque &>>;
     const std::vector<Expr> &operands = args();
     switch (kind()) {
     case Kind::Integer:
         return static_cast<Result>(visit(node::Integer{integer_ref()}));
     case Kind::Rational: {
         const Fraction &fraction = fraction_ref();
-        return static_cast<Result>(visit(node::Rational{fraction.numerator, fraction.denominator}));
+        return static_cast<Result>(
+            visit(node::Rational{fraction.numerator, fraction.denominator}));
     }
     case Kind::Real:
         return static_cast<Result>(visit(node::Real{real_ref()}));
@@ -607,7 +613,8 @@ struct std::formatter<proxima::Expr, char> {
             notation_ = proxima::detail::Notation::MathML;
             it += 6;
         }
-        if (notation_ != proxima::detail::Notation::Infix && it != end && *it == ':') {
+        if (notation_ != proxima::detail::Notation::Infix && it != end
+            && *it == ':') {
             ++it;
         }
         context.advance_to(it);
@@ -629,6 +636,7 @@ private:
 template <>
 struct std::formatter<proxima::Kind, char> : std::formatter<std::string_view, char> {
     auto format(proxima::Kind kind, std::format_context &context) const {
-        return std::formatter<std::string_view, char>::format(proxima::kind_name(kind), context);
+        return std::formatter<std::string_view, char>::format(
+            proxima::kind_name(kind), context);
     }
 };

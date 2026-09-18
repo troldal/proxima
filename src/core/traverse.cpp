@@ -98,7 +98,8 @@ bool contains(const Expr &expr, const Symbol &symbol) {
         }
         // Unmodelled text can still name the symbol, and solve's check that a
         // solution no longer mentions its unknown depends on seeing it there.
-        return node.is(Kind::Opaque) && opaque_mentions(node.opaque_text(), symbol.name());
+        return node.is(Kind::Opaque)
+               && opaque_mentions(node.opaque_text(), symbol.name());
     });
 }
 
@@ -107,7 +108,8 @@ Expr replace(const Expr &expr, const Symbol &symbol, const Expr &value) {
         if (node.is(Kind::Symbol) && node.name() == symbol.name()) {
             return value;
         }
-        if (node.is(Kind::Opaque) && opaque_mentions(node.opaque_text(), symbol.name())) {
+        if (node.is(Kind::Opaque)
+            && opaque_mentions(node.opaque_text(), symbol.name())) {
             throw Error("cannot replace " + symbol.name()
                         + " inside the unmodelled expression " + node.str()
                         + " without parsing it; proxima::subst has Maxima do it");

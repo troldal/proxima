@@ -66,8 +66,8 @@ inline std::vector<std::string> placed(const Box &box, std::size_t above,
 /// Side by side, baselines aligned.
 inline Box beside(const Box &left, const Box &right) {
     const std::size_t above = std::max(left.baseline, right.baseline);
-    const std::size_t below = std::max(left.height() - left.baseline,
-                                       right.height() - right.baseline);
+    const std::size_t below
+        = std::max(left.height() - left.baseline, right.height() - right.baseline);
     const auto a = placed(left, above, above + below);
     const auto b = placed(right, above, above + below);
     Box out;

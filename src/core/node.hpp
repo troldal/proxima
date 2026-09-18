@@ -46,7 +46,8 @@ struct Node {
     /// Computed once at construction. Consistent with Expr::operator==.
     std::size_t hash = 0;
 
-    std::variant<Integer, Fraction, double, std::string, std::vector<Expr>, Application>
+    std::variant<Integer, Fraction, double, std::string, std::vector<Expr>,
+                 Application>
         payload;
 
     const Integer &integer() const { return std::get<Integer>(payload); }

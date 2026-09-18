@@ -20,7 +20,8 @@ namespace {
 [[noreturn]] void fail(std::string_view input, const std::string &printed,
                        const char *what) {
     std::fprintf(stderr, "round trip failed: %s\n  input:   %.*s\n  printed: %s\n",
-                 what, static_cast<int>(input.size()), input.data(), printed.c_str());
+                 what, static_cast<int>(input.size()), input.data(),
+                 printed.c_str());
     std::abort();
 }
 

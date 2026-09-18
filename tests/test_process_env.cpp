@@ -35,19 +35,18 @@ bool contains(const std::vector<std::string> &entries, const std::string &wanted
 }
 
 size_t count_with_name(const std::vector<std::string> &entries,
-                     const std::string &name) {
+                       const std::string &name) {
     const std::string prefix = name + "=";
-    return static_cast<size_t>(
-        std::count_if(entries.begin(), entries.end(),
-                      [&prefix](const std::string &entry) {
-                          return entry.rfind(prefix, 0) == 0;
-                      }));
+    return static_cast<size_t>(std::count_if(entries.begin(), entries.end(),
+                                             [&prefix](const std::string &entry) {
+                                                 return entry.rfind(prefix, 0) == 0;
+                                             }));
 }
 
 /// Reads until `token` has arrived, the child has gone, or `limit` passes, and
 /// returns everything read.
 std::string read_until(ChildProcessTransport &child, std::string_view token,
-                      std::chrono::milliseconds limit = 10s) {
+                       std::chrono::milliseconds limit = 10s) {
     std::string seen;
     const auto deadline = std::chrono::steady_clock::now() + limit;
     while (seen.find(token) == std::string::npos
@@ -70,11 +69,10 @@ std::string command_shell() {
     for (const std::string &entry : merge_environment({})) {
         const std::string name = entry.substr(0, entry.find('='));
         if (name.size() == 10
-            && std::equal(name.begin(), name.end(), "SYSTEMROOT",
-                          [](char a, char b) {
-                              return std::toupper(static_cast<unsigned char>(a))
-                                     == b;
-                          })) {
+            && std::equal(
+                name.begin(), name.end(), "SYSTEMROOT", [](char a, char b) {
+                    return std::toupper(static_cast<unsigned char>(a)) == b;
+                })) {
             root = entry.substr(name.size() + 1);
             break;
         }
@@ -254,11 +252,13 @@ TEST_CASE("a slow child: many empty reads, then more than one read's worth") {
 
 TEST_CASE("an environment override reaches the child") {
 #ifdef _WIN32
-    ChildProcessTransport child({command_shell(), "/c", "echo %PROXIMA_TRANSPORT_TEST%"},
-                                {{"PROXIMA_TRANSPORT_TEST", "value42"}});
+    ChildProcessTransport child(
+        {command_shell(), "/c", "echo %PROXIMA_TRANSPORT_TEST%"},
+        {{"PROXIMA_TRANSPORT_TEST", "value42"}});
 #else
-    ChildProcessTransport child({"/bin/sh", "-c", "echo \"$PROXIMA_TRANSPORT_TEST\""},
-                                {{"PROXIMA_TRANSPORT_TEST", "value42"}});
+    ChildProcessTransport child(
+        {"/bin/sh", "-c", "echo \"$PROXIMA_TRANSPORT_TEST\""},
+        {{"PROXIMA_TRANSPORT_TEST", "value42"}});
 #endif
     // Without the override the output would be the unexpanded name, or empty.
     CHECK(read_until(child, "value42").find("value42") != std::string::npos);
@@ -271,8 +271,11 @@ TEST_CASE("an environment override reaches the child") {
 // bytes so the test does not depend on the source encoding.
 
 namespace {
-constexpr const char *kUnicodeBytes
-    = "m" "\xC3\xA6" "xima_" "\xE4\xB8\xAD" "\xE6\x96\x87";
+constexpr const char *kUnicodeBytes = "m"
+                                      "\xC3\xA6"
+                                      "xima_"
+                                      "\xE4\xB8\xAD"
+                                      "\xE6\x96\x87";
 }
 
 TEST_CASE("an executable under a non-ASCII directory starts") {
@@ -281,7 +284,8 @@ TEST_CASE("an executable under a non-ASCII directory starts") {
     // would not be found and the constructor would throw.
     const std::filesystem::path dir
         = std::filesystem::temp_directory_path()
-          / proxima::detail::path_from_utf8(std::string("mx_transport_") + kUnicodeBytes);
+          / proxima::detail::path_from_utf8(std::string("mx_transport_")
+                                            + kUnicodeBytes);
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     REQUIRE_FALSE(ec);
@@ -293,9 +297,8 @@ TEST_CASE("an executable under a non-ASCII directory starts") {
                                ec);
 #else
     const std::filesystem::path shell = dir / "sh";
-    std::filesystem::copy_file("/bin/sh", shell,
-                               std::filesystem::copy_options::overwrite_existing,
-                               ec);
+    std::filesystem::copy_file(
+        "/bin/sh", shell, std::filesystem::copy_options::overwrite_existing, ec);
     std::filesystem::permissions(shell, std::filesystem::perms::owner_exec,
                                  std::filesystem::perm_options::add);
 #endif
@@ -303,11 +306,11 @@ TEST_CASE("an executable under a non-ASCII directory starts") {
 
     {
 #ifdef _WIN32
-        ChildProcessTransport child({proxima::detail::to_utf8(shell), "/c",
-                                     "echo mx_unicode^_ok"});
+        ChildProcessTransport child(
+            {proxima::detail::to_utf8(shell), "/c", "echo mx_unicode^_ok"});
 #else
-        ChildProcessTransport child({proxima::detail::to_utf8(shell), "-c",
-                                     "echo mx_unicode'_'ok"});
+        ChildProcessTransport child(
+            {proxima::detail::to_utf8(shell), "-c", "echo mx_unicode'_'ok"});
 #endif
         CHECK(read_until(child, "mx_unicode_ok").find("mx_unicode_ok")
               != std::string::npos);
@@ -321,18 +324,18 @@ TEST_CASE("non-ASCII arguments and environment values arrive intact") {
     // cmd.exe compares the two in UTF-16, so the answer does not depend on
     // the console code page its output would be written in. Both have to be
     // the same characters — and the variable expanded at all — to match.
-    ChildProcessTransport child(
-        {command_shell(), "/c",
-         std::string("if \"%PROXIMA_TRANSPORT_TEST%\"==\"") + kUnicodeBytes
-             + "\" (echo mx_same) else (echo mx_different)"},
-        {{"PROXIMA_TRANSPORT_TEST", kUnicodeBytes}});
+    ChildProcessTransport child({command_shell(), "/c",
+                                 std::string("if \"%PROXIMA_TRANSPORT_TEST%\"==\"")
+                                     + kUnicodeBytes
+                                     + "\" (echo mx_same) else (echo mx_different)"},
+                                {{"PROXIMA_TRANSPORT_TEST", kUnicodeBytes}});
     const std::string output = read_until(child, "mx_");
     CHECK(output.find("mx_same") != std::string::npos);
 #else
     // POSIX passes bytes through untouched, so they can be compared directly.
     ChildProcessTransport child(
-        {"/bin/sh", "-c", "printf '[%s][%s]' \"$1\" \"$PROXIMA_TRANSPORT_TEST\"", "sh",
-         kUnicodeBytes},
+        {"/bin/sh", "-c", "printf '[%s][%s]' \"$1\" \"$PROXIMA_TRANSPORT_TEST\"",
+         "sh", kUnicodeBytes},
         {{"PROXIMA_TRANSPORT_TEST", kUnicodeBytes}});
     const std::string expected
         = std::string("[") + kUnicodeBytes + "][" + kUnicodeBytes + "]";
@@ -343,7 +346,8 @@ TEST_CASE("non-ASCII arguments and environment values arrive intact") {
 TEST_CASE("an executable path that is not UTF-8 is a KernelError") {
     // Only Windows transcodes, so only Windows can reject it; on POSIX the
     // bytes are a legitimate, if nonexistent, file name.
-    CHECK_THROWS_AS(ChildProcessTransport({"no_such\xFF" "program"}),
+    CHECK_THROWS_AS(ChildProcessTransport({"no_such\xFF"
+                                           "program"}),
                     proxima::KernelError);
 }
 

@@ -49,9 +49,9 @@ Environment environment_for(const Assumptions &assumptions) {
     // being the caller's; the key is the same text, which is canonical
     // because the Assumptions are.
     for (const Declaration &declaration : assumptions.declarations()) {
-        const Expr statement
-            = call("declare", {declaration.symbol,
-                               Expr::symbol(std::string(name_of(declaration.feature)))});
+        const Expr statement = call(
+            "declare", {declaration.symbol,
+                        Expr::symbol(std::string(name_of(declaration.feature)))});
         std::string form = to_maxima(statement);
         environment.key += form;
         environment.key += '\n';

@@ -74,11 +74,12 @@ Kernel &shared_kernel() {
 result<Expr> parse(std::string_view source, const Env &env) {
     // The source travels as a string literal, which an Opaque of that shape
     // becomes, for parse_string to read on the far side.
-    return evaluate(env, call("parse_string",
-                                 {Expr::opaque(detail::string_literal(source))}));
+    return evaluate(
+        env, call("parse_string", {Expr::opaque(detail::string_literal(source))}));
 }
 
-result<Expr> diff(const Expr &expr, const Symbol &wrt, unsigned order, const Env &env) {
+result<Expr> diff(const Expr &expr, const Symbol &wrt, unsigned order,
+                  const Env &env) {
     return evaluate(env, call("diff", {expr, wrt, Expr(order)}));
 }
 
@@ -99,13 +100,12 @@ result<Expr> simplify(const Expr &expr, const Env &env) {
 }
 
 result<Expr> subst(const Expr &expr, const Symbol &symbol, const Expr &value,
-           const Env &env) {
+                   const Env &env) {
     // Maxima's argument order is (replacement, target, expression).
     return evaluate(env, call("subst", {value, symbol, expr}));
 }
 
-result<Expr> integrate(const Expr &expr, const Symbol &wrt,
-                                       const Env &env) {
+result<Expr> integrate(const Expr &expr, const Symbol &wrt, const Env &env) {
     auto result = evaluate(env, call("integrate", {expr, wrt}));
     if (!result) {
         return result;
@@ -120,9 +120,8 @@ result<Expr> integrate(const Expr &expr, const Symbol &wrt,
     return result;
 }
 
-result<Expr> integrate(const Expr &expr, const Symbol &wrt,
-                                       const Expr &from, const Expr &to,
-                                       const Env &env) {
+result<Expr> integrate(const Expr &expr, const Symbol &wrt, const Expr &from,
+                       const Expr &to, const Env &env) {
     auto result = evaluate(env, call("integrate", {expr, wrt, from, to}));
     if (!result) {
         return result;
@@ -135,8 +134,8 @@ result<Expr> integrate(const Expr &expr, const Symbol &wrt,
     return result;
 }
 
-result<Expr> limit(const Expr &expr, const Symbol &wrt,
-                                   const Expr &to, Side side, const Env &env) {
+result<Expr> limit(const Expr &expr, const Symbol &wrt, const Expr &to, Side side,
+                   const Env &env) {
     std::vector<Expr> args{expr, wrt, to};
     if (const std::string_view keyword = side_keyword(side); !keyword.empty()) {
         args.push_back(Expr::symbol(std::string(keyword)));
@@ -156,21 +155,22 @@ result<Expr> limit(const Expr &expr, const Symbol &wrt,
     // side and -1 on the other. `ind` used to come back as a success, and a
     // caller checking only the std::expected took the symbol for an answer.
     if (result->is(Kind::Symbol) && result->name() == "und") {
-        return refuse(Cause::NoLimit, "the limit of " + expr.str() + " as " + wrt.name()
-                                          + " approaches " + to.str() + " does not exist");
+        return refuse(Cause::NoLimit, "the limit of " + expr.str() + " as "
+                                          + wrt.name() + " approaches " + to.str()
+                                          + " does not exist");
     }
     if (result->is(Kind::Symbol) && result->name() == "ind") {
-        return refuse(Cause::NoLimit, "the limit of " + expr.str() + " as " + wrt.name()
-                                          + " approaches " + to.str()
+        return refuse(Cause::NoLimit, "the limit of " + expr.str() + " as "
+                                          + wrt.name() + " approaches " + to.str()
                                           + " does not exist: it stays bounded but "
                                             "does not settle on a value");
     }
     return result;
 }
 
-result<std::vector<Solution>>
-solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
-      const Env &env) {
+result<std::vector<Solution>> solve(std::span<const Expr> equations,
+                                    std::span<const Symbol> unknowns,
+                                    const Env &env) {
     if (unknowns.empty()) {
         return refuse(Cause::Argument, "solve was given no unknowns");
     }
@@ -192,8 +192,9 @@ solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
         return fxt::unexpected(result.error());
     }
     if (!is_list(*result)) {
-        return refuse(Cause::NotSolved, "solve did not return a list of solutions, but "
-                                            + result->str());
+        return refuse(Cause::NotSolved,
+                      "solve did not return a list of solutions, but "
+                          + result->str());
     }
 
     // Maxima flattens the result when there is one unknown: solve([x^2=1], [x])
@@ -205,7 +206,8 @@ solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
 
     const auto reject = [&](const std::string &why) {
         return refuse(Cause::NotSolved, "Maxima did not solve " + equation_list.str()
-                                            + " for " + unknown_list.str() + ": " + why);
+                                            + " for " + unknown_list.str() + ": "
+                                            + why);
     };
 
     std::vector<Solution> solutions;
@@ -238,8 +240,8 @@ solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
             // finish, not a solution. `[x = sin(x)]` is the classic shape.
             for (const Symbol &unknown : unknowns) {
                 if (contains(assignment.arg(1), unknown)) {
-                    return reject(assignment.str()
-                                  + " still depends on " + unknown.name());
+                    return reject(assignment.str() + " still depends on "
+                                  + unknown.name());
                 }
             }
             by_name.emplace_back(assignment.arg(0).name(), assignment.arg(1));
@@ -262,8 +264,8 @@ solve(std::span<const Expr> equations, std::span<const Symbol> unknowns,
     return solutions;
 }
 
-result<std::vector<Expr>>
-solve(const Expr &equation, const Symbol &unknown, const Env &env) {
+result<std::vector<Expr>> solve(const Expr &equation, const Symbol &unknown,
+                                const Env &env) {
     // Delegates, so that the rules deciding what counts as a solution live in
     // one place rather than being maintained twice.
     const Expr equations[] = {equation};
@@ -284,15 +286,16 @@ solve(const Expr &equation, const Symbol &unknown, const Env &env) {
 }
 
 result<Expr> ode2(const Expr &equation, const Symbol &dependent,
-                                  const Symbol &independent, const Env &env) {
+                  const Symbol &independent, const Env &env) {
     auto result = evaluate(env, call("ode2", {equation, dependent, independent}));
     if (!result) {
         return result;
     }
     // Maxima prints why to the console, and answers false.
     if (result->is(Kind::Symbol) && result->name() == "false") {
-        return refuse(Cause::NotSolved, "ode2 could not solve " + equation.str() + " for "
-                                            + dependent.name() + " as a function of "
+        return refuse(Cause::NotSolved, "ode2 could not solve " + equation.str()
+                                            + " for " + dependent.name()
+                                            + " as a function of "
                                             + independent.name());
     }
     return result;
@@ -314,14 +317,14 @@ result<Truth> is(const Expr &predicate, const Env &env) {
                     return Truth::Unknown;
                 }
             }
-            return refuse(Cause::UnexpectedAnswer, "is(" + predicate.str() + ") answered "
-                                                       + answer.str()
-                                                       + ", which is not a truth value");
+            return refuse(Cause::UnexpectedAnswer,
+                          "is(" + predicate.str() + ") answered " + answer.str()
+                              + ", which is not a truth value");
         });
 }
 
-result<Expr> taylor(const Expr &expr, const Symbol &wrt, const Expr &at, unsigned order,
-            const Env &env) {
+result<Expr> taylor(const Expr &expr, const Symbol &wrt, const Expr &at,
+                    unsigned order, const Env &env) {
     // Maxima answers a taylor series in its own truncated-series form; the
     // protocol hands every reply through ratdisrep, which makes it a sum.
     return evaluate(env, call("taylor", {expr, wrt, at, Expr(order)}));
@@ -355,8 +358,8 @@ namespace {
 
 /// sum or product, closed or a Failure.
 result<Expr> closed_form(const std::string &head, const Expr &term,
-                                        const Symbol &index, const Expr &from,
-                                        const Expr &to, const Env &env) {
+                         const Symbol &index, const Expr &from, const Expr &to,
+                         const Env &env) {
     // `simpsum` is what has Maxima look for a closed form when a bound is
     // symbolic; without it `sum(k, k, 1, n)` stays the noun. ev turns it on
     // for this evaluation alone, so no setting outlives the call.
@@ -373,13 +376,13 @@ result<Expr> closed_form(const std::string &head, const Expr &term,
 
 } // namespace
 
-result<Expr> sum(const Expr &term, const Symbol &index,
-                                 const Expr &from, const Expr &to, const Env &env) {
+result<Expr> sum(const Expr &term, const Symbol &index, const Expr &from,
+                 const Expr &to, const Env &env) {
     return closed_form("sum", term, index, from, to, env);
 }
 
-result<Expr> product(const Expr &term, const Symbol &index,
-                                     const Expr &from, const Expr &to, const Env &env) {
+result<Expr> product(const Expr &term, const Symbol &index, const Expr &from,
+                     const Expr &to, const Env &env) {
     return closed_form("product", term, index, from, to, env);
 }
 
@@ -393,8 +396,8 @@ result<std::size_t> nroots(const Expr &polynomial, const Expr &low, const Expr &
                     return static_cast<std::size_t>(*value);
                 }
             }
-            return refuse(Cause::UnexpectedAnswer,
-                          "nroots answered " + count.str() + ", which is not a count");
+            return refuse(Cause::UnexpectedAnswer, "nroots answered " + count.str()
+                                                       + ", which is not a count");
         });
 }
 
@@ -402,8 +405,9 @@ result<std::vector<Expr>> realroots(const Expr &polynomial, const Env &env) {
     return evaluate(env, call("realroots", {polynomial}))
         .and_then([](const Expr &roots) -> result<std::vector<Expr>> {
             const auto not_roots = [&roots] {
-                return refuse(Cause::UnexpectedAnswer, "realroots answered " + roots.str()
-                                                           + ", which is not a list of roots");
+                return refuse(Cause::UnexpectedAnswer,
+                              "realroots answered " + roots.str()
+                                  + ", which is not a list of roots");
             };
             if (!is_list(roots)) {
                 return not_roots();
@@ -421,8 +425,8 @@ result<std::vector<Expr>> realroots(const Expr &polynomial, const Env &env) {
         });
 }
 
-result<double> find_root(const Expr &expr, const Symbol &wrt,
-                                        double low, double high, const Env &env) {
+result<double> find_root(const Expr &expr, const Symbol &wrt, double low,
+                         double high, const Env &env) {
     auto result
         = evaluate(env, call("find_root", {expr, wrt, Expr(low), Expr(high)}));
     if (!result) {
@@ -435,9 +439,10 @@ result<double> find_root(const Expr &expr, const Symbol &wrt,
     // of the interval, so there was nothing to bisect.
     // std::format, not std::to_string: to_string prints six decimals, so an
     // interval from 1e-9 to 1e-8 read "between 0.000000 and 0.000000".
-    return refuse(Cause::Eval,
-                  std::format("find_root could not evaluate {} to a number between {} and {}",
-                              expr.str(), low, high));
+    return refuse(
+        Cause::Eval,
+        std::format("find_root could not evaluate {} to a number between {} and {}",
+                    expr.str(), low, high));
 }
 
 } // namespace proxima

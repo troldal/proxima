@@ -27,14 +27,15 @@
 
 namespace px = proxima;
 
-// --- Expressions -------------------------------------------------------------------
+// --- Expressions
+// -------------------------------------------------------------------
 
 TEST_CASE("guide: operators and infix text build the same expression") {
     const proxima::Symbol x("x"), y("y");
 
-    proxima::Expr f = pow(x, 2) + 3 * x + 2;          // operators
+    proxima::Expr f = pow(x, 2) + 3 * x + 2; // operators
     const proxima::Expr from_operators = f;
-    f = *proxima::Expr::parse("x^2 + 3*x + 2");       // or infix text, no kernel
+    f = *proxima::Expr::parse("x^2 + 3*x + 2"); // or infix text, no kernel
     CHECK(f == from_operators);
 }
 
@@ -43,9 +44,13 @@ TEST_CASE("guide: reading an expression is a match") {
     const proxima::Symbol x("x");
     const auto what = [](const proxima::Expr &e) {
         return e.match(
-            [](const node::Integer &n) { return "the integer " + n.value.to_string(); },
+            [](const node::Integer &n) {
+                return "the integer " + n.value.to_string();
+            },
             [](const node::Symbol &s) { return "the symbol " + s.name; },
-            [](const node::Sum &s) { return std::to_string(s.terms.size()) + " terms"; },
+            [](const node::Sum &s) {
+                return std::to_string(s.terms.size()) + " terms";
+            },
             [](const node::Call &c) { return "a call to " + c.head; },
             [](const auto &) { return std::string("something else"); });
     };
@@ -89,13 +94,15 @@ TEST_CASE("README: the first example") {
     std::ostringstream out;
     out << *integral;
     CHECK(out.str() == "cos(x)*(2 - x^2) + 2*x*sin(x)");
-    CHECK(*px::eval_numeric(*integral, {{x, 1.0}}) == doctest::Approx(2.22324).epsilon(1e-5));
+    CHECK(*px::eval_numeric(*integral, {{x, 1.0}})
+          == doctest::Approx(2.22324).epsilon(1e-5));
 }
 
 TEST_CASE("guide: results chain, and a chain stops at the first failure") {
     const proxima::Symbol x("x");
     const proxima::Expr f = pow(x, 3);
-    const auto chained = proxima::diff(f, x) | fxt::and_then(FXT_LIFT(proxima::factor))
+    const auto chained = proxima::diff(f, x)
+                         | fxt::and_then(FXT_LIFT(proxima::factor))
                          | fxt::and_then(FXT_LIFT(proxima::expand));
     CHECK(chained == 3 * pow(x, 2));
 }
@@ -105,7 +112,8 @@ TEST_CASE("guide: numeric evaluation") {
     const auto integral = proxima::integrate(pow(x, 2) * proxima::sin(x), x);
     REQUIRE(integral.has_value());
 
-    CHECK(*proxima::eval_numeric(*integral, {{x, 1.0}}) == doctest::Approx(2.22324).epsilon(1e-5));
+    CHECK(*proxima::eval_numeric(*integral, {{x, 1.0}})
+          == doctest::Approx(2.22324).epsilon(1e-5));
     CHECK_FALSE(proxima::is_evaluable(*integral));
 
     const proxima::Compiled f(*integral, x);
@@ -120,7 +128,8 @@ TEST_CASE("guide: assumptions travel with the question") {
     const auto positive = proxima::assuming(gt(x, 0));
     CHECK(*proxima::simplify(sqrt(pow(x, 2))) == proxima::abs(proxima::Expr(x)));
     CHECK(*proxima::simplify(sqrt(pow(x, 2)), positive) == proxima::Expr(x));
-    CHECK(*proxima::simplify(sqrt(pow(x, 2)), {positive, kernel}) == proxima::Expr(x));
+    CHECK(*proxima::simplify(sqrt(pow(x, 2)), {positive, kernel})
+          == proxima::Expr(x));
 }
 
 TEST_CASE("guide: failure is an outcome") {
@@ -137,20 +146,24 @@ TEST_CASE("guide: composing with FXT") {
     const proxima::Expr f = pow(x, 4);
 #ifdef __cpp_lib_bind_back
     const std::string answer
-        = proxima::diff(f, x)
-          | fxt::and_then(FXT_LIFT(proxima::factor))
-          | fxt::and_then([&](const proxima::Expr &e) { return proxima::diff(e, x); })
-          | fxt::and_then(std::bind_back(FXT_LIFT(proxima::expand), proxima::Env(kernel)))
+        = proxima::diff(f, x) | fxt::and_then(FXT_LIFT(proxima::factor))
+          | fxt::and_then(
+              [&](const proxima::Expr &e) { return proxima::diff(e, x); })
+          | fxt::and_then(
+              std::bind_back(FXT_LIFT(proxima::expand), proxima::Env(kernel)))
           | fxt::transform(proxima::to_tex)
           | fxt::value_or(std::string("no answer"));
 #else
-    const std::string answer
-        = proxima::diff(f, x)
-          | fxt::and_then(FXT_LIFT(proxima::factor))
-          | fxt::and_then([&](const proxima::Expr &e) { return proxima::diff(e, x); })
-          | fxt::and_then([&](const proxima::Expr &e) { return proxima::expand(e, kernel); })
-          | fxt::transform(proxima::to_tex)
-          | fxt::value_or(std::string("no answer"));
+    const std::string answer = proxima::diff(f, x)
+                               | fxt::and_then(FXT_LIFT(proxima::factor))
+                               | fxt::and_then([&](const proxima::Expr &e) {
+                                     return proxima::diff(e, x);
+                                 })
+                               | fxt::and_then([&](const proxima::Expr &e) {
+                                     return proxima::expand(e, kernel);
+                                 })
+                               | fxt::transform(proxima::to_tex)
+                               | fxt::value_or(std::string("no answer"));
 #endif
     CHECK(answer == "12 x^{2}");
 }

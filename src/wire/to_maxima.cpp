@@ -23,7 +23,7 @@ namespace {
 /// verb, which is exactly what Maxima's own parser produces for `sin(x)`,
 /// and which evaluation turns into the `%SIN` noun.
 constexpr std::pair<std::string_view, std::string_view> kInternalHeads[] = {
-    {"'diff", "%DERIVATIVE"}, {"abs", "MABS"}, {"factorial", "MFACTORIAL"},
+    {"'diff", "%DERIVATIVE"}, {"abs", "MABS"},   {"factorial", "MFACTORIAL"},
     {"not", "MNOT"},          {"list", "MLIST"},
 };
 
@@ -51,8 +51,8 @@ constexpr std::string_view relation_head(RelOp op) {
 bool reads_plainly(std::string_view token) {
     for (const char c : token) {
         const auto uc = static_cast<unsigned char>(c);
-        if (!(std::isupper(uc) != 0 || std::isdigit(uc) != 0 || c == '_'
-              || c == '%' || c == '$')) {
+        if (!(std::isupper(uc) != 0 || std::isdigit(uc) != 0 || c == '_' || c == '%'
+              || c == '$')) {
             return false;
         }
     }
@@ -126,7 +126,7 @@ bool is_string_literal(std::string_view text) {
 void render(const Expr &expr, std::string &out);
 
 void render_application(std::string_view head, std::span<const Expr> args,
-                       std::string &out) {
+                        std::string &out) {
     out += "((";
     out += head;
     out += ')';
@@ -193,13 +193,17 @@ void render(const Expr &expr, std::string &out) {
             }
         },
         [&](const node::Sum &s) { render_application("MPLUS", s.terms, out); },
-        [&](const node::Product &p) { render_application("MTIMES", p.factors, out); },
+        [&](const node::Product &p) {
+            render_application("MTIMES", p.factors, out);
+        },
         [&](const node::Power &p) { render_pair("MEXPT", p.base, p.exponent, out); },
         [&](const node::Call &c) {
             std::string storage;
             render_application(function_head(c.head, storage), c.args, out);
         },
-        [&](const node::Relation &r) { render_pair(relation_head(r.op), r.lhs, r.rhs, out); },
+        [&](const node::Relation &r) {
+            render_pair(relation_head(r.op), r.lhs, r.rhs, out);
+        },
         [&](const node::Opaque &o) {
             // A string is a string: from_maxima wraps Maxima strings as quoted
             // Opaque text, and this sends them back as Lisp strings, which use

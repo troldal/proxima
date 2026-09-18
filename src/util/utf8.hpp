@@ -43,8 +43,7 @@ inline std::filesystem::path path_from_utf8(std::string_view text) {
 /// What the standard library throws for that differs between implementations —
 /// std::system_error from some, std::range_error from others — so anything but
 /// running out of memory counts.
-inline std::optional<std::string>
-try_to_utf8(const std::filesystem::path &path) {
+inline std::optional<std::string> try_to_utf8(const std::filesystem::path &path) {
     try {
         return to_utf8(path);
     } catch (const std::bad_alloc &) {

@@ -129,7 +129,7 @@ constexpr const char *kHelperLisp = R"LISP((progn
  (cl-user::run)))LISP";
 
 std::unique_ptr<ITransport> launch_maxima(const Config &config,
-                                         std::string &version_tag) {
+                                          std::string &version_tag) {
     const MaximaInstall install = discover_maxima(config, system_env());
     version_tag = install.version_tag;
 
@@ -215,7 +215,7 @@ Payload Payload::text(std::string_view source) {
 }
 
 std::string MaximaSession::request_for(std::string_view key, std::uint64_t id,
-                                      const Payload &payload) {
+                                       const Payload &payload) {
     // errcatch turns a Maxima error into an empty list rather than an error
     // prompt; ratdisrep keeps canonical rational (MRAT) forms from coming back
     // in place of general ones. The payload is a call on a string literal, so
@@ -247,14 +247,14 @@ MaximaSession::launch_command(const MaximaInstall &install) {
     // deadlock. With it, the process exits instead, which recover() can undo.
     // errcatch is unaffected: it handles the error before the debugger would
     // ever see it.
-    argv.insert(argv.end(), {"--end-runtime-options", "--disable-debugger",
-                             "--eval", kHelperLisp, "--end-toplevel-options"});
+    argv.insert(argv.end(), {"--end-runtime-options", "--disable-debugger", "--eval",
+                             kHelperLisp, "--end-toplevel-options"});
     return argv;
 }
 
 std::vector<EnvOverride>
 MaximaSession::launch_environment(const MaximaInstall &install,
-                                 const Config &config) {
+                                  const Config &config) {
     std::vector<EnvOverride> env;
 
     // Correct even where the image already has a prefix compiled in, which
@@ -307,7 +307,7 @@ void ensure_private_directory(const std::filesystem::path &dir) {
 
     // lstat, not stat: a symbolic link planted in its place is refused rather
     // than followed to wherever its owner chose.
-    struct stat info {};
+    struct stat info{};
     if (::lstat(dir.c_str(), &info) != 0) {
         refuse(std::generic_category().message(errno));
     }
@@ -335,7 +335,8 @@ std::filesystem::path default_user_dir() {
     // every user of the machine, so a single /tmp/proxima/userdir — what this
     // used to be — let whoever created it first run code in every other
     // user's Proxima. One directory per user, and only if it is really theirs.
-    const std::filesystem::path base = temp / ("proxima-" + std::to_string(::geteuid()));
+    const std::filesystem::path base
+        = temp / ("proxima-" + std::to_string(::geteuid()));
     ensure_private_directory(base);
     const std::filesystem::path user_dir = base / "userdir";
     ensure_private_directory(user_dir);
@@ -344,7 +345,8 @@ std::filesystem::path default_user_dir() {
 }
 
 MaximaSession::MaximaSession(Config config)
-    : config_(std::move(config)), cache_(config_.cache_entries, config_.cache_bytes) {
+    : config_(std::move(config)),
+      cache_(config_.cache_entries, config_.cache_bytes) {
     // A factory rather than one transport, so a dead kernel can be replaced.
     //
     // The version is recorded under the state lock: a restart relaunches from
@@ -366,14 +368,16 @@ MaximaSession::MaximaSession(Config config)
     const std::lock_guard<std::mutex> state(state_mutex_);
     if (!config_.cache_directory.empty() && !maxima_version_.empty()) {
         persistent_ = std::make_unique<PersistentCache>(
-            config_.cache_directory, persistence_stamp(), config_.cache_directory_limit);
+            config_.cache_directory, persistence_stamp(),
+            config_.cache_directory_limit);
     }
 }
 
 MaximaSession::MaximaSession(TransportFactory factory, Config config,
                              std::string frame_key)
     : config_(std::move(config)), factory_(std::move(factory)),
-      frame_key_(std::move(frame_key)), cache_(config_.cache_entries, config_.cache_bytes) {
+      frame_key_(std::move(frame_key)),
+      cache_(config_.cache_entries, config_.cache_bytes) {
     if (!factory_) {
         throw KernelError("MaximaSession was given a null transport factory");
     }
@@ -387,7 +391,8 @@ MaximaSession::MaximaSession(TransportFactory factory, Config config,
 MaximaSession::MaximaSession(std::unique_ptr<ITransport> transport, Config config,
                              std::string frame_key)
     : config_(std::move(config)), transport_(std::move(transport)),
-      frame_key_(std::move(frame_key)), cache_(config_.cache_entries, config_.cache_bytes) {
+      frame_key_(std::move(frame_key)),
+      cache_(config_.cache_entries, config_.cache_bytes) {
     // No factory, so this session cannot be restarted; a death is final.
     if (!transport_) {
         throw KernelError("MaximaSession was given a null transport");
@@ -419,8 +424,7 @@ void MaximaSession::handshake() {
     // helper itself — eval_string lives in a package Maxima autoloads.
     const Reply ready = eval_locked(Payload::form("T"), Deadline::Startup);
     if (!ready.ok) {
-        throw KernelError("Maxima rejected the startup handshake: "
-                          + ready.reason);
+        throw KernelError("Maxima rejected the startup handshake: " + ready.reason);
     }
 }
 
@@ -480,7 +484,8 @@ Reply MaximaSession::switch_context(const std::string &name) {
     return reply;
 }
 
-std::optional<Reply> MaximaSession::select_environment(const Environment &environment) {
+std::optional<Reply>
+MaximaSession::select_environment(const Environment &environment) {
     if (environment.key.empty()) {
         const Reply switched = switch_context("initial");
         return switched.ok ? std::nullopt : std::optional<Reply>(switched);
@@ -533,7 +538,8 @@ std::optional<Reply> MaximaSession::select_environment(const Environment &enviro
         // Never the one just made, which is at the front and current.
         const auto &[key, victim] = contexts_.back();
         const Reply killed = converse(Payload::text("killcontext(" + victim + ")"));
-        static_cast<void>(killed); // A context Maxima no longer has is gone either way.
+        static_cast<void>(
+            killed); // A context Maxima no longer has is gone either way.
         context_index_.erase(key);
         contexts_.pop_back();
     }
@@ -546,7 +552,8 @@ Reply MaximaSession::eval_locked(const Payload &payload, Deadline deadline) {
     return read_frame(id, deadline);
 }
 
-Reply MaximaSession::eval_pure(const Payload &payload, const Environment &environment) {
+Reply MaximaSession::eval_pure(const Payload &payload,
+                               const Environment &environment) {
     // The pipe lock for the whole call, cache lookups included, so that no
     // statement changes Maxima between a question and the caching of its
     // answer.
@@ -720,14 +727,16 @@ Reply MaximaSession::read_frame(std::uint64_t id, Deadline deadline_kind) {
         const std::string chunk
             = transport_->receive(std::min(kPollInterval, remaining));
         if (!chunk.empty()) {
-            search_from = buffer.size() >= end.size() ? buffer.size() - (end.size() - 1) : 0;
+            search_from
+                = buffer.size() >= end.size() ? buffer.size() - (end.size() - 1) : 0;
             buffer += chunk;
             // A KernelError, so converse restarts the child: whatever it was
             // printing, the stream can no longer be trusted to line up.
             if (buffer.size() > kMaxFrameBytes) {
-                throw KernelError("Maxima's reply exceeded "
-                                  + std::to_string(kMaxFrameBytes / (std::size_t{1024} * 1024))
-                                  + " MB without completing");
+                throw KernelError(
+                    "Maxima's reply exceeded "
+                    + std::to_string(kMaxFrameBytes / (std::size_t{1024} * 1024))
+                    + " MB without completing");
             }
             continue;
         }
@@ -742,8 +751,8 @@ Reply MaximaSession::read_frame(std::uint64_t id, Deadline deadline_kind) {
     if (begin_at == std::string::npos) {
         throw KernelError("Maxima produced a malformed reply: the closing "
                           "delimiter for request "
-                          + frame_tag(frame_key_, id) + " arrived without its opening "
-                          + "delimiter");
+                          + frame_tag(frame_key_, id)
+                          + " arrived without its opening " + "delimiter");
     }
 
     // Everything before `begin_at` is banner text, prompts, or a frame belonging

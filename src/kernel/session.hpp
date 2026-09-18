@@ -5,13 +5,13 @@
 // ITransport and nothing else.
 
 #include "kernel/cache.hpp"
-#include "kernel/persistent_cache.hpp"
 #include "kernel/discovery.hpp"
+#include "kernel/persistent_cache.hpp"
 #include "transport/itransport.hpp"
 #include "transport/process_env.hpp"
 
-#include <proxima/config.hpp>
 #include "kernel/reply.hpp"
+#include <proxima/config.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -211,7 +211,6 @@ public:
     };
     CacheStats cache_stats() const;
 
-
     /// Changes the per-call deadline, for a call already waiting as well as
     /// for later ones: it takes effect within one poll. Does not affect
     /// Config::startup_timeout.
@@ -233,7 +232,8 @@ public:
 
     /// How a failure to establish contradictory assumptions begins, so that
     /// to_result can give it Cause::Inconsistent.
-    static constexpr std::string_view kInconsistent = "the assumptions are inconsistent: ";
+    static constexpr std::string_view kInconsistent
+        = "the assumptions are inconsistent: ";
 
     /// Builds the argv used to launch Maxima's SBCL image for `install`, with
     /// its paths in UTF-8. Exposed for testing; touches no filesystem and
@@ -246,7 +246,7 @@ public:
     /// nothing. Throws KernelError if the default directory exists and is not
     /// private to this user (see default_user_dir).
     static std::vector<EnvOverride> launch_environment(const MaximaInstall &install,
-                                                      const Config &config);
+                                                       const Config &config);
 
     /// The statements sent once at startup to make the session machine-readable
     /// and deterministic. Exposed so tests can script a transport that expects
@@ -257,7 +257,7 @@ public:
     /// request `id` of the session whose frame key is `key`. Exposed for
     /// testing.
     static std::string request_for(std::string_view key, std::uint64_t id,
-                                  const Payload &payload);
+                                   const Payload &payload);
 
     /// Frame delimiters for request `id` under frame key `key`. Exposed so
     /// tests can script replies in the same shape Maxima produces.
@@ -353,7 +353,8 @@ private:
     /// contexts made for assumptions, most recently used first.
     std::string active_context_ = "initial";
     std::list<std::pair<std::string, std::string>> contexts_; ///< (key, name)
-    std::unordered_map<std::string, std::list<std::pair<std::string, std::string>>::iterator>
+    std::unordered_map<std::string,
+                       std::list<std::pair<std::string, std::string>>::iterator>
         context_index_;
     std::uint64_t next_context_ = 0;
 

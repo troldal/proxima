@@ -5,8 +5,8 @@
 #include <bit>
 #include <cctype>
 #include <cstdint>
-#include <utility>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace proxima::detail {
@@ -95,7 +95,8 @@ Integer integer_of(const SExpr &form) {
     // it once did, so that a broken reader could never pass for an answer.
     auto value = Integer::parse(form.digits());
     if (!value) {
-        throw ParseError("unreadable integer '" + form.digits() + "' in a Maxima reply");
+        throw ParseError("unreadable integer '" + form.digits()
+                         + "' in a Maxima reply");
     }
     return std::move(*value);
 }
@@ -109,7 +110,8 @@ Expr map_integer(const SExpr &form) {
 /// than kept as Opaque text such as "(1/0)" that would look like an answer.
 Expr map_rational(const SExpr &form) {
     if (form.size() != 3 || !form.at(1).is_integer() || !form.at(2).is_integer()) {
-        throw ParseError("malformed rational " + form.to_string() + " in a Maxima reply");
+        throw ParseError("malformed rational " + form.to_string()
+                         + " in a Maxima reply");
     }
     Integer denominator = integer_of(form.at(2));
     if (denominator.is_zero()) {

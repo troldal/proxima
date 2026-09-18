@@ -195,8 +195,11 @@ TEST_CASE("the shared kernel is one process, reused") {
     // observable consequence of there being a single long-lived process.
     // Note this goes through Kernel::eval, not proxima::parse: parsing is only
     // parsing, and deliberately does not evaluate what it reads.
-    REQUIRE(proxima::shared_kernel().tell(proxima::Statement::text("shared_probe: 11")).has_value());
-    CHECK(proxima::shared_kernel().ask(proxima::Query::text("shared_probe^2")) == Expr(121));
+    REQUIRE(proxima::shared_kernel()
+                .tell(proxima::Statement::text("shared_probe: 11"))
+                .has_value());
+    CHECK(proxima::shared_kernel().ask(proxima::Query::text("shared_probe^2"))
+          == Expr(121));
 }
 
 TEST_CASE("differentiation") {
@@ -222,7 +225,10 @@ TEST_CASE("algebraic rearrangement") {
     // simplify is the older name for the same thing.
     CHECK(*proxima::simplify((pow(Expr(x), 2) - 1) / (Expr(x) - 1)) == Expr(x) + 1);
     // And it knows no identities: sin(x)^2 + cos(x)^2 is trigsimp's to reduce.
-    CHECK(proxima::ratsimp(pow(proxima::sin(Expr(x)), 2) + pow(proxima::cos(Expr(x)), 2))->kind() == Kind::Add);
+    CHECK(proxima::ratsimp(pow(proxima::sin(Expr(x)), 2)
+                           + pow(proxima::cos(Expr(x)), 2))
+              ->kind()
+          == Kind::Add);
     CHECK(*proxima::subst(pow(Expr(x), 2) + 1, x, Expr(5)) == Expr(26));
 
     SUBCASE("factoring returns a product") {
@@ -257,7 +263,8 @@ TEST_CASE("integration") {
     SUBCASE("no closed form is a Failure, not an exception") {
         // Maxima signals this by returning the integral unevaluated rather
         // than by erroring, so the noun form is what gets recognised.
-        const auto hopeless = proxima::integrate(proxima::exp(proxima::sin(Expr(x))), x);
+        const auto hopeless
+            = proxima::integrate(proxima::exp(proxima::sin(Expr(x))), x);
         REQUIRE_FALSE(hopeless.has_value());
         CHECK(hopeless.error().message().find("no closed form")
               != std::string::npos);
@@ -280,10 +287,10 @@ TEST_CASE("limits") {
     CHECK(*sinc == Expr(1));
 
     SUBCASE("one-sided limits differ from the two-sided one") {
-        const auto above
-            = proxima::limit(Expr(1) / Expr(x), x, Expr(0), proxima::Side::FromAbove);
-        const auto below
-            = proxima::limit(Expr(1) / Expr(x), x, Expr(0), proxima::Side::FromBelow);
+        const auto above = proxima::limit(Expr(1) / Expr(x), x, Expr(0),
+                                          proxima::Side::FromAbove);
+        const auto below = proxima::limit(Expr(1) / Expr(x), x, Expr(0),
+                                          proxima::Side::FromBelow);
         REQUIRE(above.has_value());
         REQUIRE(below.has_value());
         CHECK(above->str() == "inf");
@@ -300,22 +307,27 @@ TEST_CASE("limits") {
         // `ind`: bounded, but never settling. It used to come back as a
         // success holding the symbol ind, which a caller checking only the
         // std::expected took for an answer.
-        const auto oscillating = proxima::limit(proxima::sin(Expr(1) / Expr(x)), x, Expr(0));
+        const auto oscillating
+            = proxima::limit(proxima::sin(Expr(1) / Expr(x)), x, Expr(0));
         REQUIRE_FALSE(oscillating.has_value());
-        CHECK(oscillating.error().message().find("does not exist") != std::string::npos);
+        CHECK(oscillating.error().message().find("does not exist")
+              != std::string::npos);
         CHECK(oscillating.error().message().find("bounded") != std::string::npos);
 
-        const auto step = proxima::limit(proxima::abs(Expr(x)) / Expr(x), x, Expr(0));
+        const auto step
+            = proxima::limit(proxima::abs(Expr(x)) / Expr(x), x, Expr(0));
         CHECK_FALSE(step.has_value());
 
         // `und`: undefined. Already a Failure.
-        const auto undefined = proxima::limit(proxima::exp(Expr(1) / Expr(x)), x, Expr(0));
+        const auto undefined
+            = proxima::limit(proxima::exp(Expr(1) / Expr(x)), x, Expr(0));
         REQUIRE_FALSE(undefined.has_value());
-        CHECK(undefined.error().message().find("does not exist") != std::string::npos);
+        CHECK(undefined.error().message().find("does not exist")
+              != std::string::npos);
 
         // From one side the step has a value after all.
-        const auto right
-            = proxima::limit(proxima::abs(Expr(x)) / Expr(x), x, Expr(0), proxima::Side::FromAbove);
+        const auto right = proxima::limit(proxima::abs(Expr(x)) / Expr(x), x,
+                                          Expr(0), proxima::Side::FromAbove);
         REQUIRE(right.has_value());
         CHECK(*right == Expr(1));
     }
@@ -395,8 +407,7 @@ TEST_CASE("solving a system") {
 
     SUBCASE("a system with several solutions returns each of them") {
         const std::vector<Expr> circle{
-            eq(pow(Expr(x), 2) + pow(Expr(y), 2), Expr(1)),
-            eq(Expr(y), Expr(x))};
+            eq(pow(Expr(x), 2) + pow(Expr(y), 2), Expr(1)), eq(Expr(y), Expr(x))};
         const auto both = proxima::solve(circle, unknowns);
         REQUIRE(both.has_value());
         CHECK(both->size() == 2);
@@ -517,10 +528,11 @@ TEST_CASE("results compose with FXT's adaptors, as the README shows") {
     const Expr f = pow(Expr(x), 3);
 
     const std::string answer
-        = proxima::diff(f, x)
-          | fxt::and_then(FXT_LIFT(proxima::factor))
+        = proxima::diff(f, x) | fxt::and_then(FXT_LIFT(proxima::factor))
           | fxt::and_then([&](const Expr &e) { return proxima::diff(e, x); })
-          | fxt::and_then([&](const Expr &e) { return proxima::expand(e, proxima::shared_kernel()); })
+          | fxt::and_then([&](const Expr &e) {
+                return proxima::expand(e, proxima::shared_kernel());
+            })
           | fxt::transform(proxima::to_tex)
           | fxt::value_or(std::string("no answer"));
     CHECK(answer == "6 x");
@@ -528,7 +540,8 @@ TEST_CASE("results compose with FXT's adaptors, as the README shows") {
 #ifdef __cpp_lib_bind_back
     // std::bind_back binds the variable without a lambda, where the standard
     // library has it (libstdc++ 14, MSVC's STL).
-    const auto bound = proxima::diff(f, x) | fxt::and_then(std::bind_back(FXT_LIFT(proxima::diff), x));
+    const auto bound = proxima::diff(f, x)
+                       | fxt::and_then(std::bind_back(FXT_LIFT(proxima::diff), x));
     CHECK(bound == 6 * Expr(x));
 #endif
 
@@ -541,7 +554,8 @@ TEST_CASE("results compose with FXT's adaptors, as the README shows") {
     CHECK(proxima::cause_of(stopped.error()) == proxima::Cause::MaximaError);
 
     // And a chain can start from a plain expression by wrapping it once.
-    const auto started = proxima::result<Expr>{f} | fxt::and_then(FXT_LIFT(proxima::factor));
+    const auto started
+        = proxima::result<Expr>{f} | fxt::and_then(FXT_LIFT(proxima::factor));
     CHECK(started == f);
 }
 
@@ -549,8 +563,8 @@ TEST_CASE("results are canonical expressions, not text") {
     // The whole point of the layer: what comes back is an Expr that can be fed
     // straight into the next operation.
     const Symbol x("x");
-    const Expr chained
-        = *proxima::expand(*proxima::factor(*proxima::diff(pow(Expr(x), 3) + pow(Expr(x), 2), x)));
+    const Expr chained = *proxima::expand(
+        *proxima::factor(*proxima::diff(pow(Expr(x), 3) + pow(Expr(x), 2), x)));
     CHECK(chained == 3 * pow(Expr(x), 2) + 2 * Expr(x));
 }
 
@@ -573,9 +587,13 @@ TEST_CASE("series, trigonometric, radical and partial-fraction rearrangement") {
     CHECK(*proxima::taylor(proxima::sin(Expr(x)), x, Expr(0), 5)
           == Expr(x) + Expr::rational(-1, 6) * pow(Expr(x), 3)
                  + Expr::rational(1, 120) * pow(Expr(x), 5));
-    CHECK(*proxima::trigsimp(pow(proxima::sin(Expr(x)), 2) + pow(proxima::cos(Expr(x)), 2)) == Expr(1));
-    CHECK(*proxima::trigexpand(proxima::sin(2 * Expr(x))) == 2 * proxima::cos(Expr(x)) * proxima::sin(Expr(x)));
-    CHECK(*proxima::radcan(proxima::exp(2 * proxima::log(Expr(x)))) == pow(Expr(x), 2));
+    CHECK(*proxima::trigsimp(pow(proxima::sin(Expr(x)), 2)
+                             + pow(proxima::cos(Expr(x)), 2))
+          == Expr(1));
+    CHECK(*proxima::trigexpand(proxima::sin(2 * Expr(x)))
+          == 2 * proxima::cos(Expr(x)) * proxima::sin(Expr(x)));
+    CHECK(*proxima::radcan(proxima::exp(2 * proxima::log(Expr(x))))
+          == pow(Expr(x), 2));
     CHECK(*proxima::partfrac(1 / (pow(Expr(x), 2) - 1), x)
           == Expr::rational(1, 2) * pow(Expr(x) - 1, -1)
                  + Expr::rational(-1, 2) * pow(Expr(x) + 1, -1));
@@ -584,7 +602,8 @@ TEST_CASE("series, trigonometric, radical and partial-fraction rearrangement") {
 TEST_CASE("float and coeff") {
     const Symbol x("x");
 
-    CHECK(*proxima::to_float(proxima::pi() + Expr(x)) == Expr(std::numbers::pi) + Expr(x));
+    CHECK(*proxima::to_float(proxima::pi() + Expr(x))
+          == Expr(std::numbers::pi) + Expr(x));
     CHECK(proxima::to_float(Expr::rational(1, 3))->kind() == Kind::Real);
 
     const Expr p = 3 * pow(Expr(x), 2) + 2 * Expr(x) + 5;
@@ -604,11 +623,13 @@ TEST_CASE("sums and products in closed form") {
     CHECK(*proxima::expand(*triangular)
           == Expr::rational(1, 2) * n + Expr::rational(1, 2) * pow(n, 2));
     CHECK(proxima::sum(Expr(k), k, Expr(1), Expr(5)).value() == Expr(15));
-    CHECK(proxima::sum(pow(Expr(2), -Expr(k)), k, Expr(0), proxima::inf()).value() == Expr(2));
+    CHECK(proxima::sum(pow(Expr(2), -Expr(k)), k, Expr(0), proxima::inf()).value()
+          == Expr(2));
     CHECK(proxima::product(Expr(k), k, Expr(1), Expr(5)).value() == Expr(120));
 
     SUBCASE("and a Failure where there is none") {
-        CHECK_FALSE(proxima::sum(Expr::function("f", {Expr(k)}), k, Expr(1), n).has_value());
+        CHECK_FALSE(
+            proxima::sum(Expr::function("f", {Expr(k)}), k, Expr(1), n).has_value());
         CHECK_FALSE(proxima::product(Expr(k), k, Expr(1), n).has_value());
     }
 }
@@ -624,12 +645,14 @@ TEST_CASE("real roots: counted, isolated and found") {
     CHECK(proxima::cause_of(proxima::nroots(Expr(x) * y - 1).error())
           == proxima::Cause::MaximaError);
 
-    CHECK(*proxima::realroots(pow(Expr(x), 2) - 1) == std::vector<Expr>{Expr(-1), Expr(1)});
+    CHECK(*proxima::realroots(pow(Expr(x), 2) - 1)
+          == std::vector<Expr>{Expr(-1), Expr(1)});
     CHECK(proxima::realroots(pow(Expr(x), 2) + 1)->empty());
     const std::vector<Expr> cube_root = *proxima::realroots(pow(Expr(x), 3) - 2);
     REQUIRE(cube_root.size() == 1);
     REQUIRE(cube_root[0].is(Kind::Rational));
-    CHECK(cube_root[0].numerator().to_double() / cube_root[0].denominator().to_double()
+    CHECK(cube_root[0].numerator().to_double()
+              / cube_root[0].denominator().to_double()
           == doctest::Approx(std::cbrt(2.0)).epsilon(1e-6));
     CHECK(proxima::cause_of(proxima::realroots(Expr(x) * y - 1).error())
           == proxima::Cause::MaximaError);
@@ -649,7 +672,8 @@ TEST_CASE("real roots: counted, isolated and found") {
         // "between 0.000000 and 0.000000".
         const auto tiny = proxima::find_root(Expr(x) * y, x, 1e-9, 1e-8);
         REQUIRE_FALSE(tiny.has_value());
-        CHECK(tiny.error().message().find("between 1e-09 and 1e-08") != std::string::npos);
+        CHECK(tiny.error().message().find("between 1e-09 and 1e-08")
+              != std::string::npos);
     }
 }
 
@@ -657,14 +681,15 @@ TEST_CASE("ode2 solves an ordinary differential equation, or says it cannot") {
     const Symbol x("x");
     const Symbol y("y");
 
-    const auto growth = proxima::ode2(proxima::eq(proxima::derivative(Expr(y), x), Expr(y)), y, x);
+    const auto growth
+        = proxima::ode2(proxima::eq(proxima::derivative(Expr(y), x), Expr(y)), y, x);
     REQUIRE(growth.has_value());
     REQUIRE(growth->is(Kind::Relation));
     CHECK(proxima::lhs(*growth) == Expr(y));
     CHECK(proxima::rhs(*growth) == Expr::symbol("%c") * proxima::exp(Expr(x)));
 
-    const auto oscillator
-        = proxima::ode2(proxima::eq(proxima::derivative(Expr(y), x, 2) + Expr(y), Expr(0)), y, x);
+    const auto oscillator = proxima::ode2(
+        proxima::eq(proxima::derivative(Expr(y), x, 2) + Expr(y), Expr(0)), y, x);
     REQUIRE(oscillator.has_value());
     CHECK(proxima::contains(proxima::rhs(*oscillator), Symbol("%k1")));
     CHECK(proxima::contains(proxima::rhs(*oscillator), Symbol("%k2")));
@@ -672,10 +697,13 @@ TEST_CASE("ode2 solves an ordinary differential equation, or says it cannot") {
     SUBCASE("a Failure when it cannot, and the session is none the worse") {
         // ode2 prints its reason to the console before answering false, so
         // that text reaches the pipe ahead of the reply.
-        const auto nonlinear = proxima::ode2(
-            proxima::eq(pow(proxima::derivative(Expr(y), x), 2), proxima::sin(Expr(y)) * Expr(x)), y, x);
+        const auto nonlinear
+            = proxima::ode2(proxima::eq(pow(proxima::derivative(Expr(y), x), 2),
+                                        proxima::sin(Expr(y)) * Expr(x)),
+                            y, x);
         REQUIRE_FALSE(nonlinear.has_value());
-        CHECK(*proxima::expand(pow(Expr(x) + 1, 2)) == Expr(1) + 2 * Expr(x) + pow(Expr(x), 2));
+        CHECK(*proxima::expand(pow(Expr(x) + 1, 2))
+              == Expr(1) + 2 * Expr(x) + pow(Expr(x), 2));
     }
 }
 
@@ -684,14 +712,18 @@ TEST_CASE("every builder round-trips through Maxima unchanged") {
     // the shape, or the two would disagree about what was built.
     const Symbol x("x");
     const std::vector<Expr> built{
-        proxima::sin(x),   proxima::cos(x),   proxima::tan(x),     proxima::asin(x),   proxima::acos(x),
-        proxima::atan(x),  proxima::sinh(x),  proxima::cosh(x),    proxima::tanh(x),   proxima::asinh(x),
-        proxima::acosh(x), proxima::atanh(x), proxima::log(x),     proxima::abs(x),    proxima::erf(x),
-        proxima::floor(x), proxima::ceiling(x), proxima::signum(x), proxima::exp(x),   proxima::sqrt(x),
+        proxima::sin(x),   proxima::cos(x),     proxima::tan(x),
+        proxima::asin(x),  proxima::acos(x),    proxima::atan(x),
+        proxima::sinh(x),  proxima::cosh(x),    proxima::tanh(x),
+        proxima::asinh(x), proxima::acosh(x),   proxima::atanh(x),
+        proxima::log(x),   proxima::abs(x),     proxima::erf(x),
+        proxima::floor(x), proxima::ceiling(x), proxima::signum(x),
+        proxima::exp(x),   proxima::sqrt(x),
     };
     for (const Expr &expression : built) {
         CAPTURE(expression.str());
-        const auto back = proxima::shared_kernel().ask(proxima::Query::form(expression));
+        const auto back
+            = proxima::shared_kernel().ask(proxima::Query::form(expression));
         REQUIRE(back.has_value());
         CHECK(*back == expression);
     }

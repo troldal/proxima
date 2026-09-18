@@ -60,10 +60,8 @@ TEST_CASE("numbers are folded into one term") {
     CHECK((Expr(2) * Expr(3) * Expr(x)).str() == "6*x");
 
     SUBCASE("exactly, for exact operands") {
-        CHECK(Expr::rational(1, 2) + Expr::rational(1, 3)
-              == Expr::rational(5, 6));
-        CHECK(Expr::rational(2, 3) * Expr::rational(3, 4)
-              == Expr::rational(1, 2));
+        CHECK(Expr::rational(1, 2) + Expr::rational(1, 3) == Expr::rational(5, 6));
+        CHECK(Expr::rational(2, 3) * Expr::rational(3, 4) == Expr::rational(1, 2));
         // A fraction that comes out whole collapses.
         CHECK(Expr::rational(1, 2) + Expr::rational(1, 2) == Expr(1));
     }
@@ -168,8 +166,7 @@ TEST_CASE("like terms are not collected") {
 TEST_CASE("nothing is expanded or factored") {
     const Symbol x("x");
 
-    CHECK_FALSE(pow(Expr(x) + 1, 2)
-                == Expr(x) * Expr(x) + 2 * Expr(x) + 1);
+    CHECK_FALSE(pow(Expr(x) + 1, 2) == Expr(x) * Expr(x) + 2 * Expr(x) + 1);
     CHECK_FALSE((Expr(x) + 1) * (Expr(x) - 1) == pow(Expr(x), 2) - 1);
 }
 
@@ -222,16 +219,16 @@ TEST_CASE("a reciprocal is kept in the one form division produces") {
         // The last three have a number for the reciprocal's base, which the
         // printer once multiplied into the denominator: 4/(269*0) reads back
         // with 269*0 folded to 0.
-        for (const Expr &e : {Expr::symbol("s") * pow(Expr::symbol("n"), -1) * pow(f, -1),
-                              Expr::rational(1, 3) * Expr(x) * pow(Expr(y), -1),
-                              Expr(x) * pow(Expr(2), -1),
-                              Expr::rational(4, 269) * pow(Expr(0), -1),
-                              Expr::rational(4, 269) * pow(Expr(2.5), -1),
-                              Expr::rational(3, 5) * pow(Expr(2), -2) * Expr(x),
-                              // -0.0 prints with a minus but is not below zero,
-                              // so as a base it went unbracketed: -0.0^(-1).
-                              pow(Expr(-0.0), -1), pow(Expr(-0.0), 2),
-                              Expr(-0.0) * Expr(x), Expr(-0.0)}) {
+        for (const Expr &e :
+             {Expr::symbol("s") * pow(Expr::symbol("n"), -1) * pow(f, -1),
+              Expr::rational(1, 3) * Expr(x) * pow(Expr(y), -1),
+              Expr(x) * pow(Expr(2), -1), Expr::rational(4, 269) * pow(Expr(0), -1),
+              Expr::rational(4, 269) * pow(Expr(2.5), -1),
+              Expr::rational(3, 5) * pow(Expr(2), -2) * Expr(x),
+              // -0.0 prints with a minus but is not below zero,
+              // so as a base it went unbracketed: -0.0^(-1).
+              pow(Expr(-0.0), -1), pow(Expr(-0.0), 2), Expr(-0.0) * Expr(x),
+              Expr(-0.0)}) {
             CAPTURE(e.str());
             CHECK(*Expr::parse(e.str()) == e);
         }

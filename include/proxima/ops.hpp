@@ -82,8 +82,7 @@ result<Expr> trigexpand(const Expr &expr, const Env &env = {});
 result<Expr> radcan(const Expr &expr, const Env &env = {});
 
 /// The partial-fraction decomposition of `expr` in `wrt`.
-result<Expr> partfrac(const Expr &expr, const Symbol &wrt,
-                      const Env &env = {});
+result<Expr> partfrac(const Expr &expr, const Symbol &wrt, const Env &env = {});
 
 /// Maxima's `float`: every number and numeric constant in `expr` as a
 /// double, symbols left alone — `%pi + x` is 3.141592653589793 + x. For
@@ -104,8 +103,7 @@ result<Expr> coeff(const Expr &expr, const Expr &term, int power = 1,
 /// Cause::NoClosedForm when none exists. Note that Maxima does not treat that
 /// as an error: it returns the integral unevaluated, and that noun form is
 /// what this recognises.
-result<Expr> integrate(const Expr &expr, const Symbol &wrt,
-                       const Env &env = {});
+result<Expr> integrate(const Expr &expr, const Symbol &wrt, const Env &env = {});
 
 /// Definite integral over [from, to].
 result<Expr> integrate(const Expr &expr, const Symbol &wrt, const Expr &from,
@@ -222,8 +220,7 @@ result<std::size_t> nroots(const Expr &polynomial,
 /// root — or exactly, when the root is rational. In the order Maxima gives
 /// them, which is not sorted. Cause::MaximaError for anything but a
 /// univariate polynomial with rational coefficients.
-result<std::vector<Expr>> realroots(const Expr &polynomial,
-                                    const Env &env = {});
+result<std::vector<Expr>> realroots(const Expr &polynomial, const Env &env = {});
 
 /// A root of `expr` in `wrt` between `low` and `high`, found numerically by
 /// Maxima's `find_root`. The expression must change sign across the interval.

@@ -61,9 +61,9 @@ TEST_CASE("small values do not allocate") {
 }
 
 TEST_CASE("round-tripping through decimal") {
-    for (const std::string &text : {std::string("0"), std::string("1"),
-                                    std::string("-1"), kMaxInt64, kMinInt64,
-                                    kFactorial30, std::string("-") + kFactorial30}) {
+    for (const std::string &text :
+         {std::string("0"), std::string("1"), std::string("-1"), kMaxInt64,
+          kMinInt64, kFactorial30, std::string("-") + kFactorial30}) {
         CAPTURE(text);
         CHECK(Integer(text).to_string() == text);
     }
@@ -123,8 +123,9 @@ TEST_CASE("the machine paths agree with the wide ones at every 64-bit edge") {
     const std::int64_t min = std::numeric_limits<std::int64_t>::min();
     const std::int64_t max = std::numeric_limits<std::int64_t>::max();
     const std::vector<std::int64_t> edges{
-        min, min + 1, min / 2, -3037000500, -3037000499, -4294967296, -2, -1, 0,
-        1, 2, 4294967296, 3037000499, 3037000500, max / 2, max - 1, max};
+        min,        min + 1,    min / 2, -3037000500, -3037000499, -4294967296,
+        -2,         -1,         0,       1,           2,           4294967296,
+        3037000499, 3037000500, max / 2, max - 1,     max};
     const Integer shift(kFactorial30); // Large, so adding it forces the wide path.
 
     for (const std::int64_t a : edges) {
@@ -284,7 +285,8 @@ TEST_CASE("arithmetic agrees with Maxima on large random values") {
     };
 
     const auto maxima_says = [&kernel](const std::string &expression) {
-        const auto reply = proxima::detail::ask_wire(kernel, proxima::Query::text(expression), {});
+        const auto reply = proxima::detail::ask_wire(
+            kernel, proxima::Query::text(expression), {});
         REQUIRE(reply.has_value());
         return *reply;
     };
@@ -307,10 +309,11 @@ TEST_CASE("arithmetic agrees with Maxima on large random values") {
         CHECK((x - y).to_string() == maxima_says(a + " - (" + b + ")"));
         CHECK((x * y).to_string() == maxima_says(a + " * (" + b + ")"));
         // Maxima's quotient and remainder truncate toward zero, as these do.
-        CHECK((x / y).to_string() == maxima_says("truncate((" + a + ")/(" + b + "))"));
+        CHECK((x / y).to_string()
+              == maxima_says("truncate((" + a + ")/(" + b + "))"));
         CHECK((x % y).to_string()
-              == maxima_says("(" + a + ") - (" + b + ")*truncate((" + a + ")/("
-                            + b + "))"));
+              == maxima_says("(" + a + ") - (" + b + ")*truncate((" + a + ")/(" + b
+                             + "))"));
         CHECK(gcd(x, y).to_string() == maxima_says("gcd(" + a + ", " + b + ")"));
     }
 }
@@ -328,7 +331,8 @@ TEST_CASE("a factorial from Maxima is a number here") {
     CHECK(doubled.str() == "530505719624382117272616960000000");
 
     // And Maxima agrees.
-    const auto confirmed = kernel.ask(proxima::Query::text("is(" + doubled.str() + " = 2*30!)"));
+    const auto confirmed
+        = kernel.ask(proxima::Query::text("is(" + doubled.str() + " = 2*30!)"));
     CHECK(confirmed == proxima::Expr::symbol("true"));
 }
 

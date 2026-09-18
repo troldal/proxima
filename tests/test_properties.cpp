@@ -28,8 +28,8 @@
 #include <array>
 #include <bit>
 #include <cmath>
-#include <cstdint>
 #include <compare>
+#include <cstdint>
 #include <cstdlib>
 #include <format>
 #include <limits>
@@ -85,8 +85,9 @@ std::uint64_t seed() {
 /// What the generator may produce. The text round trip needs the subset the
 /// infix printer and parser share; the wire needs everything but Opaque.
 struct Shape {
-    bool opaque = false;       ///< Opaque nodes, which neither round trip models.
-    bool odd_names = false;    ///< Symbol names only the wire can carry: "X", "xY", "x y".
+    bool opaque = false; ///< Opaque nodes, which neither round trip models.
+    bool odd_names
+        = false; ///< Symbol names only the wire can carry: "X", "xY", "x y".
 };
 
 /// Random expression trees, built through the public builders, so every tree
@@ -159,19 +160,21 @@ private:
     Expr function(int depth) {
         static constexpr std::array<std::string_view, 8> kHeads{
             "sin", "cos", "log", "f", "g", "bessel_j", "list", "factorial"};
-        const std::string head(kHeads[static_cast<std::size_t>(pick(0, static_cast<int>(kHeads.size()) - 1))]);
-        const int arity = head == "bessel_j" ? 2 : head == "list" ? pick(0, 3)
-                                               : head == "f"      ? pick(1, 3)
-                                                                  : 1;
+        const std::string head(kHeads[static_cast<std::size_t>(
+            pick(0, static_cast<int>(kHeads.size()) - 1))]);
+        const int arity = head == "bessel_j" ? 2
+                          : head == "list"   ? pick(0, 3)
+                          : head == "f"      ? pick(1, 3)
+                                             : 1;
         return Expr::function(head, operands(depth, arity));
     }
 
     Expr relation(int depth) {
-        static constexpr std::array<RelOp, 6> kOps{RelOp::Equal,     RelOp::NotEqual,
-                                                   RelOp::Less,      RelOp::LessEqual,
-                                                   RelOp::Greater,   RelOp::GreaterEqual};
-        return Expr::relation(kOps[static_cast<std::size_t>(pick(0, 5))], node(depth - 1),
-                              node(depth - 1));
+        static constexpr std::array<RelOp, 6> kOps{
+            RelOp::Equal,     RelOp::NotEqual, RelOp::Less,
+            RelOp::LessEqual, RelOp::Greater,  RelOp::GreaterEqual};
+        return Expr::relation(kOps[static_cast<std::size_t>(pick(0, 5))],
+                              node(depth - 1), node(depth - 1));
     }
 
     Expr atom() {
@@ -219,14 +222,17 @@ private:
 
     double real() {
         static constexpr std::array<double, 12> kAwkward{
-            0.0,   -0.0,   0.1,     2.5,   -7.25,  1.0 / 3.0,
-            1e-300, 1e300, 5e-324, 1.7976931348623157e308, 123456789.125, 0.5};
+            0.0,           -0.0,   0.1,   2.5,    -7.25,
+            1.0 / 3.0,     1e-300, 1e300, 5e-324, 1.7976931348623157e308,
+            123456789.125, 0.5};
         if (chance(50)) {
-            return kAwkward[static_cast<std::size_t>(pick(0, static_cast<int>(kAwkward.size()) - 1))];
+            return kAwkward[static_cast<std::size_t>(
+                pick(0, static_cast<int>(kAwkward.size()) - 1))];
         }
         // Any finite double, uniformly over bit patterns.
         for (;;) {
-            const std::uint64_t bits = std::uniform_int_distribution<std::uint64_t>()(rng_);
+            const std::uint64_t bits
+                = std::uniform_int_distribution<std::uint64_t>()(rng_);
             const double value = std::bit_cast<double>(bits);
             if (std::isfinite(value)) {
                 return value;
@@ -239,9 +245,11 @@ private:
             "x", "y", "z", "a_1", "theta", "%pi", "%e", "%i", "inf", "minf"};
         static constexpr std::array<std::string_view, 3> kOdd{"X", "xY", "x y"};
         if (shape_.odd_names && chance(20)) {
-            return std::string(kOdd[static_cast<std::size_t>(pick(0, static_cast<int>(kOdd.size()) - 1))]);
+            return std::string(kOdd[static_cast<std::size_t>(
+                pick(0, static_cast<int>(kOdd.size()) - 1))]);
         }
-        return std::string(kPlain[static_cast<std::size_t>(pick(0, static_cast<int>(kPlain.size()) - 1))]);
+        return std::string(kPlain[static_cast<std::size_t>(
+            pick(0, static_cast<int>(kPlain.size()) - 1))]);
     }
 
     std::mt19937_64 rng_;
@@ -292,7 +300,9 @@ Expr rebuild_by_match(const Expr &expr) {
     };
     return expr.match(
         [](const node::Integer &n) { return Expr::integer(n.value); },
-        [](const node::Rational &q) { return Expr::rational(q.numerator, q.denominator); },
+        [](const node::Rational &q) {
+            return Expr::rational(q.numerator, q.denominator);
+        },
         [](const node::Real &r) { return Expr::real(r.value); },
         [](const node::Symbol &s) { return Expr::symbol(s.name); },
         [&](const node::Sum &s) { return Expr::add(all(s.terms)); },
@@ -302,7 +312,8 @@ Expr rebuild_by_match(const Expr &expr) {
         },
         [&](const node::Call &c) { return Expr::function(c.head, all(c.args)); },
         [](const node::Relation &r) {
-            return Expr::relation(r.op, rebuild_by_match(r.lhs), rebuild_by_match(r.rhs));
+            return Expr::relation(r.op, rebuild_by_match(r.lhs),
+                                  rebuild_by_match(r.rhs));
         },
         [](const node::Opaque &o) { return Expr::opaque(o.text); });
 }
@@ -323,7 +334,8 @@ void for_all(std::uint64_t salt, Shape shape, Check &&check) {
 }
 
 bool mentions_opaque(const Expr &expr) {
-    return proxima::any_of(expr, [](const Expr &node) { return node.is(Kind::Opaque); });
+    return proxima::any_of(expr,
+                           [](const Expr &node) { return node.is(Kind::Opaque); });
 }
 
 } // namespace
@@ -339,7 +351,9 @@ TEST_CASE("property: the generator reaches every kind of node") {
     for_all(0, {.opaque = true, .odd_names = true}, [&](const Expr &expr) {
         proxima::visit(expr, [&](const Expr &node) {
             ++kinds[static_cast<std::size_t>(node.kind())];
-            big_integers += node.is(Kind::Integer) && !node.integer_value().is_small() ? 1 : 0;
+            big_integers
+                += node.is(Kind::Integer) && !node.integer_value().is_small() ? 1
+                                                                              : 0;
             negative_zero += node.is(Kind::Real) && node.real_value() == 0.0
                                      && std::signbit(node.real_value())
                                  ? 1
@@ -402,10 +416,13 @@ TEST_CASE("property: nodes, fold and visit see the same tree") {
                 }
                 return total;
             });
-        CHECK(static_cast<std::size_t>(std::ranges::distance(proxima::nodes(expr))) == visited);
+        CHECK(static_cast<std::size_t>(std::ranges::distance(proxima::nodes(expr)))
+              == visited);
         CHECK(folded == visited);
         CHECK(proxima::detail::same_representation(
-            proxima::rewrite(expr, [](const Expr &) { return std::optional<Expr>(); }), expr));
+            proxima::rewrite(expr,
+                             [](const Expr &) { return std::optional<Expr>(); }),
+            expr));
     });
 }
 
@@ -424,7 +441,8 @@ TEST_CASE("property: a chain of + or * builds what one add or mul does") {
         std::vector<Expr> operands;
         while (operands.size() < 12) {
             Expr operand = generator.expr();
-            if (!proxima::any_of(operand, [](const Expr &n) { return n.is(Kind::Real); })) {
+            if (!proxima::any_of(operand,
+                                 [](const Expr &n) { return n.is(Kind::Real); })) {
                 operands.push_back(std::move(operand));
             }
         }
@@ -503,7 +521,8 @@ TEST_CASE("property: printed text parses back to the same expression") {
     });
 }
 
-TEST_CASE("property: an expression survives the wire out and back without a kernel") {
+TEST_CASE(
+    "property: an expression survives the wire out and back without a kernel") {
     // to_maxima writes the internal form Maxima reads; from_maxima reads the
     // form Maxima writes. Composed, with no Maxima in between, they must be
     // the identity — which is what lets a reply be trusted to mean what was
@@ -513,7 +532,8 @@ TEST_CASE("property: an expression survives the wire out and back without a kern
         const std::string form = proxima::detail::to_maxima(expr);
         INFO("form: ", form);
         Expr back;
-        REQUIRE_NOTHROW(back = proxima::detail::from_maxima(proxima::detail::parse_sexpr(form)));
+        REQUIRE_NOTHROW(
+            back = proxima::detail::from_maxima(proxima::detail::parse_sexpr(form)));
         CHECK(back == expr);
     });
 }
@@ -522,7 +542,8 @@ TEST_CASE("property: an identity rewrite shares every node") {
     // transform rebuilds only what changed, so rewriting nothing must hand
     // back the very same representation, not an equal copy.
     for_all(5, {.opaque = true, .odd_names = true}, [](const Expr &expr) {
-        const Expr same = proxima::transform(expr, [](const Expr &node) { return node; });
+        const Expr same
+            = proxima::transform(expr, [](const Expr &node) { return node; });
         CHECK(proxima::detail::same_representation(same, expr));
     });
 }
@@ -530,9 +551,9 @@ TEST_CASE("property: an identity rewrite shares every node") {
 TEST_CASE("property: contains agrees with a search of the tree") {
     // Outside Opaque text, which it reads more loosely on purpose, contains
     // is exactly "some node is this symbol".
-    const std::array<proxima::Symbol, 4> symbols{proxima::Symbol("x"), proxima::Symbol("y"),
-                                                 proxima::Symbol("theta"),
-                                                 proxima::Symbol("x y")};
+    const std::array<proxima::Symbol, 4> symbols{
+        proxima::Symbol("x"), proxima::Symbol("y"), proxima::Symbol("theta"),
+        proxima::Symbol("x y")};
     for_all(6, {.odd_names = true}, [&symbols](const Expr &expr) {
         REQUIRE_FALSE(mentions_opaque(expr));
         for (const proxima::Symbol &symbol : symbols) {

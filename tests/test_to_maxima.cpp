@@ -121,7 +121,8 @@ TEST_CASE("function heads take the sigil Maxima's own parser would give them") {
         CHECK(to_maxima(proxima::abs(x)) == "((MABS) $X)");
         CHECK(to_maxima(Expr::function("factorial", {Expr(5)}))
               == "((MFACTORIAL) 5)");
-        CHECK(to_maxima(Expr::function("'diff", {Expr::function("f", {x}), x, Expr(1)}))
+        CHECK(to_maxima(
+                  Expr::function("'diff", {Expr::function("f", {x}), x, Expr(1)}))
               == "((%DERIVATIVE) (($F) $X) $X 1)");
     }
     SUBCASE("a quoted head is a noun") {
@@ -206,7 +207,8 @@ TEST_SUITE("maxima") {
 
 /// Sends `expr` as a form and maps the reply back.
 Expr round_trip(proxima::Kernel &kernel, const Expr &expr) {
-    const auto reply = proxima::detail::ask_wire(kernel, proxima::Query::form(expr), {});
+    const auto reply
+        = proxima::detail::ask_wire(kernel, proxima::Query::form(expr), {});
     REQUIRE_MESSAGE(reply.has_value(), reply.error().message());
     return from_maxima(parse_sexpr(*reply));
 }
@@ -294,7 +296,10 @@ TEST_CASE("text Maxima cannot read is a failure, not a stall") {
 
     SUBCASE("through the raw text entry point") {
         proxima::result<std::string> reply;
-        CHECK(within([&] { reply = proxima::detail::ask_wire(kernel, proxima::Query::text("(1"), {}); }));
+        CHECK(within([&] {
+            reply
+                = proxima::detail::ask_wire(kernel, proxima::Query::text("(1"), {});
+        }));
         REQUIRE_FALSE(reply.has_value());
         CHECK_FALSE(reply.error().message().empty());
         CHECK(proxima::cause_of(reply.error()) == proxima::Cause::MaximaError);
@@ -302,10 +307,14 @@ TEST_CASE("text Maxima cannot read is a failure, not a stall") {
     SUBCASE("through a statement terminator that used to cut the wrapper") {
         proxima::result<std::string> reply;
         CHECK(within([&] {
-            reply = proxima::detail::ask_wire(kernel, proxima::Query::text("1$ 2"), {});
+            reply = proxima::detail::ask_wire(kernel, proxima::Query::text("1$ 2"),
+                                              {});
         }));
         // Contained either way: parsed up to the terminator, or refused.
-        CHECK(within([&] { reply = proxima::detail::ask_wire(kernel, proxima::Query::text("2+2"), {}); }));
+        CHECK(within([&] {
+            reply
+                = proxima::detail::ask_wire(kernel, proxima::Query::text("2+2"), {});
+        }));
         REQUIRE(reply.has_value());
         CHECK(*reply == "4");
     }

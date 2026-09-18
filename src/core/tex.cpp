@@ -63,16 +63,33 @@ std::string escaped(std::string_view text) {
 /// a typeset formula.
 std::string_view symbol_macro(std::string_view name) {
     static constexpr std::pair<std::string_view, std::string_view> kMacros[] = {
-        {"%pi", "\\pi"},       {"%e", "e"},          {"%i", "i"},
-        {"%gamma", "\\gamma"}, {"%phi", "\\varphi"}, {"inf", "\\infty"},
-        {"minf", "-\\infty"},  {"und", "\\mathrm{und}"},
-        {"true", "\\mathrm{true}"}, {"false", "\\mathrm{false}"},
-        {"alpha", "\\alpha"},  {"beta", "\\beta"},   {"gamma", "\\gamma"},
-        {"delta", "\\delta"},  {"epsilon", "\\epsilon"}, {"theta", "\\theta"},
-        {"lambda", "\\lambda"}, {"mu", "\\mu"},      {"nu", "\\nu"},
-        {"rho", "\\rho"},      {"sigma", "\\sigma"}, {"tau", "\\tau"},
-        {"phi", "\\phi"},      {"chi", "\\chi"},     {"psi", "\\psi"},
-        {"omega", "\\omega"},  {"pi", "\\pi"},
+        {"%pi", "\\pi"},
+        {"%e", "e"},
+        {"%i", "i"},
+        {"%gamma", "\\gamma"},
+        {"%phi", "\\varphi"},
+        {"inf", "\\infty"},
+        {"minf", "-\\infty"},
+        {"und", "\\mathrm{und}"},
+        {"true", "\\mathrm{true}"},
+        {"false", "\\mathrm{false}"},
+        {"alpha", "\\alpha"},
+        {"beta", "\\beta"},
+        {"gamma", "\\gamma"},
+        {"delta", "\\delta"},
+        {"epsilon", "\\epsilon"},
+        {"theta", "\\theta"},
+        {"lambda", "\\lambda"},
+        {"mu", "\\mu"},
+        {"nu", "\\nu"},
+        {"rho", "\\rho"},
+        {"sigma", "\\sigma"},
+        {"tau", "\\tau"},
+        {"phi", "\\phi"},
+        {"chi", "\\chi"},
+        {"psi", "\\psi"},
+        {"omega", "\\omega"},
+        {"pi", "\\pi"},
     };
     for (const auto &[known, macro] : kMacros) {
         if (name == known) {
@@ -85,10 +102,9 @@ std::string_view symbol_macro(std::string_view name) {
 /// Functions TeX sets upright and spaces as operators.
 bool has_operator_macro(std::string_view name) {
     static constexpr std::string_view kNames[] = {
-        "sin",  "cos",  "tan",  "sec",  "csc",  "cot",  "sinh", "cosh",
-        "tanh", "log",  "ln",   "exp",  "min",  "max",  "gcd",  "det",
-        "dim",  "deg",  "arg",  "lim",  "inf",  "sup",  "arcsin", "arccos",
-        "arctan",
+        "sin", "cos", "tan", "sec", "csc",    "cot",    "sinh",   "cosh", "tanh",
+        "log", "ln",  "exp", "min", "max",    "gcd",    "det",    "dim",  "deg",
+        "arg", "lim", "inf", "sup", "arcsin", "arccos", "arctan",
     };
     for (const std::string_view known : kNames) {
         if (name == known) {
@@ -125,8 +141,7 @@ std::string render_real(double value) {
     return text;
 }
 
-std::string joined(std::span<const std::string> parts,
-                   std::string_view separator) {
+std::string joined(std::span<const std::string> parts, std::string_view separator) {
     std::string out;
     for (std::size_t i = 0; i < parts.size(); ++i) {
         if (i != 0) {
@@ -195,9 +210,9 @@ struct TeXRenderer {
         std::string out;
         for (std::size_t i = 0; i < factors.size(); ++i) {
             if (i != 0) {
-                const bool starts_with_digit
-                    = !factors[i].empty() && factors[i].front() >= '0'
-                      && factors[i].front() <= '9';
+                const bool starts_with_digit = !factors[i].empty()
+                                               && factors[i].front() >= '0'
+                                               && factors[i].front() <= '9';
                 out += starts_with_digit ? " \\cdot " : " ";
             }
             out += factors[i];
@@ -232,8 +247,7 @@ struct TeXRenderer {
         return "\\left[" + joined(items, ", ") + "\\right]";
     }
 
-    std::string relation(RelOp op, const std::string &lhs,
-                         const std::string &rhs) {
+    std::string relation(RelOp op, const std::string &lhs, const std::string &rhs) {
         std::string_view macro;
         switch (op) {
         case RelOp::Equal:

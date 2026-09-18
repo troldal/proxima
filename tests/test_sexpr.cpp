@@ -149,9 +149,9 @@ TEST_CASE("a ';' in a reply is refused, rather than read for ever") {
     // Found by fuzzing: ';' ended an atom but nothing consumed it, so the
     // reader produced empty atoms at the same place until memory ran out.
     // Maxima never puts a comment in a reply.
-    CHECK_THROWS_AS(static_cast<void>(
-                        parse_sexpr("((BIGFLOAT SIMP 56) 450359;96273704960 1)")),
-                    proxima::ParseError);
+    CHECK_THROWS_AS(
+        static_cast<void>(parse_sexpr("((BIGFLOAT SIMP 56) 450359;96273704960 1)")),
+        proxima::ParseError);
     CHECK_THROWS_AS(static_cast<void>(parse_sexpr(";")), proxima::ParseError);
     CHECK_THROWS_AS(static_cast<void>(parse_sexpr("(a ; b)")), proxima::ParseError);
 }

@@ -157,9 +157,11 @@ TEST_CASE("a failure is cached too") {
     proxima::Kernel kernel;
     const Symbol x("x");
 
-    REQUIRE_FALSE(proxima::integrate(proxima::exp(proxima::sin(Expr(x))), x, kernel).has_value());
+    REQUIRE_FALSE(proxima::integrate(proxima::exp(proxima::sin(Expr(x))), x, kernel)
+                      .has_value());
     const auto before = kernel.cache_stats();
-    REQUIRE_FALSE(proxima::integrate(proxima::exp(proxima::sin(Expr(x))), x, kernel).has_value());
+    REQUIRE_FALSE(proxima::integrate(proxima::exp(proxima::sin(Expr(x))), x, kernel)
+                      .has_value());
 
     CHECK(kernel.cache_stats().hits == before.hits + 1);
 }
@@ -174,7 +176,8 @@ TEST_CASE("an assumption invalidates answers computed without it") {
 
     CHECK(*proxima::simplify(root, kernel) == proxima::abs(Expr(x)));
     // The assumption is part of the question, so it is part of the key.
-    CHECK(*proxima::simplify(root, {proxima::assuming(gt(Expr(x), Expr(0))), kernel}) == Expr(x));
+    CHECK(*proxima::simplify(root, {proxima::assuming(gt(Expr(x), Expr(0))), kernel})
+          == Expr(x));
     CHECK(*proxima::simplify(root, kernel) == proxima::abs(Expr(x)));
 }
 
@@ -196,12 +199,14 @@ TEST_CASE("a binding made through tell cannot leave a stale answer behind") {
     proxima::Kernel kernel;
     const Symbol x("x");
 
-    REQUIRE(kernel.tell(proxima::Statement::text("cache_binding_probe: 2")).has_value());
+    REQUIRE(
+        kernel.tell(proxima::Statement::text("cache_binding_probe: 2")).has_value());
     const Expr before
         = *proxima::simplify(Expr::symbol("cache_binding_probe") * Expr(x), kernel);
     CHECK(before == 2 * Expr(x));
 
-    REQUIRE(kernel.tell(proxima::Statement::text("cache_binding_probe: 3")).has_value());
+    REQUIRE(
+        kernel.tell(proxima::Statement::text("cache_binding_probe: 3")).has_value());
     const Expr after
         = *proxima::simplify(Expr::symbol("cache_binding_probe") * Expr(x), kernel);
     CHECK(after == 3 * Expr(x));
@@ -233,8 +238,10 @@ TEST_CASE("a cached answer is worth having") {
         return std::chrono::steady_clock::now() - start;
     };
 
-    const auto cold = timed([&] { static_cast<void>(proxima::factor(heavy, kernel)); });
-    const auto warm = timed([&] { static_cast<void>(proxima::factor(heavy, kernel)); });
+    const auto cold
+        = timed([&] { static_cast<void>(proxima::factor(heavy, kernel)); });
+    const auto warm
+        = timed([&] { static_cast<void>(proxima::factor(heavy, kernel)); });
 
     CHECK(warm < cold);
 }

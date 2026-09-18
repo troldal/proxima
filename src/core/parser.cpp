@@ -76,8 +76,7 @@ struct Token {
 };
 
 bool is_symbol_start(char c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
-           || c == '%';
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '%';
 }
 
 bool is_symbol_part(char c) {
@@ -104,8 +103,9 @@ public:
 
         const char c = source_[at_];
 
-        if (is_digit(c) || (c == '.' && at_ + 1 < source_.size()
-                           && is_digit(source_[at_ + 1]))) {
+        if (is_digit(c)
+            || (c == '.' && at_ + 1 < source_.size()
+                && is_digit(source_[at_ + 1]))) {
             return number(start);
         }
         if (is_symbol_start(c)) {
@@ -121,8 +121,10 @@ public:
 
         ++at_;
         switch (c) {
-        case '+': return {Token::Kind::Plus, "+", false, start};
-        case '-': return {Token::Kind::Minus, "-", false, start};
+        case '+':
+            return {Token::Kind::Plus, "+", false, start};
+        case '-':
+            return {Token::Kind::Minus, "-", false, start};
         case '*':
             // Maxima reads ** as ^, when the two stars are adjacent.
             if (at_ < source_.size() && source_[at_] == '*') {
@@ -130,8 +132,10 @@ public:
                 return {Token::Kind::Caret, "**", false, start};
             }
             return {Token::Kind::Star, "*", false, start};
-        case '/': return {Token::Kind::Slash, "/", false, start};
-        case '^': return {Token::Kind::Caret, "^", false, start};
+        case '/':
+            return {Token::Kind::Slash, "/", false, start};
+        case '^':
+            return {Token::Kind::Caret, "^", false, start};
         case '!':
             // Greedy, as Maxima's lexer is: "!!!" is "!!" then "!".
             if (at_ < source_.size() && source_[at_] == '!') {
@@ -139,13 +143,20 @@ public:
                 return {Token::Kind::BangBang, "!!", false, start};
             }
             return {Token::Kind::Bang, "!", false, start};
-        case '=': return {Token::Kind::Equal, "=", false, start};
-        case '#': return {Token::Kind::NotEqual, "#", false, start};
-        case '(': return {Token::Kind::LeftParen, "(", false, start};
-        case ')': return {Token::Kind::RightParen, ")", false, start};
-        case '[': return {Token::Kind::LeftBracket, "[", false, start};
-        case ']': return {Token::Kind::RightBracket, "]", false, start};
-        case ',': return {Token::Kind::Comma, ",", false, start};
+        case '=':
+            return {Token::Kind::Equal, "=", false, start};
+        case '#':
+            return {Token::Kind::NotEqual, "#", false, start};
+        case '(':
+            return {Token::Kind::LeftParen, "(", false, start};
+        case ')':
+            return {Token::Kind::RightParen, ")", false, start};
+        case '[':
+            return {Token::Kind::LeftBracket, "[", false, start};
+        case ']':
+            return {Token::Kind::RightBracket, "]", false, start};
+        case ',':
+            return {Token::Kind::Comma, ",", false, start};
         case '<':
             if (at_ < source_.size() && source_[at_] == '=') {
                 ++at_;
@@ -181,7 +192,8 @@ private:
         if (at_ < source_.size() && (source_[at_] == 'e' || source_[at_] == 'E')) {
             const std::size_t mark = at_;
             ++at_;
-            if (at_ < source_.size() && (source_[at_] == '+' || source_[at_] == '-')) {
+            if (at_ < source_.size()
+                && (source_[at_] == '+' || source_[at_] == '-')) {
                 ++at_;
             }
             if (at_ < source_.size() && is_digit(source_[at_])) {
@@ -195,8 +207,8 @@ private:
                 at_ = mark;
             }
         }
-        return {Token::Kind::Number,
-                std::string(source_.substr(start, at_ - start)), is_integer, start};
+        return {Token::Kind::Number, std::string(source_.substr(start, at_ - start)),
+                is_integer, start};
     }
 
     Token string(std::size_t start) {
@@ -316,17 +328,14 @@ private:
     /// Where the stack stood when parsing began, to measure its use from.
     std::uintptr_t stack_base_ = stack_address();
 
-    void advance() {
-        current_ = lexer_.next();
-    }
+    void advance() { current_ = lexer_.next(); }
 
     [[noreturn]] void unexpected(std::string_view wanted) const {
-        const std::string found
-            = current_.kind == Token::Kind::End ? "end of input"
-                                                : "'" + current_.text + "'";
-        throw ParseError("expected " + std::string(wanted) + " but found "
-                         + found + " at offset "
-                         + std::to_string(current_.at));
+        const std::string found = current_.kind == Token::Kind::End
+                                      ? "end of input"
+                                      : "'" + current_.text + "'";
+        throw ParseError("expected " + std::string(wanted) + " but found " + found
+                         + " at offset " + std::to_string(current_.at));
     }
 
     void expect(Token::Kind kind, std::string_view wanted) {
@@ -347,7 +356,8 @@ private:
         // overflowed the stack and killed the process. The stack grows down on
         // every platform this builds for, but the distance is taken either way.
         const std::uintptr_t here = stack_address();
-        const std::uintptr_t used = here < stack_base_ ? stack_base_ - here : here - stack_base_;
+        const std::uintptr_t used
+            = here < stack_base_ ? stack_base_ - here : here - stack_base_;
         if (depth_ >= kMaxParseDepth || used > kParseStackBudget) {
             throw ParseError("expression nested too deep at offset "
                              + std::to_string(current_.at));
@@ -407,7 +417,8 @@ private:
             Expr factor = expression(kMulDiv);
             // 1 / factor is exactly what operator/ multiplies by: a reciprocal
             // for a number, a negative power for anything else.
-            factors.push_back(divide ? Expr::integer(1) / factor : std::move(factor));
+            factors.push_back(divide ? Expr::integer(1) / factor
+                                     : std::move(factor));
         }
         return Expr::mul(std::move(factors));
     }
@@ -492,8 +503,8 @@ private:
             // compare — and accepting it as (a < b) < c would give text a
             // meaning Maxima never gives it. Parenthesised, it is legal in both,
             // and that path does not come through here.
-            throw ParseError("chained relation '" + current_.text
-                             + "' at offset " + std::to_string(current_.at)
+            throw ParseError("chained relation '" + current_.text + "' at offset "
+                             + std::to_string(current_.at)
                              + ": parenthesise one side");
         }
         return Expr::relation(relation_for(token.kind), std::move(left),

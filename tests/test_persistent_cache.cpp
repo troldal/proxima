@@ -5,8 +5,8 @@
 
 #include "kernel/persistent_cache.hpp"
 
-#include <proxima/config.hpp>
 #include <proxima/assumptions.hpp>
+#include <proxima/config.hpp>
 #include <proxima/errors.hpp>
 #include <proxima/expr.hpp>
 #include <proxima/functions.hpp>
@@ -143,7 +143,8 @@ TEST_CASE("a length larger than the file is a miss, not an exception") {
         const std::string key = "stamp\n\nq";
         std::ofstream out(entry, std::ios::binary | std::ios::trunc);
         out << "proxima-cache-1\n"
-            << key.size() << '\n' << key << "1\n1" << "18446744073709551615\n";
+            << key.size() << '\n'
+            << key << "1\n1" << "18446744073709551615\n";
     }
     SUBCASE("or just longer than what is there") {
         std::ofstream out(entry, std::ios::binary | std::ios::trunc);
@@ -323,13 +324,16 @@ TEST_CASE("reading an entry back keeps it from eviction") {
 TEST_CASE("a sweep clears orphaned temporaries and leaves a writer's fresh ones") {
     const auto directory = scratch("orphans");
     std::filesystem::create_directories(directory);
-    const std::filesystem::path orphan = directory / "0123456789abcdef.reply.tmp-ffffffffffffffff-0";
-    const std::filesystem::path fresh = directory / "fedcba9876543210.reply.tmp-ffffffffffffffff-1";
+    const std::filesystem::path orphan
+        = directory / "0123456789abcdef.reply.tmp-ffffffffffffffff-0";
+    const std::filesystem::path fresh
+        = directory / "fedcba9876543210.reply.tmp-ffffffffffffffff-1";
     for (const auto &path : {orphan, fresh}) {
         std::ofstream(path, std::ios::binary) << "half-written by someone else";
     }
-    std::filesystem::last_write_time(orphan, std::filesystem::file_time_type::clock::now()
-                                                 - std::chrono::hours{2});
+    std::filesystem::last_write_time(orphan,
+                                     std::filesystem::file_time_type::clock::now()
+                                         - std::chrono::hours{2});
 
     // The first write under a limit scans the directory, which sweeps it.
     const PersistentCache cache(directory, "stamp", 1'000'000);
@@ -404,7 +408,9 @@ TEST_CASE("an assumption is part of the key, not an afterthought") {
 
     {
         proxima::Kernel first(config);
-        CHECK(*proxima::simplify(root, {proxima::assuming(gt(Expr(x), Expr(0))), first}) == Expr(x));
+        CHECK(*proxima::simplify(root,
+                                 {proxima::assuming(gt(Expr(x), Expr(0))), first})
+              == Expr(x));
     }
 
     // A different process would see only the directory. This kernel makes no
@@ -419,11 +425,13 @@ TEST_CASE("an assumption is part of the key, not an afterthought") {
         const Symbol y("assumption_key_other");
         {
             proxima::Kernel writer(config);
-            const auto both = proxima::assuming(gt(Expr(x), Expr(0))).with(gt(Expr(y), Expr(0)));
+            const auto both
+                = proxima::assuming(gt(Expr(x), Expr(0))).with(gt(Expr(y), Expr(0)));
             CHECK(*proxima::simplify(root, {both, writer}) == Expr(x));
         }
         proxima::Kernel reader(config);
-        const auto same = proxima::assuming(gt(Expr(y), Expr(0))).with(gt(Expr(x), Expr(0)));
+        const auto same
+            = proxima::assuming(gt(Expr(y), Expr(0))).with(gt(Expr(x), Expr(0)));
         CHECK(*proxima::simplify(root, {same, reader}) == Expr(x));
         CHECK(reader.cache_stats().persistent_hits == 1);
     }
@@ -464,7 +472,8 @@ TEST_CASE("a statement switches persistence off for that kernel") {
         // what makes the disk answers trustworthy again. Asking is a question,
         // so it leaves persistence on — where the raw eval this used to be
         // switched it off again.
-        CHECK(kernel.ask(proxima::Query::text("is(raw_eval_probe = 7)")) == Expr::symbol("false"));
+        CHECK(kernel.ask(proxima::Query::text("is(raw_eval_probe = 7)"))
+              == Expr::symbol("false"));
         CHECK(kernel.persistence_active());
         static_cast<void>(proxima::expand(pow(Expr(x) + 1, 5), kernel));
         CHECK(kernel.cache_stats().persistent_hits == 1);
@@ -482,8 +491,9 @@ TEST_CASE("a kernel restarted after dying resumes persistence") {
     static_cast<void>(kernel.tell(proxima::Statement::text("recovered_probe: 7")));
     REQUIRE_FALSE(kernel.persistence_active());
 
-    CHECK_THROWS_AS(static_cast<void>(kernel.tell(proxima::Statement::text("quit()"))),
-                    proxima::KernelError);
+    CHECK_THROWS_AS(
+        static_cast<void>(kernel.tell(proxima::Statement::text("quit()"))),
+        proxima::KernelError);
     CHECK(kernel.persistence_active());
 }
 

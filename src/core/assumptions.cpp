@@ -16,7 +16,8 @@ std::size_t mix(std::size_t seed, std::size_t value) {
 }
 
 bool declaration_before(const Declaration &a, const Declaration &b) {
-    return std::tie(a.symbol.name(), a.feature) < std::tie(b.symbol.name(), b.feature);
+    return std::tie(a.symbol.name(), a.feature)
+           < std::tie(b.symbol.name(), b.feature);
 }
 
 } // namespace

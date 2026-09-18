@@ -89,9 +89,13 @@ Integer Integer::from_unsigned(std::uint64_t value) {
     return IntegerAccess::from_wide(Wide(value));
 }
 
-int Integer::big_sign() const { return big_->value.sign(); }
+int Integer::big_sign() const {
+    return big_->value.sign();
+}
 
-std::size_t Integer::big_hash() const { return std::hash<Wide>{}(big_->value); }
+std::size_t Integer::big_hash() const {
+    return std::hash<Wide>{}(big_->value);
+}
 
 bool Integer::big_equal(const Integer &other) const {
     return big_->value == other.big_->value;
@@ -193,9 +197,8 @@ Integer Integer::operator-() const {
     if (!big_ && small_ != kMinInt64) {
         return Integer(-small_);
     }
-    return IntegerAccess::with_wide(*this, [](const Wide &a) {
-        return IntegerAccess::from_wide(-a);
-    });
+    return IntegerAccess::with_wide(
+        *this, [](const Wide &a) { return IntegerAccess::from_wide(-a); });
 }
 
 Integer Integer::operator+(const Integer &other) const {

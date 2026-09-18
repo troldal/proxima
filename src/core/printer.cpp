@@ -40,8 +40,7 @@ std::string render_real(double value) {
     return text;
 }
 
-std::string joined(std::span<const std::string> parts,
-                   std::string_view separator) {
+std::string joined(std::span<const std::string> parts, std::string_view separator) {
     std::string out;
     for (std::size_t i = 0; i < parts.size(); ++i) {
         if (i != 0) {
@@ -107,8 +106,7 @@ struct InfixRenderer {
         return "[" + joined(items, ", ") + "]";
     }
 
-    std::string relation(RelOp op, const std::string &lhs,
-                         const std::string &rhs) {
+    std::string relation(RelOp op, const std::string &lhs, const std::string &rhs) {
         return lhs + " " + std::string(symbol_for(op)) + " " + rhs;
     }
 

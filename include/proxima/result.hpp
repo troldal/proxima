@@ -34,7 +34,8 @@
 #include <utility>
 
 #ifdef FXT_USE_TL_EXPECTED
-#error "Proxima is built on std::expected; FXT_USE_TL_EXPECTED would make its result type a different one"
+#error                                                                              \
+    "Proxima is built on std::expected; FXT_USE_TL_EXPECTED would make its result type a different one"
 #endif
 
 namespace proxima {

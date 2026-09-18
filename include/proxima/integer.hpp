@@ -18,9 +18,9 @@ namespace proxima {
 /// The character types. Integral to C++, but not numbers to anyone reading an
 /// expression: `'a'` in a formula is a mistake, not the value 97.
 template <typename T>
-concept CharacterType = std::same_as<T, char> || std::same_as<T, wchar_t>
-                        || std::same_as<T, char8_t> || std::same_as<T, char16_t>
-                        || std::same_as<T, char32_t>;
+concept CharacterType
+    = std::same_as<T, char> || std::same_as<T, wchar_t> || std::same_as<T, char8_t>
+      || std::same_as<T, char16_t> || std::same_as<T, char32_t>;
 
 /// The integral types that are numbers: all of them except bool and the
 /// character types.
@@ -42,8 +42,8 @@ concept BooleanOrCharacter = std::same_as<T, bool> || CharacterType<T>;
 class Integer;
 
 namespace detail {
-// The implementations behind proxima::abs and proxima::gcd, which are templates only to
-// constrain what they accept.
+// The implementations behind proxima::abs and proxima::gcd, which are templates only
+// to constrain what they accept.
 Integer abs_of(const Integer &value);
 Integer gcd_of(const Integer &a, const Integer &b);
 
@@ -108,7 +108,8 @@ public:
         requires IntegralNumber<T> && std::unsigned_integral<T>
     Integer(T value) { // NOLINT
         const auto wide = static_cast<std::uint64_t>(value);
-        if (wide <= static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        if (wide <= static_cast<std::uint64_t>(
+                std::numeric_limits<std::int64_t>::max())) {
             small_ = static_cast<std::int64_t>(wide);
         } else {
             *this = from_unsigned(wide);
@@ -129,9 +130,7 @@ public:
     static std::optional<Integer> parse(std::string_view text);
 
     /// -1, 0 or 1.
-    int sign() const {
-        return big_ ? big_sign() : (small_ > 0) - (small_ < 0);
-    }
+    int sign() const { return big_ ? big_sign() : (small_ > 0) - (small_ < 0); }
     bool is_zero() const { return !big_ && small_ == 0; }
     bool is_negative() const { return sign() < 0; }
 
@@ -229,7 +228,8 @@ Integer as_integer(T value) {
 /// number — `gcd(n, 1001)` — so that gcd(12, 18) stays std::gcd's, for the
 /// reason abs takes only an Integer.
 template <typename A, typename B>
-    requires(std::same_as<A, Integer> && (std::same_as<B, Integer> || IntegralNumber<B>))
+    requires(std::same_as<A, Integer>
+             && (std::same_as<B, Integer> || IntegralNumber<B>))
             || (IntegralNumber<A> && std::same_as<B, Integer>)
 Integer gcd(const A &a, const B &b) {
     return detail::gcd_of(detail::as_integer(a), detail::as_integer(b));
@@ -250,10 +250,11 @@ struct std::hash<proxima::Integer> {
 /// `std::format("{}", value)` is the decimal digits, with the usual string
 /// options for width and alignment: `{:>40}`.
 template <>
-struct std::formatter<proxima::Integer, char> : std::formatter<std::string_view, char> {
+struct std::formatter<proxima::Integer, char>
+    : std::formatter<std::string_view, char> {
     auto format(const proxima::Integer &value, std::format_context &context) const {
         const std::string digits = value.to_string();
-        return std::formatter<std::string_view, char>::format(std::string_view(digits),
-                                                              context);
+        return std::formatter<std::string_view, char>::format(
+            std::string_view(digits), context);
     }
 };

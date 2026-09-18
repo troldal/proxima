@@ -69,21 +69,40 @@ std::string element(std::string_view tag, std::string_view content) {
     return out;
 }
 
-std::string mo(std::string_view op) { return element("mo", op); }
-std::string mrow(std::string_view content) { return element("mrow", content); }
+std::string mo(std::string_view op) {
+    return element("mo", op);
+}
+std::string mrow(std::string_view content) {
+    return element("mrow", content);
+}
 
 /// Names with a glyph of their own: Maxima's constants, and the Greek letters,
 /// which Maxima spells out and a typeset formula shows as letters.
 std::string_view glyph_for(std::string_view name) {
     static constexpr std::pair<std::string_view, std::string_view> kGlyphs[] = {
-        {"%pi", "&#x3C0;"},   {"%e", "e"},          {"%i", "i"},
-        {"%gamma", "&#x3B3;"}, {"%phi", "&#x3C6;"}, {"inf", "&#x221E;"},
-        {"alpha", "&#x3B1;"}, {"beta", "&#x3B2;"},  {"gamma", "&#x3B3;"},
-        {"delta", "&#x3B4;"}, {"epsilon", "&#x3B5;"}, {"theta", "&#x3B8;"},
-        {"lambda", "&#x3BB;"}, {"mu", "&#x3BC;"},   {"nu", "&#x3BD;"},
-        {"pi", "&#x3C0;"},    {"rho", "&#x3C1;"},   {"sigma", "&#x3C3;"},
-        {"tau", "&#x3C4;"},   {"phi", "&#x3C6;"},   {"chi", "&#x3C7;"},
-        {"psi", "&#x3C8;"},   {"omega", "&#x3C9;"},
+        {"%pi", "&#x3C0;"},
+        {"%e", "e"},
+        {"%i", "i"},
+        {"%gamma", "&#x3B3;"},
+        {"%phi", "&#x3C6;"},
+        {"inf", "&#x221E;"},
+        {"alpha", "&#x3B1;"},
+        {"beta", "&#x3B2;"},
+        {"gamma", "&#x3B3;"},
+        {"delta", "&#x3B4;"},
+        {"epsilon", "&#x3B5;"},
+        {"theta", "&#x3B8;"},
+        {"lambda", "&#x3BB;"},
+        {"mu", "&#x3BC;"},
+        {"nu", "&#x3BD;"},
+        {"pi", "&#x3C0;"},
+        {"rho", "&#x3C1;"},
+        {"sigma", "&#x3C3;"},
+        {"tau", "&#x3C4;"},
+        {"phi", "&#x3C6;"},
+        {"chi", "&#x3C7;"},
+        {"psi", "&#x3C8;"},
+        {"omega", "&#x3C9;"},
     };
     for (const auto &[known, glyph] : kGlyphs) {
         if (name == known) {
@@ -100,8 +119,8 @@ std::string render_real(double value) {
     char buffer[40];
     const auto [stopped, error]
         = std::to_chars(buffer, buffer + sizeof(buffer), std::fabs(value));
-    std::string text = error == std::errc{} ? std::string(buffer, stopped)
-                                            : std::string("0");
+    std::string text
+        = error == std::errc{} ? std::string(buffer, stopped) : std::string("0");
 
     std::string body;
     if (const auto marker = text.find('e'); marker != std::string::npos) {
@@ -210,8 +229,7 @@ struct MathMLRenderer {
         if (index == 2) {
             return element("msqrt", radicand);
         }
-        return element("mroot",
-                       radicand + element("mn", std::to_string(index)));
+        return element("mroot", radicand + element("mn", std::to_string(index)));
     }
 
     std::string call(std::string_view head, std::span<const std::string> args) {
@@ -239,8 +257,7 @@ struct MathMLRenderer {
         return mrow(mo("[") + mrow(content) + mo("]"));
     }
 
-    std::string relation(RelOp op, const std::string &lhs,
-                         const std::string &rhs) {
+    std::string relation(RelOp op, const std::string &lhs, const std::string &rhs) {
         std::string_view symbol;
         switch (op) {
         case RelOp::Equal:
@@ -270,9 +287,7 @@ struct MathMLRenderer {
         return mrow(mo("(") + inner + mo(")"));
     }
 
-    std::string negate(const std::string &inner) {
-        return mrow(mo(kMinus) + inner);
-    }
+    std::string negate(const std::string &inner) { return mrow(mo(kMinus) + inner); }
 
     // --- where the layout delimits itself -----------------------------------
 

@@ -70,9 +70,8 @@ std::vector<fs::path> split_search_path(const std::string &value) {
     size_t start = 0;
     while (start <= value.size()) {
         const size_t end = value.find(kSearchPathSeparator, start);
-        const std::string piece
-            = value.substr(start, end == std::string::npos ? std::string::npos
-                                                           : end - start);
+        const std::string piece = value.substr(
+            start, end == std::string::npos ? std::string::npos : end - start);
         if (!piece.empty()) {
             if (auto entry = try_path_from_utf8(piece)) {
                 entries.push_back(std::move(*entry));
@@ -90,13 +89,11 @@ std::vector<fs::path> split_search_path(const std::string &value) {
 /// documented layout.
 ///
 /// Returns the core path and the version tag naming its directory.
-std::optional<std::pair<fs::path, std::string>>
-find_core(const fs::path &root) {
+std::optional<std::pair<fs::path, std::string>> find_core(const fs::path &root) {
     // Several version tags can coexist; take the last by name so the choice is
     // deterministic rather than dependent on directory order.
-    const auto newest_core_in
-        = [](const fs::path &package_dir) -> std::optional<
-                                             std::pair<fs::path, std::string>> {
+    const auto newest_core_in = [](const fs::path &package_dir)
+        -> std::optional<std::pair<fs::path, std::string>> {
         const std::vector<fs::path> versions = sorted_children(package_dir);
         for (auto it = versions.rbegin(); it != versions.rend(); ++it) {
             const fs::path core = *it / "binary-sbcl" / "maxima.core";
@@ -166,8 +163,7 @@ EnvLookup system_env() {
 std::vector<fs::path> candidate_roots(const Config &config, const EnvLookup &env) {
     std::vector<fs::path> roots;
     const auto add = [&roots](const fs::path &p) {
-        if (!p.empty()
-            && std::find(roots.begin(), roots.end(), p) == roots.end()) {
+        if (!p.empty() && std::find(roots.begin(), roots.end(), p) == roots.end()) {
             roots.push_back(p);
         }
     };
@@ -202,8 +198,8 @@ std::vector<fs::path> known_install_roots() {
 
 #ifdef _WIN32
     // Windows installs into a versioned directory of its own.
-    const fs::path search_in[] = {"C:\\", "C:\\Program Files",
-                                 "C:\\Program Files (x86)"};
+    const fs::path search_in[]
+        = {"C:\\", "C:\\Program Files", "C:\\Program Files (x86)"};
     for (const fs::path &parent : search_in) {
         for (const fs::path &child : sorted_children(parent)) {
             if (named_like_maxima(child)) {
@@ -286,8 +282,8 @@ MaximaInstall discover_maxima(const Config &config, const EnvLookup &env) {
 
     std::vector<fs::path> tried;
 
-    const auto search = [&](const std::vector<fs::path> &roots)
-        -> std::optional<MaximaInstall> {
+    const auto search
+        = [&](const std::vector<fs::path> &roots) -> std::optional<MaximaInstall> {
         for (const fs::path &root : roots) {
             if (auto install = inspect_root(root)) {
                 return install;
@@ -308,8 +304,7 @@ MaximaInstall discover_maxima(const Config &config, const EnvLookup &env) {
 
     std::string message
         = std::string("No usable Maxima installation found. Expected <root>/bin/")
-          + kSbclName
-          + " and <root>/lib/maxima/<version>/binary-sbcl/maxima.core. ";
+          + kSbclName + " and <root>/lib/maxima/<version>/binary-sbcl/maxima.core. ";
     if (tried.empty()) {
         message += "No candidate locations: set Config::maxima_root or the "
                    "MAXIMA_ROOT environment variable.";

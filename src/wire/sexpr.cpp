@@ -139,8 +139,7 @@ public:
 
 private:
     void skip_whitespace() {
-        while (at_ < text_.size()
-               && static_cast<unsigned char>(text_[at_]) <= ' ') {
+        while (at_ < text_.size() && static_cast<unsigned char>(text_[at_]) <= ' ') {
             ++at_;
         }
     }

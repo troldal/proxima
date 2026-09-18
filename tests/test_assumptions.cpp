@@ -30,8 +30,10 @@ TEST_CASE("assumptions are a value: equal when they say the same, in any order")
     const Symbol x("x");
     const Symbol n("n");
 
-    const Assumptions one = proxima::assuming(gt(x, 0)).with(n, Feature::Integer).with(lt(x, 1));
-    const Assumptions two = proxima::declaring(n, Feature::Integer).with(lt(x, 1)).with(gt(x, 0));
+    const Assumptions one
+        = proxima::assuming(gt(x, 0)).with(n, Feature::Integer).with(lt(x, 1));
+    const Assumptions two
+        = proxima::declaring(n, Feature::Integer).with(lt(x, 1)).with(gt(x, 0));
     CHECK(one == two);
     CHECK(one.hash() == two.hash());
     CHECK(std::hash<Assumptions>{}(one) == std::hash<Assumptions>{}(two));
@@ -48,7 +50,8 @@ TEST_CASE("assumptions are a value: equal when they say the same, in any order")
 
     CHECK(Assumptions().empty());
     CHECK_FALSE(one.empty());
-    CHECK(proxima::assuming({gt(x, 0), lt(x, 1)}) == proxima::assuming(lt(x, 1)).with(gt(x, 0)));
+    CHECK(proxima::assuming({gt(x, 0), lt(x, 1)})
+          == proxima::assuming(lt(x, 1)).with(gt(x, 0)));
     CHECK(one.with(proxima::assuming(gt(n, 0))) == more);
 
     const std::unordered_set<Assumptions> seen{one, two, more};
@@ -63,7 +66,8 @@ TEST_CASE("every Feature has Maxima's name") {
 
 TEST_SUITE("maxima") {
 
-// --- what Maxima makes of them -----------------------------------------------------
+// --- what Maxima makes of them
+// -----------------------------------------------------
 
 TEST_CASE("an assumption changes what Maxima can conclude, for that call alone") {
     const Symbol x("x");
@@ -84,7 +88,8 @@ TEST_CASE("a declaration is part of the value too") {
     CHECK(kernel.ask(proxima::Query::text("featurep(n, integer)"),
                      proxima::declaring(n, Feature::Integer))
           == Expr::symbol("true"));
-    CHECK(kernel.ask(proxima::Query::text("featurep(n, integer)")) == Expr::symbol("false"));
+    CHECK(kernel.ask(proxima::Query::text("featurep(n, integer)"))
+          == Expr::symbol("false"));
 }
 
 TEST_CASE("Maxima accepts every Feature") {
@@ -98,8 +103,9 @@ TEST_CASE("Maxima accepts every Feature") {
         const std::string name(proxima::name_of(feature));
         CAPTURE(name);
         const Symbol s("feature_probe_" + name);
-        const auto answer = kernel.ask(proxima::Query::text("featurep(" + s.name() + ", " + name + ")"),
-                                       proxima::declaring(s, feature));
+        const auto answer = kernel.ask(
+            proxima::Query::text("featurep(" + s.name() + ", " + name + ")"),
+            proxima::declaring(s, feature));
         REQUIRE(answer.has_value());
         CHECK(*answer == Expr::symbol("true"));
     }
@@ -116,9 +122,11 @@ TEST_CASE("is answers under the assumptions it is given") {
 TEST_CASE("several facts, and a declaration, together") {
     const Symbol x("together_x");
     const Symbol k("together_k");
-    const auto both = proxima::assuming({gt(x, 0), gt(k, 1)}).with(k, Feature::Integer);
+    const auto both
+        = proxima::assuming({gt(x, 0), gt(k, 1)}).with(k, Feature::Integer);
     CHECK(proxima::is(gt(x * k, 0), both) == Truth::True);
-    CHECK(proxima::shared_kernel().ask(proxima::Query::text("featurep(together_k, integer)"), both)
+    CHECK(proxima::shared_kernel().ask(
+              proxima::Query::text("featurep(together_k, integer)"), both)
           == Expr::symbol("true"));
 }
 
@@ -129,7 +137,8 @@ TEST_CASE("contradictory assumptions are refused, with their own cause") {
     const auto refused = proxima::simplify(proxima::sqrt(pow(x, 2)), both);
     REQUIRE_FALSE(refused.has_value());
     CHECK(proxima::cause_of(refused.error()) == proxima::Cause::Inconsistent);
-    CHECK(refused.error().message().find("contradiction_probe") != std::string::npos);
+    CHECK(refused.error().message().find("contradiction_probe")
+          != std::string::npos);
 
     // And the kernel is none the worse: the next call, under consistent
     // assumptions or none, is answered.
@@ -139,7 +148,8 @@ TEST_CASE("contradictory assumptions are refused, with their own cause") {
 
 TEST_CASE("a redundant assumption is accepted quietly") {
     const Symbol x("redundant_probe");
-    CHECK(proxima::is(gt(x, 0), proxima::assuming({gt(x, 0), gt(x, -1)})) == Truth::True);
+    CHECK(proxima::is(gt(x, 0), proxima::assuming({gt(x, 0), gt(x, -1)}))
+          == Truth::True);
 }
 
 TEST_CASE("answers are cached under their assumptions, not across them") {
@@ -185,7 +195,8 @@ TEST_CASE("threads asking under different assumptions each get their own answer"
     CHECK(wrong == 0);
 }
 
-// --- the hazard assumptions answer -------------------------------------------------
+// --- the hazard assumptions answer
+// -------------------------------------------------
 
 TEST_CASE("a question Maxima would ask becomes a failure, not a deadlock") {
     // integrate(x^n, x) cannot proceed without knowing whether n is -1, and
@@ -226,7 +237,8 @@ TEST_CASE("supplying the assumption lets the computation through") {
 
     REQUIRE_FALSE(proxima::integrate(pow(x, Expr(n)), x).has_value());
 
-    const auto integral = proxima::integrate(pow(x, Expr(n)), x, proxima::assuming(gt(n, 0)));
+    const auto integral
+        = proxima::integrate(pow(x, Expr(n)), x, proxima::assuming(gt(n, 0)));
     REQUIRE(integral.has_value());
     // x^(n+1)/(n+1)
     CHECK(*proxima::simplify(*proxima::diff(*integral, x)) == pow(x, Expr(n)));
@@ -234,7 +246,8 @@ TEST_CASE("supplying the assumption lets the computation through") {
 
 // --- surviving a kernel that dies ------------------------------------------------
 
-TEST_CASE("a kernel that dies answers under its assumptions again after the restart") {
+TEST_CASE(
+    "a kernel that dies answers under its assumptions again after the restart") {
     // There is nothing to replay: the assumptions come with the next question,
     // and the kernel makes their context again.
     proxima::Kernel kernel;
@@ -245,8 +258,9 @@ TEST_CASE("a kernel that dies answers under its assumptions again after the rest
 
     // Ask Maxima to leave. The call itself fails, because the reply never
     // arrives.
-    CHECK_THROWS_AS(static_cast<void>(kernel.tell(proxima::Statement::text("quit()"))),
-                    proxima::KernelError);
+    CHECK_THROWS_AS(
+        static_cast<void>(kernel.tell(proxima::Statement::text("quit()"))),
+        proxima::KernelError);
 
     CHECK(kernel.ask(proxima::Query::text("2 + 2")) == Expr(4));
     CHECK(proxima::is(gt(x, 0), {positive, kernel}) == Truth::True);
@@ -265,11 +279,13 @@ TEST_CASE("a timeout loses the call, not the session") {
     // integral finishes inside a single poll, so it would race the deadline
     // rather than reliably exceed it.
     const auto start = std::chrono::steady_clock::now();
-    CHECK_THROWS_AS(static_cast<void>(kernel.ask(proxima::Query::text("expand((x+y+z)^200)"))),
-                    proxima::TimeoutError);
+    CHECK_THROWS_AS(
+        static_cast<void>(kernel.ask(proxima::Query::text("expand((x+y+z)^200)"))),
+        proxima::TimeoutError);
     // Including the restart. Recovery used to wait two seconds for the busy
     // Maxima to quit, which it never does; this call took about 2.5 s then.
-    CHECK(std::chrono::steady_clock::now() - start < std::chrono::milliseconds(1500));
+    CHECK(std::chrono::steady_clock::now() - start
+          < std::chrono::milliseconds(1500));
 
     kernel.set_timeout(std::chrono::seconds(30));
     // The restart means the next caller is not left holding a wedged kernel.

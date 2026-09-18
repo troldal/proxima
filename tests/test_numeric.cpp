@@ -73,11 +73,16 @@ TEST_CASE("the functions Maxima leaves in a result") {
     const Symbol x("x");
     const proxima::Bindings at1{{"x", 1.0}};
 
-    CHECK(*proxima::eval_numeric(proxima::sin(Expr(x)), at1) == doctest::Approx(std::sin(1.0)));
-    CHECK(*proxima::eval_numeric(proxima::cos(Expr(x)), at1) == doctest::Approx(std::cos(1.0)));
-    CHECK(*proxima::eval_numeric(proxima::log(Expr(x)), at1) == doctest::Approx(0.0));
-    CHECK(*proxima::eval_numeric(proxima::abs(-Expr(x)), at1) == doctest::Approx(1.0));
-    CHECK(*proxima::eval_numeric(proxima::exp(Expr(x)), at1) == doctest::Approx(std::numbers::e));
+    CHECK(*proxima::eval_numeric(proxima::sin(Expr(x)), at1)
+          == doctest::Approx(std::sin(1.0)));
+    CHECK(*proxima::eval_numeric(proxima::cos(Expr(x)), at1)
+          == doctest::Approx(std::cos(1.0)));
+    CHECK(*proxima::eval_numeric(proxima::log(Expr(x)), at1)
+          == doctest::Approx(0.0));
+    CHECK(*proxima::eval_numeric(proxima::abs(-Expr(x)), at1)
+          == doctest::Approx(1.0));
+    CHECK(*proxima::eval_numeric(proxima::exp(Expr(x)), at1)
+          == doctest::Approx(std::numbers::e));
     CHECK(*proxima::eval_numeric(Expr::function("max", {Expr(1), Expr(5), Expr(3)}))
           == doctest::Approx(5.0));
 }
@@ -98,10 +103,12 @@ TEST_CASE("a long call and a refused expression evaluate as before") {
     CHECK_FALSE(proxima::is_evaluable(Expr(x) + 1));
     CHECK_FALSE(proxima::is_evaluable(eq(Expr(x), Expr(1)), {{"x", 1.0}}));
     CHECK_FALSE(proxima::is_evaluable(Expr::opaque("matrix([1])")));
-    CHECK_FALSE(proxima::is_evaluable(Expr::function("no_such_function", {Expr(1)})));
+    CHECK_FALSE(
+        proxima::is_evaluable(Expr::function("no_such_function", {Expr(1)})));
 
     // And eval_numeric still says why.
-    CHECK(proxima::eval_numeric(Expr(x) + 1).error().message() == "no value for the symbol x");
+    CHECK(proxima::eval_numeric(Expr(x) + 1).error().message()
+          == "no value for the symbol x");
 }
 
 TEST_CASE("the compiled form keeps 0.0 and -0.0 apart") {
@@ -134,8 +141,10 @@ TEST_CASE("bindings name a symbol by the Symbol or by its name") {
     // Compiled takes its variables as Symbols; the values can come the same way.
     CHECK(*proxima::eval_numeric(Expr(x) * Expr(y), {{x, 3.0}, {"y", 4.0}})
           == doctest::Approx(12.0));
-    CHECK(proxima::Compiled(Expr(x) + Expr(y), x, {{y, 0.5}})(2.0) == doctest::Approx(2.5));
-    CHECK(proxima::as_function(Expr(x) * Expr(y), x, {{y, 2.0}})(3.0) == doctest::Approx(6.0));
+    CHECK(proxima::Compiled(Expr(x) + Expr(y), x, {{y, 0.5}})(2.0)
+          == doctest::Approx(2.5));
+    CHECK(proxima::as_function(Expr(x) * Expr(y), x, {{y, 2.0}})(3.0)
+          == doctest::Approx(6.0));
     CHECK(proxima::is_evaluable(Expr(x), {{x, 1.0}}));
 
     proxima::Bindings bindings{{x, 1.0}, {"x", 2.0}};
@@ -146,7 +155,8 @@ TEST_CASE("bindings name a symbol by the Symbol or by its name") {
     CHECK(bindings.contains("y"));
     CHECK_FALSE(bindings.contains("z"));
     CHECK(bindings.find("z") == bindings.end());
-    CHECK(*proxima::eval_numeric(Expr(x) + Expr(y), bindings) == doctest::Approx(7.0));
+    CHECK(*proxima::eval_numeric(Expr(x) + Expr(y), bindings)
+          == doctest::Approx(7.0));
 
     std::string names;
     for (const auto &[name, value] : bindings) {
@@ -156,17 +166,20 @@ TEST_CASE("bindings name a symbol by the Symbol or by its name") {
 }
 
 TEST_CASE("constants are recognised as Maxima spells them") {
-    CHECK(*proxima::eval_numeric(proxima::pi()) == doctest::Approx(std::numbers::pi));
+    CHECK(*proxima::eval_numeric(proxima::pi())
+          == doctest::Approx(std::numbers::pi));
     CHECK(*proxima::eval_numeric(proxima::e()) == doctest::Approx(std::numbers::e));
     CHECK(std::isinf(*proxima::eval_numeric(proxima::inf())));
     CHECK(*proxima::eval_numeric(proxima::minf()) < 0);
-    CHECK(*proxima::eval_numeric(proxima::Expr::symbol("%phi")) == doctest::Approx(std::numbers::phi));
+    CHECK(*proxima::eval_numeric(proxima::Expr::symbol("%phi"))
+          == doctest::Approx(std::numbers::phi));
     CHECK(*proxima::eval_numeric(proxima::Expr::symbol("%gamma"))
           == doctest::Approx(std::numbers::egamma));
 
     SUBCASE("but an explicit binding still wins") {
         // So a symbol that happens to be named %e can be given a value.
-        CHECK(*proxima::eval_numeric(proxima::e(), {{"%e", 10.0}}) == doctest::Approx(10.0));
+        CHECK(*proxima::eval_numeric(proxima::e(), {{"%e", 10.0}})
+              == doctest::Approx(10.0));
     }
 }
 
@@ -174,7 +187,8 @@ TEST_CASE("what cannot be evaluated says so rather than guessing") {
     const Symbol x("x");
     // A Failure with Cause::Eval, never a number that looks plausible.
     const auto refused = [](const proxima::result<double> &value) {
-        return !value.has_value() && proxima::cause_of(value.error()) == proxima::Cause::Eval;
+        return !value.has_value()
+               && proxima::cause_of(value.error()) == proxima::Cause::Eval;
     };
 
     SUBCASE("an unbound symbol") {
@@ -183,7 +197,8 @@ TEST_CASE("what cannot be evaluated says so rather than guessing") {
     SUBCASE("a function with no numeric meaning here") {
         // Refusing beats returning something plausible for a function this does
         // not actually implement.
-        CHECK(refused(proxima::eval_numeric(Expr::function("bessel_j", {Expr(0), Expr(1)}))));
+        CHECK(refused(
+            proxima::eval_numeric(Expr::function("bessel_j", {Expr(0), Expr(1)}))));
     }
     SUBCASE("a relation") {
         CHECK(refused(proxima::eval_numeric(eq(Expr(1), Expr(1)))));
@@ -198,7 +213,8 @@ TEST_CASE("what cannot be evaluated says so rather than guessing") {
         REQUIRE_FALSE(unbound.has_value());
         CHECK(unbound.error().message().find("x") != std::string::npos);
         // And unwrap throws it as the exception the cause names.
-        CHECK_THROWS_AS(proxima::unwrap(proxima::eval_numeric(Expr(x) + 1)), proxima::EvalError);
+        CHECK_THROWS_AS(proxima::unwrap(proxima::eval_numeric(Expr(x) + 1)),
+                        proxima::EvalError);
     }
 }
 
@@ -219,7 +235,8 @@ TEST_CASE("as_function binds one variable for repeated use") {
 
     SUBCASE("with the other symbols fixed") {
         const Symbol a("a");
-        const auto scaled = proxima::as_function(Expr(a) * Expr(x), x, {{"a", 10.0}});
+        const auto scaled
+            = proxima::as_function(Expr(a) * Expr(x), x, {{"a", 10.0}});
         CHECK(scaled(2.5) == doctest::Approx(25.0));
     }
     SUBCASE("as the Compiled itself, which a std::function will hold") {
@@ -492,16 +509,17 @@ TEST_CASE("mod and round are Maxima's, not the C library's") {
         // A NaN cannot be an Expr, but it can still arrive through a binding.
         const Symbol x("x");
         CHECK(std::isnan(*proxima::eval_numeric(Expr::function("round", {Expr(x)}),
-                                         {{"x", std::nan("")}})));
+                                                {{"x", std::nan("")}})));
     }
 
     SUBCASE("the compiled form agrees, since it shares the function table") {
         const Symbol x("x");
-        const proxima::Compiled compiled_mod(Expr::function("mod", {Expr(x), Expr(3)}),
-                                       x);
+        const proxima::Compiled compiled_mod(
+            Expr::function("mod", {Expr(x), Expr(3)}), x);
         CHECK(compiled_mod(-7.0) == 2.0);
         CHECK(compiled_mod(-6.0) == 0.0);
-        const proxima::Compiled compiled_round(Expr::function("round", {Expr(x)}), x);
+        const proxima::Compiled compiled_round(Expr::function("round", {Expr(x)}),
+                                               x);
         CHECK(compiled_round(2.5) == 2.0);
         CHECK(compiled_round(-2.5) == -2.0);
     }
@@ -542,8 +560,8 @@ TEST_CASE("mod and round agree with Maxima across signs and halves") {
         }
     }
 
-    const double values[] = {-3.5, -2.6, -2.5, -1.5, -0.5, 0.5,
-                             1.5,  2.4999, 2.5, 2.6, 3.5, 7};
+    const double values[]
+        = {-3.5, -2.6, -2.5, -1.5, -0.5, 0.5, 1.5, 2.4999, 2.5, 2.6, 3.5, 7};
     for (const double value : values) {
         const std::string source = "round(" + text(value) + ")";
         CAPTURE(source);
