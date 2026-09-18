@@ -16,6 +16,10 @@
 // can tell "no closed form" from "Maxima needs an assumption" without reading
 // the message.
 
+// The file is `failure.hpp` in FXT's repository, though FXT's own headers
+// include it as `Failure.hpp`: a case mismatch that a case-insensitive
+// filesystem hides and Linux does not. The tracked spelling works on both.
+//
 // <ostream> first: fxt::failure defines an inline `operator<<` that streams
 // a string_view, and MSVC's <string_view> needs basic_ostream complete to
 // instantiate it. FXT's own header includes only <string_view>, which
@@ -23,7 +27,7 @@
 #include <ostream>
 
 #include <fxt/monads/Expected.hpp>
-#include <fxt/utils/Failure.hpp>
+#include <fxt/utils/failure.hpp> // Lower case, as the file is tracked in FXT's git; see below.
 
 #include <string>
 #include <string_view>
