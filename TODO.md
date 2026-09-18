@@ -1394,7 +1394,7 @@ to the kernel. That is where the work is.
   copy), and a `proxima::sum(range)` helper, which belongs with the §9.6
   naming decision.
 
-  *Outcome, the rest (COMMIT):* both. The normaliser has a fast path for the
+  *Outcome, the rest (`33fd575`):* both. The normaliser has a fast path for the
   shape a loop makes — a canonical sum or product and one more operand that
   is neither a number nor of the same kind — which inserts it by binary
   search instead of flattening, partitioning and sorting everything again.
