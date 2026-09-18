@@ -237,13 +237,16 @@ std::string ChildProcessTransport::receive(std::chrono::milliseconds timeout) {
 }
 
 bool ChildProcessTransport::alive() const {
-    if (impl_->closed || !impl_->process) {
+    // Checked and used through one name: clang-tidy 19 loses a check made
+    // through impl_ at the next call, and reports the access as unchecked.
+    auto &process = impl_->process;
+    if (impl_->closed || !process) {
         return false;
     }
     // An error here means the process can no longer be asked about — already
     // reaped, say — which is as good as not running.
     boost::system::error_code ec;
-    const bool running = impl_->process->running(ec);
+    const bool running = process->running(ec);
     return running && !ec;
 }
 
@@ -265,23 +268,24 @@ void ChildProcessTransport::stop(std::chrono::milliseconds grace) {
     // of input and leave on its own.
     static_cast<void>(impl_->input.close(ignored));
 
-    if (impl_->process) {
+    auto &process = impl_->process; // One name, as in alive().
+    if (process) {
         const auto deadline = std::chrono::steady_clock::now() + grace;
         for (;;) {
             boost::system::error_code ec;
-            const bool running = impl_->process->running(ec);
+            const bool running = process->running(ec);
             if (!running || ec) {
                 break;
             }
             if (std::chrono::steady_clock::now() >= deadline) {
-                impl_->process->terminate(ignored);
+                process->terminate(ignored);
                 break;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         // The process object would terminate a running child when destroyed
         // anyway; by now there is none.
-        impl_->process.reset();
+        process.reset();
     }
 
     static_cast<void>(impl_->output.close(ignored));
