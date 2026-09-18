@@ -1,5 +1,7 @@
 #include "core/normalize.hpp"
 
+#include "core/big_int.hpp"
+
 #include <proxima/errors.hpp>
 
 #include <algorithm>
@@ -20,41 +22,38 @@
 namespace proxima::detail {
 namespace {
 
-/// An exact rational accumulator.
+/// An exact rational accumulator: Boost's cpp_rational, which keeps itself
+/// reduced with the sign on the numerator.
 ///
-/// Nothing here checks for overflow, because proxima::Integer has none. Before it
-/// was unbounded this was three checked helpers and a failure path that left
-/// the terms unfolded.
-struct Exact {
-    Integer numerator{0};
-    Integer denominator{1};
+/// It used to be a hand-written numerator and denominator with its own gcd
+/// reduction — a second copy of what Expr::rational does, free to drift from
+/// it. Nothing here checks for overflow, because nothing overflows.
+class Exact {
+public:
+    /// Starts at the identity: 1 for a product, 0 for a sum.
+    explicit Exact(bool product) : value_(product ? 1 : 0) {}
 
-    void add(const Integer &n, const Integer &d) {
-        numerator = numerator * d + n * denominator;
-        denominator = denominator * d;
-        reduce();
+    void add(const Integer &n, const Integer &d) { value_ += fraction(n, d); }
+    void multiply(const Integer &n, const Integer &d) { value_ *= fraction(n, d); }
+
+    Integer numerator() const {
+        return IntegerAccess::from_wide(boost::multiprecision::numerator(value_));
+    }
+    Integer denominator() const {
+        return IntegerAccess::from_wide(boost::multiprecision::denominator(value_));
     }
 
-    void multiply(const Integer &n, const Integer &d) {
-        numerator = numerator * n;
-        denominator = denominator * d;
-        reduce();
+    /// The value as a double, correctly rounded. Dividing the two parts as
+    /// doubles, as this once did, rounded twice — and gave NaN once both parts
+    /// were beyond a double's range, however ordinary their ratio.
+    double approx() const { return value_.convert_to<double>(); }
+
+private:
+    static WideRational fraction(const Integer &n, const Integer &d) {
+        return WideRational(IntegerAccess::wide(n), IntegerAccess::wide(d));
     }
 
-    void reduce() {
-        // Keeps the accumulator small, which matters more now that it *can*
-        // grow without bound: a long sum of fractions would otherwise carry an
-        // ever-larger product of denominators.
-        const Integer divisor = gcd(numerator, denominator);
-        if (divisor > Integer(1)) {
-            numerator = numerator / divisor;
-            denominator = denominator / divisor;
-        }
-    }
-
-    double approx() const {
-        return numerator.to_double() / denominator.to_double();
-    }
+    WideRational value_;
 };
 
 bool is_exact_zero(const Expr &expr) {
@@ -150,10 +149,7 @@ Expr fold(std::span<const Expr> numbers, bool is_product) {
         }
     }
 
-    Exact exact;
-    if (is_product) {
-        exact.numerator = Integer(1);
-    }
+    Exact exact(is_product);
 
     bool saw_real = false;
     double inexact = is_product ? 1.0 : 0.0;
@@ -190,7 +186,7 @@ Expr fold(std::span<const Expr> numbers, bool is_product) {
         }
         return Expr::real(folded);
     }
-    return Expr::rational(exact.numerator, exact.denominator);
+    return Expr::rational(exact.numerator(), exact.denominator());
 }
 
 std::vector<Expr> normalize(std::vector<Expr> operands, Kind kind) {

@@ -996,6 +996,17 @@ arbitrary-precision integer backed by **Boost.Multiprecision's `cpp_int`**,
 behind a facade that fixes the spelling of the operations and keeps two fast
 paths of its own.
 
+> **Since TODO §9.2:** the facade no longer holds a `cpp_int`. A value that
+> fits in 64 bits is an inline `std::int64_t` with overflow-checked machine
+> arithmetic; only a value that does not is a `cpp_int`, behind a
+> `shared_ptr<const detail::BigInt>` whose type the public header declares but
+> never defines. So no public header includes Boost, and the compile-time and
+> install notes below describe what used to be. Measured: `<proxima/expr.hpp>`
+> went from 191,590 preprocessed lines and 1.46 s to 86,440 and 0.74 s, and a
+> consumer's compile line no longer mentions Boost. Small arithmetic got
+> about four times faster; the normaliser's exact accumulator is now
+> `cpp_rational`, which made a long sum of fractions five times faster.
+
 It was first written by hand, on the understanding that the project had no
 third-party dependencies and that this was worth a few hundred lines. That
 understanding was wrong on the premise — the constraint was never "no

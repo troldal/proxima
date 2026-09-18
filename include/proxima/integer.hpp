@@ -1,13 +1,14 @@
 #pragma once
 
-#include <boost/multiprecision/cpp_int.hpp>
-
 #include <compare>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <functional>
 #include <iosfwd>
+#include <limits>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -45,6 +46,12 @@ namespace detail {
 // constrain what they accept.
 Integer abs_of(const Integer &value);
 Integer gcd_of(const Integer &a, const Integer &b);
+
+// A value too large for 64 bits. Defined, with the arithmetic backend, only in
+// the library's own sources; see Integer's layout note.
+struct BigInt;
+// The library's own way in to that representation.
+struct IntegerAccess;
 } // namespace detail
 
 /// An exact integer of unbounded size.
@@ -67,6 +74,21 @@ Integer gcd_of(const Integer &a, const Integer &b);
 /// This remains a facade rather than an alias: it fixes the spelling of the
 /// operations, keeps the fast paths below, and leaves room to change backend
 /// again without touching a line of consumer code.
+///
+/// ## Layout, and why Boost is not in this header
+///
+/// A value that fits in 64 bits — nearly every value — is held inline, and
+/// arithmetic on two such values is plain machine arithmetic with an overflow
+/// check. Only a value that does not fit is handed to cpp_int, held behind a
+/// pointer to an immutable object. So this header needs nothing of Boost: it
+/// used to hold a cpp_int by value, which put Boost.Multiprecision into every
+/// translation unit that included <proxima/expr.hpp> — measured, 118,000
+/// preprocessed lines and 0.85 s of compile time each — and made Boost's
+/// headers part of the installed package.
+///
+/// The representation is canonical: the pointer is set exactly when the value
+/// does not fit in 64 bits. So two small values compare by their inline field
+/// alone, and a small value never equals a large one.
 class Integer {
 public:
     Integer() = default;
@@ -78,14 +100,20 @@ public:
     /// platform — it compiles on Windows and not on Linux.
     template <typename T>
         requires IntegralNumber<T> && std::signed_integral<T>
-    Integer(T value) : value_(static_cast<std::int64_t>(value)) {} // NOLINT
+    Integer(T value) : small_(static_cast<std::int64_t>(value)) {} // NOLINT
 
     /// Unsigned values above the signed range still fit, so they are not
     /// quietly truncated into negatives.
     template <typename T>
         requires IntegralNumber<T> && std::unsigned_integral<T>
-    Integer(T value) // NOLINT
-        : value_(static_cast<std::uint64_t>(value)) {}
+    Integer(T value) { // NOLINT
+        const auto wide = static_cast<std::uint64_t>(value);
+        if (wide <= static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+            small_ = static_cast<std::int64_t>(wide);
+        } else {
+            *this = from_unsigned(wide);
+        }
+    }
 
     /// Deleted. This used to refuse bool and char but accept the wide
     /// character types, so `Integer(u'7')` compiled and meant 55.
@@ -101,23 +129,32 @@ public:
     static std::optional<Integer> parse(std::string_view text);
 
     /// -1, 0 or 1.
-    int sign() const;
-    bool is_zero() const { return value_.is_zero(); }
+    int sign() const {
+        return big_ ? big_sign() : (small_ > 0) - (small_ < 0);
+    }
+    bool is_zero() const { return !big_ && small_ == 0; }
     bool is_negative() const { return sign() < 0; }
 
     /// The value, when it fits in 64 bits.
-    std::optional<std::int64_t> to_int64() const;
+    std::optional<std::int64_t> to_int64() const {
+        if (big_) {
+            return std::nullopt;
+        }
+        return small_;
+    }
 
-    /// True when the value fits in 64 bits, which is the common case.
-    ///
-    /// cpp_int holds a value that small within the object, so this also means
-    /// no heap storage is in use — but the guarantee this makes, and the one
-    /// the fast paths below rest on, is about the range and not the allocation.
-    bool is_small() const;
+    /// True when the value fits in 64 bits, which is the common case, and then
+    /// it is held inline, with no heap storage.
+    bool is_small() const { return !big_; }
 
     std::string to_string() const;
     double to_double() const;
-    std::size_t hash() const;
+    std::size_t hash() const {
+        // A value that fits in 64 bits can never equal one that does not, so
+        // the two may be hashed by entirely separate routes. Every expression
+        // node is hashed once when it is built, so this is not a rare path.
+        return big_ ? big_hash() : std::hash<std::int64_t>{}(small_);
+    }
 
     Integer operator-() const;
     Integer operator+(const Integer &other) const;
@@ -135,18 +172,34 @@ public:
     Integer &operator*=(const Integer &other) { return *this = *this * other; }
     Integer &operator/=(const Integer &other) { return *this = *this / other; }
 
-    bool operator==(const Integer &other) const;
-    std::strong_ordering operator<=>(const Integer &other) const;
+    bool operator==(const Integer &other) const {
+        // Canonical, so a small value never equals a large one.
+        if (!big_ || !other.big_) {
+            return !big_ && !other.big_ && small_ == other.small_;
+        }
+        return big_equal(other);
+    }
+    std::strong_ordering operator<=>(const Integer &other) const {
+        if (!big_ && !other.big_) {
+            return small_ <=> other.small_;
+        }
+        return big_compare(other);
+    }
 
 private:
-    friend Integer detail::abs_of(const Integer &value);
-    friend Integer detail::gcd_of(const Integer &a, const Integer &b);
+    friend struct detail::IntegerAccess;
 
-    using Backend = boost::multiprecision::cpp_int;
+    static Integer from_unsigned(std::uint64_t value);
+    int big_sign() const;
+    std::size_t big_hash() const;
+    bool big_equal(const Integer &other) const;
+    std::strong_ordering big_compare(const Integer &other) const;
 
-    explicit Integer(Backend value) : value_(std::move(value)) {}
-
-    Backend value_ = 0;
+    /// The value, when big_ is null.
+    std::int64_t small_ = 0;
+    /// The value, when it does not fit in 64 bits; null otherwise. Immutable
+    /// and shared, so copying a large Integer copies a pointer.
+    std::shared_ptr<const detail::BigInt> big_;
 };
 
 /// The absolute value. Takes an Integer and nothing else: a plain

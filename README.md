@@ -274,17 +274,15 @@ by default: a library should compute the same answer on every machine.
   - Debian/Ubuntu: `apt install maxima maxima-sbcl`
 
 Nothing else needs installing. The library depends on two parts of Boost —
-Boost.Multiprecision, which backs `proxima::Integer`, and Boost.Process (v2), which
-starts the Maxima child and talks to it over Boost.Asio pipes. Both are fetched
-by CPM at configure time and built as part of the project, so there is no system
-package to add and no version to match. Maxima is not needed to build at all; it
-is located when a kernel first starts.
+Boost.Multiprecision, which backs `proxima::Integer`'s large values, and
+Boost.Process (v2), which starts the Maxima child and talks to it over
+Boost.Asio pipes. Both are fetched by CPM at configure time and built as part
+of the project, so there is no system package to add and no version to match.
+Maxima is not needed to build at all; it is located when a kernel first starts.
 
-Boost's headers land in every translation unit, which makes each one costly to
-compile in memory. On a machine short of free RAM, a wide parallel build can
-fail with *clang frontend command failed due to signal* on files that have
-nothing to do with Boost; that is the compiler being killed, not a code error.
-Build with a smaller `-j` if you see it.
+Neither is in a public header, so code that includes `<proxima/expr.hpp>`
+compiles without Boost: measured with GCC, about 0.04 s and 14,000
+preprocessed lines above the standard headers it uses.
 
 The first configure downloads Boost and takes a minute or so. After that the
 sources live in a **shared CPM cache** rather than in each build tree, so the
@@ -292,15 +290,13 @@ other presets configure in seconds. The cache defaults to `~/.cache/CPM`; set
 `CPM_SOURCE_CACHE`, in the environment or on the command line, to put it
 elsewhere.
 
-`cmake --install` installs Boost's headers into the same prefix as this library.
-That is deliberate rather than untidy: `proxima::Integer` holds a `cpp_int` by value,
-so `<proxima/integer.hpp>` needs them, and an installed library whose public header
-does not compile would be no use. Boost.Process's compiled library goes there
-too: it never appears in a public header, but `proxima` is a static library,
-so a consumer's executable links it. A consumer's `find_package(proxima)` then
-resolves Boost from that prefix — the same Boost this library was compiled
-against. Consumers who carry their own Boost should expect it to be found first
-only if their `CMAKE_PREFIX_PATH` says so.
+`cmake --install` installs Boost into the same prefix as this library. That is
+deliberate rather than untidy: `proxima` is a static library, so a consumer's
+executable links the Boost.Process it was built with. A consumer's
+`find_package(proxima)` resolves Boost from that prefix — the same Boost this
+library was compiled against — and asks for Boost.Process alone; nothing of
+Boost reaches the consumer's include path. Consumers who carry their own Boost
+should expect it to be found first only if their `CMAKE_PREFIX_PATH` says so.
 
 Discovery order: `Config::maxima_root`, then `$MAXIMA_ROOT`, `$MAXIMA_PREFIX`,
 the parent of any `$PATH` entry named `bin`, then the conventional install

@@ -50,9 +50,11 @@ include(cmake/CPM.cmake)
 # not also need Boost.Filesystem linked in.
 #
 # BOOST_SKIP_INSTALL_RULES is OFF deliberately, against the usual advice for a
-# fetched dependency. proxima::Integer holds a cpp_int by value, so the type is in
-# <proxima/integer.hpp> and every consumer needs those headers; skipping the install
-# rules would produce an installed library that cannot be included. This is the
+# fetched dependency. Proxima is a static library linking Boost.Process's
+# compiled part, so every consumer links that too; skipping the install rules
+# would produce an installed library that cannot be linked. (It used to be the
+# headers as well: proxima::Integer held a cpp_int by value in its public
+# header. It no longer does, and no public header includes Boost.) This is the
 # opposite of the doctest case in tests/CMakeLists.txt, where a test framework
 # has no business in a consumer's prefix.
 #
@@ -110,11 +112,14 @@ add_library(proxima
         src/wire/to_maxima.cpp
 )
 
-# PUBLIC: include/proxima/integer.hpp includes <boost/multiprecision/cpp_int.hpp>,
-# so anything including <proxima/expr.hpp> needs Boost's headers on its path.
-# Boost::multiprecision rather than Boost::headers, so the dependency says which
-# part of Boost is actually used.
-target_link_libraries(proxima PUBLIC Boost::multiprecision)
+# PRIVATE, and only while building: multiprecision is header-only, and only
+# src/core/integer.cpp and the normaliser include it, through
+# src/core/big_int.hpp. proxima::Integer names its large-value type without
+# defining it, so no public header needs Boost. BUILD_INTERFACE keeps the
+# target out of the exported link interface, so an installed Proxima does not
+# ask its consumers for it. It used to be PUBLIC, and cost every consumer
+# translation unit 118,000 preprocessed lines.
+target_link_libraries(proxima PRIVATE $<BUILD_INTERFACE:Boost::multiprecision>)
 
 # PRIVATE: only src/transport/child_process.cpp includes it. The library is
 # static, though, so consumers still link it; the installed package config

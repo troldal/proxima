@@ -1,6 +1,7 @@
-// The arbitrary-precision integer. Written by hand rather than taken from a
-// multiprecision library, so it is tested harder than anything else here — and
-// against Maxima, which is as good an oracle as exists.
+// The arbitrary-precision integer: machine arithmetic while a value fits in 64
+// bits, Boost's cpp_int once it does not. The hand-over between the two is
+// where a mistake would hide, so it is tested harder than anything else here —
+// and against Maxima, which is as good an oracle as exists.
 
 #include <doctest/doctest.h>
 
@@ -110,6 +111,63 @@ TEST_CASE("the extreme negative value needs no special case") {
     CHECK((min / Integer(-1)).to_string() == "9223372036854775808");
     CHECK(proxima::abs(min).to_string() == "9223372036854775808");
     CHECK((min - Integer(1)).to_string() == "-9223372036854775809");
+}
+
+TEST_CASE("the machine paths agree with the wide ones at every 64-bit edge") {
+    // Small operands take machine arithmetic with an overflow check; anything
+    // else takes cpp_int. Routing the same operation through a large value
+    // forces the wide path, so the two can be compared on exactly the values
+    // where the overflow checks decide.
+    const std::int64_t min = std::numeric_limits<std::int64_t>::min();
+    const std::int64_t max = std::numeric_limits<std::int64_t>::max();
+    const std::vector<std::int64_t> edges{
+        min, min + 1, min / 2, -3037000500, -3037000499, -4294967296, -2, -1, 0,
+        1, 2, 4294967296, 3037000499, 3037000500, max / 2, max - 1, max};
+    const Integer shift(kFactorial30); // Large, so adding it forces the wide path.
+
+    for (const std::int64_t a : edges) {
+        for (const std::int64_t b : edges) {
+            CAPTURE(a);
+            CAPTURE(b);
+            const Integer x(a);
+            const Integer y(b);
+            const Integer wide_x = x + shift; // Same value as x, plus shift.
+
+            CHECK(x + y == (wide_x + y) - shift);
+            CHECK(x - y == (wide_x - y) - shift);
+            CHECK(x * y == wide_x * y - shift * y);
+            if (b != 0) {
+                // Through the wide path directly: (x * shift) / (y * shift).
+                CHECK(x / y == (x * shift) / (y * shift));
+                CHECK(x % y == (x * shift) % (y * shift) / shift);
+            }
+            // Whatever fits in 64 bits is held inline, however it was reached.
+            const Integer sum = x + y;
+            CHECK(sum.is_small() == sum.to_int64().has_value());
+            CHECK((wide_x - shift).is_small());
+        }
+    }
+}
+
+TEST_CASE("the most negative value at each operation") {
+    const Integer min(kMinInt64);
+    const Integer two_to_63("9223372036854775808");
+    CHECK(min % Integer(-1) == Integer(0));
+    CHECK(min * Integer(-1) == two_to_63);
+    CHECK(gcd(min, min) == two_to_63);
+    CHECK(gcd(min, Integer(0)) == two_to_63);
+    CHECK(gcd(min, Integer(6)) == Integer(2));
+    CHECK((min + Integer(-1)).to_string() == "-9223372036854775809");
+    CHECK(-two_to_63 == min);
+    CHECK((-two_to_63).is_small());
+}
+
+TEST_CASE("an unsigned value past the signed range is exact") {
+    const Integer top(std::numeric_limits<std::uint64_t>::max());
+    CHECK(top.to_string() == "18446744073709551615");
+    CHECK_FALSE(top.is_small());
+    CHECK(top == Integer("18446744073709551615"));
+    CHECK(Integer(std::uint64_t{9223372036854775807}).is_small());
 }
 
 TEST_CASE("signs follow through every combination") {

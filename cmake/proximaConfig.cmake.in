@@ -1,20 +1,17 @@
 @PACKAGE_INIT@
 
 # Proxima drives a Maxima child process over pipes, so it pulls in no
-# computer algebra library. It does need Boost's headers: proxima::Integer is backed
-# by Boost.Multiprecision's cpp_int, which appears in <proxima/integer.hpp> and
-# therefore in every consumer that includes <proxima/expr.hpp>. On Unix it also needs
-# a thread library, for the POSIX transport's teardown wait.
+# computer algebra library, and no public header includes Boost: the
+# Boost.Multiprecision behind proxima::Integer is private to the library. On
+# Unix it needs a thread library, for the POSIX transport's teardown wait.
 include(CMakeFindDependencyMacro)
 
-# Boost is fetched by CPM at build time and installed into this same prefix,
-# because proxima::Integer holds a cpp_int by value and so <proxima/integer.hpp> needs
-# those headers. Look here first, so a consumer gets the Boost this library was
-# actually compiled against rather than whichever one happens to be on the path.
+# Boost is fetched by CPM at build time and installed into this same prefix.
+# Proxima is a static library, so the Boost.Process it was built against is
+# linked into the consumer's executable. Look here first, so a consumer gets
+# that Boost rather than whichever one happens to be on the path.
 list(PREPEND CMAKE_PREFIX_PATH "${PACKAGE_PREFIX_DIR}")
-# Boost.Process too: Proxima is a static library, so the process library
-# it was built against is linked into the consumer's executable.
-find_dependency(Boost COMPONENTS multiprecision process)
+find_dependency(Boost COMPONENTS process)
 
 if (NOT WIN32)
     find_dependency(Threads)
