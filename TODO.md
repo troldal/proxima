@@ -1462,18 +1462,31 @@ to the kernel. That is where the work is.
   new `rewrite` alike: no vector until an operand has changed, the untouched
   prefix copied in then. Not measured. The memo is not done.
 
-- [ ] **`Expr` copies are atomic reference-count operations.** The
+- [x] ~~**`Expr` copies are atomic reference-count operations.**~~ The
   normaliser and the traversals copy operands freely, and `std::shared_ptr`'s
   count is atomic. `boost::intrusive_ptr` (Boost is already here) with a
   non-atomic count, or a policy, would shave the constant; measure before
   changing — §3 showed single runs are noise. Low.
 
-- [ ] **`Expr::str()` builds a display tree on every call.** A `DisplayNode`
+  *Outcome:* struck, without measuring, because the reason not to is not a
+  number. `Expr` is documented as an immutable value that is safe to share
+  between threads, and it is: the kernel tests pass expressions between
+  threads, and a `Compiled` or a cached answer can be read from several at
+  once. A non-atomic count would make copying one on two threads a data
+  race. The traversals that copied operands needlessly were the ones worth
+  fixing, and `transform`, `rewrite` and `match` no longer do (§9.6 items 4
+  and 7).
+
+- [x] **`Expr::str()` builds a display tree on every call.** A `DisplayNode`
   is an `Integer`, a `std::string`, two vectors and a `double` — some 150
   bytes and up to four allocations per node — built and discarded per call.
   Fine for diagnostics, which is what it is for; say so, and keep it out of
   hot loops. Caching the string in the node (`mutable`, once) is possible but
   not obviously worth the size. Low.
+
+  *Outcome:* documented on `str()` in COMMIT, and not cached: a cached string
+  would make every node larger for the benefit of the few that are printed,
+  and hashing, equality and the wire never print.
 
 - [ ] **Small things in the persistent cache:** `read_field` does three seeks
   per field (twelve per entry read) to bound the length — read the file into a

@@ -336,6 +336,12 @@ public:
     std::size_t hash() const;
 
     /// Renders as Maxima-compatible infix text, parenthesised by precedence.
+    ///
+    /// For people — diagnostics, logs, tests — rather than for loops: each
+    /// call builds a display tree of the whole expression, a few allocations
+    /// per node, and throws it away. Nothing is cached, so an expression is no
+    /// larger for having been printed. Hashing, equality and the wire to
+    /// Maxima never go through here.
     std::string str() const;
 
     bool operator==(const Expr &other) const;
