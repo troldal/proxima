@@ -1763,9 +1763,22 @@ to the kernel. That is where the work is.
 
 ### 9.5 Build, tests, process
 
-- [ ] **CI** is the one §7 item still open, and the by-hand cycle used
+- [x] **CI** is the one §7 item still open, and the by-hand cycle used
   throughout this work — GCC and clang-cl on Windows, MSVC, GCC on Linux,
   `clang-tidy`, the fuzz corpora — is exactly the matrix to automate.
+
+  *Outcome:* `.github/workflows/ci.yml` in COMMIT, four jobs on every push
+  and pull request: Linux with GCC 13 — the oldest compiler supported — and
+  Maxima from the distribution, running the whole suite with warnings as
+  errors; Windows with MSVC, running the Maxima-free suite, likewise; a
+  clang-tidy job over `src/`; and a minute of libFuzzer on each parser, its
+  new inputs kept out of the committed corpus. CPM's sources are cached
+  between runs. Verified here: the YAML parses, and both compilers build and
+  pass with warnings as errors, which the by-hand cycle never turned on. Not
+  verifiable here: the repository has no remote, so no run has happened; and
+  Ubuntu's Maxima (5.47 on 24.04) is older than the 5.50 the golden
+  transcripts were recorded with, so the Linux job's Maxima step is the one
+  likely to need attention on its first run. The §7 CI item is this one.
 
 - [x] **Property tests for the invariants the design rests on.** Every
   guarantee below is asserted on hand-picked cases and none on generated

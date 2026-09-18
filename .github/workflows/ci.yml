@@ -1,0 +1,139 @@
+# The checks that were run by hand after every change, run on every push.
+#
+#   linux     GCC 13 — the oldest compiler supported — with Maxima from the
+#             distribution, the whole suite, warnings as errors.
+#   windows   MSVC, the Maxima-free suite, warnings as errors.
+#   tidy      clang-tidy over the library, as .clang-tidy configures it.
+#   fuzz      the two hand-written parsers under libFuzzer, briefly.
+#
+# Dependencies (Boost, FXT, doctest) come through CPM, into a cache kept
+# between runs.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm-cache
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache CPM sources
+        uses: actions/cache@v4
+        with:
+          path: .cpm-cache
+          key: cpm-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'cmake/CPM.cmake') }}
+
+      - name: Install Maxima and Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends maxima maxima-sbcl ninja-build
+
+      - name: Configure
+        run: cmake --preset linux -DPROXIMA_WARNINGS_AS_ERRORS=ON
+
+      - name: Build
+        run: cmake --build --preset linux -j 4
+
+      - name: Test without Maxima
+        run: ctest --preset linux -LE maxima
+
+      # Against the distribution's Maxima, which may be older than the 5.50
+      # the suite was recorded against.
+      - name: Test against Maxima
+        run: ctest --preset linux -L maxima
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache CPM sources
+        uses: actions/cache@v4
+        with:
+          path: .cpm-cache
+          key: cpm-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'cmake/CPM.cmake') }}
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # cl named explicitly: the runner also has MinGW's gcc on its path.
+      - name: Configure
+        run: cmake --preset windows -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DPROXIMA_WARNINGS_AS_ERRORS=ON
+
+      - name: Build
+        run: cmake --build --preset windows -j 4
+
+      # No Maxima on the runner: the suite that needs none.
+      - name: Test without Maxima
+        run: ctest --preset windows -LE maxima
+
+  tidy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache CPM sources
+        uses: actions/cache@v4
+        with:
+          path: .cpm-cache
+          key: cpm-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'cmake/CPM.cmake') }}
+
+      - name: Install clang-tidy and Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-tidy-18 ninja-build
+
+      # Configured and built, so that the generated headers and the fetched
+      # dependencies exist for clang-tidy to read.
+      - name: Configure and build
+        run: |
+          cmake --preset linux
+          cmake --build --preset linux -j 4
+
+      - name: clang-tidy
+        run: |
+          run-clang-tidy-18 -quiet -p build/linux 'src/' > tidy.txt 2>&1 || true
+          if grep -E 'warning:|error:' tidy.txt; then
+            echo "clang-tidy reported findings"
+            exit 1
+          fi
+
+  fuzz:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache CPM sources
+        uses: actions/cache@v4
+        with:
+          path: .cpm-cache
+          key: cpm-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'cmake/CPM.cmake') }}
+
+      - name: Install Clang and Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-18 libclang-rt-18-dev ninja-build
+
+      - name: Build the fuzzers
+        env:
+          CC: clang-18
+          CXX: clang++-18
+        run: |
+          cmake -S . -B build/fuzz -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+                -DPROXIMA_BUILD_FUZZERS=ON -DPROXIMA_BUILD_TESTS=OFF
+          cmake --build build/fuzz -j 4 --target fuzz_parser fuzz_sexpr
+
+      # New inputs go to a scratch directory, not the committed corpus.
+      - name: Fuzz each parser for a minute
+        run: |
+          for target in parser sexpr; do
+            mkdir -p fuzz-out/$target
+            build/fuzz/fuzz/fuzz_$target -max_total_time=60 fuzz-out/$target fuzz/corpus/$target
+          done
