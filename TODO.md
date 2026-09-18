@@ -155,6 +155,9 @@ and §9.2's parser fix is in (`3292b45` … `d7f32f8`). Suite after that round:
 333 cases on Windows under GCC, clang-cl and MSVC, 335 on Linux. Then the
 naming convention of §9.3: functions and variables are snake_case, types
 PascalCase, and every identifier in this file was renamed with the code.
+Then the first half of §9.6, in `f868659`: FXT is a dependency, every
+operation returns `proxima::result<T>` — `fxt::result<T>` — with a `Cause`,
+and the throwing half of the API is gone.
 
 ---
 
@@ -1259,7 +1262,9 @@ to the kernel. That is where the work is.
   in `kernel.hpp` (`2ac8654`) and in the README (`495fbb0`), both pointing to
   `to_expr(kernel.eval_pure(...))` for a pure question. `query` is not added:
   it would be a fifth evaluation verb that §9.6 item 6 would remove again, so
-  it waits for that decision. Open.
+  it waits for that decision. Since `f868659` the pure question is a one-liner
+  anyway — `kernel.eval_pure(form) | fxt::and_then(to_expr)` — which takes
+  most of the sting out; the verb itself still waits for item 6.
 
 - [x] **The in-memory reply cache is bounded by count, not bytes.**
   `Config::cache_entries` is 4096; a single reply can be 889 KB
@@ -1289,6 +1294,18 @@ to the kernel. That is where the work is.
   *Outcome:* deliberately not done in this round. Which of the two it should
   be depends on §9.6 item 1 (one result type everywhere), so it is left open
   with that.
+
+  *Outcome, with §9.6 item 1 (`f868659`):* the second alternative. The
+  operators and builders throw `proxima::OverflowError`, distinct from
+  `Error`, and `Expr::parse` — which can return a value — reports the same
+  fold as `Cause::Overflow`. The fold stays folded, so canonical form keeps
+  its uniqueness.
+
+  *Outcome, with §9.6 item 1 (`f868659`):* the second alternative. The
+  operators and builders throw `proxima::OverflowError`, distinct from
+  `Error`, and `Expr::parse` — which can return a value — reports the same
+  fold as `Cause::Overflow`. The fold stays folded, so canonical form keeps
+  its uniqueness.
 
 - [x] **Persistent-cache hits write to disk.** With a limit set — the
   default — `find()` refreshes the entry's mtime on every hit, a metadata
@@ -1449,12 +1466,26 @@ to the kernel. That is where the work is.
   for a statement — and make `eval_tracked`, `remember` and `forget` internal
   once `Context` is their only client.
 
-- [ ] **`Reply` is a hand-rolled `expected` in a public header** — `ok`,
+- [x] **`Reply` is a hand-rolled `expected` in a public header** — `ok`,
   `value`, `reason`. It should be `std::expected<std::string, Failure>` if the
   raw wire form stays public at all, and the wire form is better made
   `detail`: the public API deals in `Expr`, and `to_expr` already exists.
 
-- [ ] **Half the operations throw and half return `std::expected`.**
+  *Outcome:* done in `f868659`. `Kernel::eval`, `eval_pure` and
+  `eval_tracked` return `result<std::string>`; `to_expr` takes the wire text,
+  so `kernel.eval_pure(form) | fxt::and_then(to_expr)` is how every
+  operation reads its answer. `Reply` is `detail::Reply` in
+  `src/kernel/reply.hpp`, the shape the two caches store, with
+  `detail::to_result` as the one conversion.
+
+  *Outcome:* done in `f868659`. `Kernel::eval`, `eval_pure` and
+  `eval_tracked` return `result<std::string>`; `to_expr` takes the wire text,
+  so `kernel.eval_pure(form) | fxt::and_then(to_expr)` is how every
+  operation reads its answer. `Reply` is `detail::Reply` in
+  `src/kernel/reply.hpp`, the shape the two caches store, with
+  `detail::to_result` as the one conversion.
+
+- [x] **Half the operations throw and half return `std::expected`.**
   `diff`, `expand`, `factor`, `ratsimp`, `subst`, `taylor`, `trigsimp`,
   `trigexpand`, `radcan`, `partfrac`, `to_float`, `coeff`, `nroots`,
   `realroots` and `is` throw `MaximaError`; `integrate`, `limit`, `solve`,
@@ -1463,6 +1494,10 @@ to the kernel. That is where the work is.
   property of the type: `diff(Expr::opaque("$"), x)` throws where
   `integrate` of the same input returns a value. Every caller who wants one
   handling style has to know the list. §9.6 item 1 proposes one shape.
+
+  *Outcome:* done in `f868659`; see §9.6 items 1, 2 and 10.
+
+  *Outcome:* done in `f868659`; see §9.6 items 1, 2 and 10.
 
 - [ ] **`Expr(x)` everywhere.** The README, the tour and the tests write
   `pow(proxima::Expr(x), 2)` and `gt(proxima::Expr(n), proxima::Expr(0))` where
@@ -1584,7 +1619,7 @@ to the kernel. That is where the work is.
 
 - [ ] **`std::flat_map` (C++23)** for `Bindings`, as above.
 
-- [ ] **FXT itself.** Header-only, MIT, the same author, `std::expected`
+- [x] **FXT itself.** Header-only, MIT, the same author, `std::expected`
   underneath by default. Its `operator|` is constrained on `expected_like`,
   which `std::expected<Expr, Failure>` satisfies (checked against
   `IsExpected.hpp`), so `proxima::integrate(f, x) | fxt::transform(to_tex)`
@@ -1592,6 +1627,8 @@ to the kernel. That is where the work is.
   is `fxt::attempt` and `fxt::result<T>`, which fix the error type to
   `fxt::failure`. Whether Proxima should *depend* on FXT or merely compose
   with it is §9.6 item 11.
+
+  *Outcome:* a dependency, decided by its author; see §9.6 item 11.
 
 - [ ] **A property-testing library** — RapidCheck, or Catch2's generators if
   the suite ever moved — for §9.5's invariants. A sixty-line generator over
@@ -1683,7 +1720,7 @@ traversal is callback-shaped; errors are untyped strings; and nothing composes
 naming an intermediate at every step. Each item below fixes one of those, and
 they are ordered so that each is useful without the next.
 
-- [ ] **1. One result type, everywhere.**
+- [x] **1. One result type, everywhere.**
 
   ```cpp
   template <class T> using result = std::expected<T, Failure>;
@@ -1701,7 +1738,20 @@ they are ordered so that each is useful without the next.
   fail for a value reason, and keep throwing only for programming errors
   (`arg(i)` out of range).
 
-- [ ] **2. A `Failure` worth matching on, compatible with `fxt::failure`.**
+  *Outcome:* done in `f868659`. Every operation in `ops.hpp` returns
+  `result<T>` — `diff`, `expand`, `factor`, `ratsimp`, `simplify`, `subst`,
+  `taylor`, `trigsimp`, `trigexpand`, `radcan`, `partfrac`, `to_float`,
+  `coeff`, `is` (`result<Truth>`), `nroots` (`result<std::size_t>`) and
+  `realroots` joined the ones that already did — and `evaluate_or_throw` is
+  gone from `ops.cpp`. `proxima::unwrap(r)` is the throwing style, and the
+  only place `MaximaError`, `ParseError`, `EvalError` and `OverflowError`
+  are thrown for an ordinary outcome; `Context::assume` and `declare` keep
+  throwing, being statements, until item 5. Not done, on purpose: the
+  accessors (`integer_value()`, `arg(i)`) still throw, being programming
+  errors, and item 4 is their answer. In the tests the change is mostly a
+  `*` in front of the call.
+
+- [x] **2. A `Failure` worth matching on, compatible with `fxt::failure`.**
   Today `Failure` is a string. A caller cannot tell "no closed form" from
   "Maxima needs an assumption" from "the kernel died" without parsing the
   message — and the third is the one they must handle differently. Give it a
@@ -1724,6 +1774,17 @@ they are ordered so that each is useful without the next.
   the README's "when Maxima needs a fact" section wants to show. The shape is
   deliberately `fxt::failure`'s — message, exception, typed context — so a
   bridge (item 11) is a conversion, not a redesign.
+
+  *Outcome:* done in `f868659`, and more simply than proposed: `Failure` *is*
+  `fxt::failure`, and the `Cause` rides as its `std::any` context —
+  `fail(cause, message)` attaches it, `cause_of(failure)` reads it back,
+  `Cause::Unknown` for a failure made elsewhere. The enumerators are
+  `MaximaError`, `NeedsAssumption`, `NoClosedForm`, `NotSolved`, `NoLimit`,
+  `UnexpectedAnswer`, `Parse`, `Eval`, `Argument`, `Overflow`, with
+  `to_string` for logs. `NeedsAssumption` is recognised where the reply
+  becomes a result, from the Lisp helper's own wording, so no caller has to.
+  `missing_fact` is not there: the question is text Maxima composed, and
+  parsing it back into a relation would be a guess; the message carries it.
 
 - [ ] **3. Pipe adaptors for every operation.** Each operation gains an
   overload without its subject that returns a closure, and `Expr` and
@@ -1827,14 +1888,22 @@ they are ordered so that each is useful without the next.
   state. The code already honours it; the documentation should promise it,
   because it is the property that makes the rest of this section possible.
 
-- [ ] **10. Errors from the parser and the numeric layer as values too.**
+- [x] **10. Errors from the parser and the numeric layer as values too.**
   `Expr::parse` returns `result<Expr>` (with `Cause::Parse` and the offset);
   `Compiled`'s constructor cannot return a value, so add `compile(expr,
   vars) -> result<Compiled>` and keep the constructor for those who want the
   throw. `eval_numeric` → `result<double>` with `Cause::Eval`; `is_evaluable`
   stays as the cheap predicate.
 
-- [ ] **11. Depend on FXT, or mirror it?** Two honest options. (a) Depend:
+  *Outcome:* done in `f868659`. `Expr::parse` returns `result<Expr>` with
+  `Cause::Parse` (the offset in the message) or `Cause::Overflow`; the
+  recursive-descent parser still throws internally and the boundary
+  converts. `eval_numeric` returns `result<double>`; `compile(expr, vars)`
+  is the value-returning form of `Compiled`'s constructor, which keeps its
+  throw as documented. The parser fuzzer now treats *any* exception as a
+  finding.
+
+- [x] **11. Depend on FXT, or mirror it?** Two honest options. (a) Depend:
   `proxima::result` *is* `fxt::result`, `Failure` *is* `fxt::failure` with
   the `Cause` as context, and the adaptors are `fxt::and_then` and friends
   rather than a second implementation — at the price of a header-only
@@ -1846,6 +1915,23 @@ they are ordered so that each is useful without the next.
   first — it keeps Proxima dependency-light and costs one header — and move
   to (a) only if the adaptor layer in item 3 would otherwise duplicate FXT's
   pipe machinery.
+
+  *Outcome:* (a), decided by FXT's author, in `f868659`. FXT is fetched by
+  CPM at a pinned commit, `DOWNLOAD_ONLY`, with an interface target declared
+  in this project's CMake rather than FXT's own (which fetches a second CPM
+  and the TartanLlama fallbacks a C++23 build does not need); `fixed_string`
+  comes along so `<fxt.hpp>` compiles for a consumer. The public headers
+  include only `fxt/monads/Expected.hpp` and `fxt/utils/Failure.hpp`, and
+  `result.hpp` refuses `FXT_USE_TL_EXPECTED`, which would make the result a
+  different type from the one the library was compiled with. FXT's headers
+  are installed beside Proxima's, and a consumer built against a clean
+  install composes a Proxima result with `fxt::and_then` with no FXT of its
+  own (checked). Two things found on the way, for FXT: `Failure.hpp` streams
+  a `string_view` without including `<ostream>`, which MSVC's STL refuses
+  unless `<ostream>` came first — `result.hpp` includes it first, with a
+  note; and `<fxt.hpp>` needs deducing this (`Match.hpp`) and
+  `std::forward_like`, so GCC 13 cannot take the umbrella, only the headers
+  it uses.
 
 - [ ] **12. What not to do.** Do not make `Expr` a public `std::variant`:
   the shared, hash-once representation is the reason it is a value. Do not
