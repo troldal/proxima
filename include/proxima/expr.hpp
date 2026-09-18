@@ -133,7 +133,7 @@ enum class RelOp { Equal, NotEqual, Less, LessEqual, Greater, GreaterEqual };
 /// are not.
 ///
 /// Structural means exactly that: `x + 1` and `1 + x` are equal only once the
-/// normaliser (PLAN.md step 10) orders their operands. Nothing here consults
+/// normaliser (docs/design.md step 10) orders their operands. Nothing here consults
 /// Maxima, so `(x+1)^2` and `x^2+2*x+1` are different expressions.
 class Expr {
 public:

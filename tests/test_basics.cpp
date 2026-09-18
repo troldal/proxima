@@ -1,5 +1,5 @@
 // Tests that need no Maxima installation. Thin for now — there is very little
-// to assert until the term layer lands (PLAN.md steps 7-9) — but they pin down
+// to assert until the term layer lands (docs/design.md steps 7-9) — but they pin down
 // two contracts that later steps rely on.
 
 #include <doctest/doctest.h>
@@ -23,7 +23,7 @@ TEST_CASE("a default Config asks for discovery rather than a fixed path") {
 }
 
 TEST_CASE("KernelError is catchable at every level of the hierarchy") {
-    // PLAN.md step 11 splits failures two ways: infrastructure failures throw,
+    // docs/design.md step 11 splits failures two ways: infrastructure failures throw,
     // mathematical ones ("no closed form") come back as std::expected. Callers
     // therefore need to be able to catch proxima::Error without knowing which
     // concrete kernel failure occurred.

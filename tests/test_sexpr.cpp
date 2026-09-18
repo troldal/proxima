@@ -68,7 +68,7 @@ TEST_CASE("Lisp exponent markers other than e are accepted") {
 TEST_CASE("bignums are kept losslessly rather than truncated") {
     // 30! — Maxima produces these in ordinary use, well past int64. Storing the
     // digits leaves the numeric-representation decision to the layer that has
-    // to make it (PLAN.md step 8) instead of silently destroying the value.
+    // to make it (docs/design.md step 8) instead of silently destroying the value.
     const SExpr value = parse_sexpr("265252859812191058636308480000000");
     REQUIRE(value.is_integer());
     CHECK(value.digits() == "265252859812191058636308480000000");

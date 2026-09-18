@@ -61,7 +61,7 @@ std::size_t hash_of(const Node &node) {
     }
 
     // Order-sensitive, which is correct: these are structural hashes, and the
-    // normaliser (PLAN.md step 10) is what makes x+1 and 1+x agree by putting
+    // normaliser (docs/design.md step 10) is what makes x+1 and 1+x agree by putting
     // their operands in a canonical order first.
     for (const Expr &arg : node.args()) {
         hash_combine(seed, arg.hash());

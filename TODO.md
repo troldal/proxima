@@ -66,14 +66,14 @@ Work since, and what it turned up that the review had not found:
   Found: binding the child's end of a pipe to the io_context sent SBCL's
   overlapped-write completions to this process's completion port and corrupted
   memory at startup — Windows only, Maxima only, invisible to tests using
-  cmd.exe. PLAN.md "Boost.Process" has the details.
+  cmd.exe. docs/design.md "Boost.Process" has the details.
 - **Paths outside ASCII work** (`39dad91`). Resolves the rest of §2's
   ANSI item. Every internal path string is UTF-8 now, converted by the
   standard library, with no UTF-8 library added. Found: discovery read the
   environment through `std::getenv`, which is ANSI on Windows. And SBCL's own
   runtime reads its command line through the ANSI API, so it cannot open a
   core under a non-ASCII path whatever the caller passes. The library hands it
-  8.3 short names instead, which only works on volumes that have them. PLAN.md
+  8.3 short names instead, which only works on volumes that have them. docs/design.md
   "Paths outside ASCII" has the measurements.
 - **The rest of §1, one commit each** (`c70adc7` … `e81c66c`). Every
   wrong-answer finding is now closed. Each fix was checked against what real
@@ -365,7 +365,7 @@ These produce a result that disagrees with Maxima, silently.
 
 ## 2. Robustness — a typo costs two minutes
 
-- [x] **Resolved — outbound is now s-expressions; see PLAN.md "Outbound
+- [x] **Resolved — outbound is now s-expressions; see docs/design.md "Outbound
   s-expressions".** *Original finding:* a *read* error is not an *eval*
   error, so `errcatch` never sees
   it. The request is `cppsend(id, errcatch(ratdisrep(<text>)))$` with the
@@ -471,7 +471,7 @@ These produce a result that disagrees with Maxima, silently.
   static Kernel is destroyed at exit; a user's own static that holds a
   `Context` (which holds a raw `Kernel*`) and outlives it will call into a
   dead object. Also: `ops.hpp` says `shared_kernel` is "Not thread-safe —
-  see PLAN.md step 13", which is wrong on both counts (C++11 statics are
+  see docs/design.md step 13", which is wrong on both counts (C++11 statics are
   thread-safe to initialise, and step 13 serialised the Kernel). Fix the
   comment; consider `Context` holding a `shared_ptr` or a weak reference.
 
@@ -602,7 +602,7 @@ Fine at today's sizes; these are the walls you will hit.
   written to pin reals folding "in any order" failed; checked against the old
   normaliser, chained `+` never had that property, so the test was corrected.
 
-- [x] **Resolved — the printer is a renderer now; see PLAN.md "Renderers".**
+- [x] **Resolved — the printer is a renderer now; see docs/design.md "Renderers".**
   *Original finding:* the printer runs the normaliser. `negativeTerm()` rebuilds a
   product with `Expr::mul(std::move(factors))` — allocation, flatten, sort
   — for every negative term of every sum it prints, and `render(Add)`
@@ -866,20 +866,20 @@ stand out. All refer to plan steps as future work that has since shipped:
   mid-sentence ("…becomes an Opaque node holding its") and then
   contradicted by the next one. Delete the stale paragraph.
   *(Fixed in `3ea48d5`.)*
-- [x] `include/proxima/reply.hpp`: "Text only for now: PLAN.md step 7 adds the
+- [x] `include/proxima/reply.hpp`: "Text only for now: docs/design.md step 7 adds the
   reader… Until then this is the rawest useful thing". *(Fixed.)*
 - [x] `include/proxima/kernel.hpp`: "This is the whole public surface for now…
-  structured expressions arrive with the term layer (PLAN.md steps 7-9)".
+  structured expressions arrive with the term layer (docs/design.md steps 7-9)".
   *(Fixed in `b71ccdf`.)*
-- [x] `include/proxima/ops.hpp`, `shared_kernel`: "Not thread-safe — see PLAN.md
+- [x] `include/proxima/ops.hpp`, `shared_kernel`: "Not thread-safe — see docs/design.md
   step 13". Wrong, see §2. *(Already fixed in `2a74041`, which rewrote the
   doc: starting it is thread-safe, and calls on it take turns.)*
-- [x] `include/proxima/context.hpp`: "so that PLAN.md step 14's cache key can
+- [x] `include/proxima/context.hpp`: "so that docs/design.md step 14's cache key can
   include them". *(Fixed in `bddb2f0`. The step shipped differently: a change of
   assumptions clears the reply cache, and the persistent cache keys on the replay
   journal. The C++ copy only backs `assumptions()`.)*
 - [x] `src/core/printer.cpp` header: "which is also what the Expr →
-  Maxima direction of the translation layer will need (PLAN.md step 9)".
+  Maxima direction of the translation layer will need (docs/design.md step 9)".
   *(Fixed — and now the opposite is true: the printer is not on the path to
   Maxima at all.)*
 - [x] `src/transport/child_process_win32.cpp`: "Step 13 replaces this
@@ -1648,7 +1648,7 @@ to the kernel. That is where the work is.
   found them by argument-dependent lookup. `.clang-tidy` now enforces the
   convention with `readability-identifier-naming`, with four exceptions it
   documents; it reports nothing across `src`, `include`, `tests`, `examples`
-  and `fuzz`. Names in the historical text of this file and `PLAN.md` were
+  and `fuzz`. Names in the historical text of this file and `docs/design.md` were
   updated with the code, so they still name things that exist; names of
   things since removed (`evalRaw`, `resetPersistence`) are left as they were.
 
@@ -1660,11 +1660,22 @@ to the kernel. That is where the work is.
 
   *Outcome:* they disappeared, with the journal, in `f220f71`.
 
-- [ ] **README, PLAN and TODO are 400, 1,400 and 1,100 lines of narrative.**
+- [x] **README, PLAN and TODO are 400, 1,400 and 1,100 lines of narrative.**
   The *why* is unusually well recorded, which is the reason this review could
   be done from the outside at all — but a newcomer wanting *how* has to read
   past it. Move the history into `docs/decisions/`, one file per decision in
   ADR style, and cut the README to the first two hundred lines. Process item.
+
+  *Outcome:* in COMMIT, the middle way its author chose. The README is 152
+  lines: what Proxima is, the first example, a one-screen summary of what it
+  does, requirements, building, installing, and where to read more. Its
+  reference sections moved unchanged to `docs/guide.md`, whose examples the
+  renamed `tests/test_docs.cpp` still compiles and checks. PLAN.md moved
+  whole to `docs/design.md`, marked as the record of how the library came to
+  be; every reference to it, in code comments and here, now points there.
+  Not split into one file per decision: that would cost the narrative order
+  for addressability nobody has asked for. TODO.md stays at the root, being
+  the working list.
 
 ### 9.4 What existing libraries could provide
 
@@ -1784,7 +1795,7 @@ to the kernel. That is where the work is.
   touches most files anyway is the moment to reformat once and stop the
   drift.
 
-- [x] **PLAN.md says "Genuinely undecided: nothing."** It should now list the
+- [x] **docs/design.md says "Genuinely undecided: nothing."** It should now list the
   decisions this section asks for — naming, values versus exceptions,
   assumptions as values, the opaque `Integer` — so that the plan and the TODO
   agree about what is open.

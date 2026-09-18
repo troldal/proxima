@@ -1,4 +1,8 @@
-# PLAN.md — from prototype to a Maxima-backed C++ symbolic library
+# Design — from prototype to a Maxima-backed C++ symbolic library
+
+*This was `PLAN.md`, the plan the library was built by, kept as the record
+of how it came to be as it is and why. The reference is the
+[guide](guide.md).*
 
 ## Goal
 

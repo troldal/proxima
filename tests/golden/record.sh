@@ -3,7 +3,7 @@
 # Regenerates internal_forms.tsv: a table of Maxima expressions and the internal
 # s-expressions they evaluate to.
 #
-# These are the fixtures the s-expression reader (PLAN.md step 7) and the
+# These are the fixtures the s-expression reader (docs/design.md step 7) and the
 # Maxima->Expr mapping (step 9) are written against, so that both can be tested
 # with no Maxima installation present. Recorded rather than hand-written,
 # because the point is to pin down what Maxima actually emits.

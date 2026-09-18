@@ -13,7 +13,7 @@ namespace proxima::detail {
 /// in, with none of its meaning attached.
 ///
 /// Deliberately knows nothing about Maxima. `MPLUS`, `$X` and `SIMP` are just
-/// symbols here; interpreting them is the mapping layer's job (PLAN.md step 9).
+/// symbols here; interpreting them is the mapping layer's job (docs/design.md step 9).
 /// Keeping the two apart is what lets each be tested on its own — this one
 /// entirely from string literals.
 ///

@@ -1,8 +1,9 @@
-// The README's examples, compiled and checked. Each test mirrors one code
-// block, with the values its comments promise; a README change that breaks
-// an example, or an API change that breaks the README, fails here. This file
-// exists because both happened: after the result type changed, the README's
-// first example streamed a result<double> as if it were a number.
+// The documentation's examples — README.md and docs/guide.md — compiled and
+// checked. Each test mirrors one code block, with the values its comments
+// promise; a change to the documents that breaks an example, or an API change
+// that breaks the documents, fails here. This file exists because both
+// happened: after the result type changed, the README's first example
+// streamed a result<double> as if it were a number.
 
 #include <doctest/doctest.h>
 
@@ -28,7 +29,7 @@ namespace px = proxima;
 
 // --- Expressions -------------------------------------------------------------------
 
-TEST_CASE("README: operators and infix text build the same expression") {
+TEST_CASE("guide: operators and infix text build the same expression") {
     const proxima::Symbol x("x"), y("y");
 
     proxima::Expr f = pow(x, 2) + 3 * x + 2;          // operators
@@ -37,7 +38,7 @@ TEST_CASE("README: operators and infix text build the same expression") {
     CHECK(f == from_operators);
 }
 
-TEST_CASE("README: reading an expression is a match") {
+TEST_CASE("guide: reading an expression is a match") {
     namespace node = proxima::node;
     const proxima::Symbol x("x");
     const auto what = [](const proxima::Expr &e) {
@@ -56,7 +57,7 @@ TEST_CASE("README: reading an expression is a match") {
     CHECK(proxima::Expr(7).as_integer() == proxima::Integer(7));
 }
 
-TEST_CASE("README: rendering") {
+TEST_CASE("guide: rendering") {
     const proxima::Symbol x("x");
     const proxima::Expr e = (1 + x) / (x - 1);
 
@@ -69,7 +70,7 @@ TEST_CASE("README: rendering") {
     CHECK(std::format("{:mathml}", e).starts_with("<math"));
 }
 
-TEST_CASE("README: assumptions are a value") {
+TEST_CASE("guide: assumptions are a value") {
     const proxima::Symbol x("x"), n("n"), k("k");
     const auto positive = proxima::assuming(gt(x, 0));
     const auto more = positive.with(gt(n, 0)).with(k, proxima::Feature::Integer);
@@ -91,7 +92,7 @@ TEST_CASE("README: the first example") {
     CHECK(*px::eval_numeric(*integral, {{x, 1.0}}) == doctest::Approx(2.22324).epsilon(1e-5));
 }
 
-TEST_CASE("README: results chain, and a chain stops at the first failure") {
+TEST_CASE("guide: results chain, and a chain stops at the first failure") {
     const proxima::Symbol x("x");
     const proxima::Expr f = pow(x, 3);
     const auto chained = proxima::diff(f, x) | fxt::and_then(FXT_LIFT(proxima::factor))
@@ -99,7 +100,7 @@ TEST_CASE("README: results chain, and a chain stops at the first failure") {
     CHECK(chained == 3 * pow(x, 2));
 }
 
-TEST_CASE("README: numeric evaluation") {
+TEST_CASE("guide: numeric evaluation") {
     const proxima::Symbol x("x");
     const auto integral = proxima::integrate(pow(x, 2) * proxima::sin(x), x);
     REQUIRE(integral.has_value());
@@ -113,7 +114,7 @@ TEST_CASE("README: numeric evaluation") {
     CHECK(g(1.0) == f(1.0));
 }
 
-TEST_CASE("README: assumptions travel with the question") {
+TEST_CASE("guide: assumptions travel with the question") {
     proxima::Kernel kernel;
     const proxima::Symbol x("x");
     const auto positive = proxima::assuming(gt(x, 0));
@@ -122,7 +123,7 @@ TEST_CASE("README: assumptions travel with the question") {
     CHECK(*proxima::simplify(sqrt(pow(x, 2)), {positive, kernel}) == proxima::Expr(x));
 }
 
-TEST_CASE("README: failure is an outcome") {
+TEST_CASE("guide: failure is an outcome") {
     const proxima::Symbol x("x");
     const auto area = proxima::integrate(proxima::exp(proxima::sin(x)), x);
     REQUIRE_FALSE(area.has_value());
@@ -130,7 +131,7 @@ TEST_CASE("README: failure is an outcome") {
     CHECK(proxima::cause_of(area.error()) == proxima::Cause::NoClosedForm);
 }
 
-TEST_CASE("README: composing with FXT") {
+TEST_CASE("guide: composing with FXT") {
     proxima::Kernel kernel;
     const proxima::Symbol x("x");
     const proxima::Expr f = pow(x, 4);
@@ -154,7 +155,7 @@ TEST_CASE("README: composing with FXT") {
     CHECK(answer == "12 x^{2}");
 }
 
-TEST_CASE("README: when Maxima needs a fact it has not been told") {
+TEST_CASE("guide: when Maxima needs a fact it has not been told") {
     const proxima::Symbol x("x"), n("n");
     const auto stuck = proxima::integrate(pow(x, n), x);
     REQUIRE_FALSE(stuck.has_value());

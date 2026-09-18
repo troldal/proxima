@@ -20,6 +20,7 @@ add_executable(proxima_tests
         test_basics.cpp
         test_cache.cpp
         test_discovery.cpp
+        test_docs.cpp
         test_expr.cpp
         test_format.cpp
         test_from_maxima.cpp
@@ -33,7 +34,6 @@ add_executable(proxima_tests
         test_process_env.cpp
         test_properties.cpp
         test_public_headers.cpp
-        test_readme.cpp
         test_render.cpp
         test_sexpr.cpp
         test_to_maxima.cpp
