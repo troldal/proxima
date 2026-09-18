@@ -371,7 +371,7 @@ void rendering() {
     show("  and -(x + 1)", proxima::render(-(x + 1), PrefixRenderer{}));
     show("  and sqrt(x), with no root()", proxima::render(proxima::sqrt(x), PrefixRenderer{}));
 
-    // proxima::render takes the renderer by value, so state it collects is gone
+    // proxima::render copies a named renderer, so state it collects is gone
     // once it returns. Wrap it in std::ref to keep your own object.
     PrefixRenderer counting;
     proxima::render(pow(x, 2) + x * proxima::pi(), std::ref(counting));

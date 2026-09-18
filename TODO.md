@@ -1816,7 +1816,7 @@ to the kernel. That is where the work is.
   *Outcome:* both done with the §9.1 fixes: "Maxima accepts every Feature"
   in `3292b45`, and the private-directory tests in `fb16850`.
 
-- [ ] **The render vtable serves no use the code has.** `Renderer<T>` is 300
+- [x] **The render vtable serves no use the code has.** `Renderer<T>` is 300
   lines of hand-written vtable and small-buffer storage so that one type can
   hold any renderer — but `render(expr, R &&)` erases the renderer, walks,
   and discards it, and nothing stores a `Renderer<T>` or keeps several in a
@@ -1825,6 +1825,20 @@ to the kernel. That is where the work is.
   nothing until a real use for heterogeneous storage appears — at which point
   `Renderer<T>` can wrap the template. A decision rather than a bug; the
   concepts and the display layer stay exactly as they are.
+
+  *Outcome:* done in COMMIT. `render(e, r)` now walks the concrete renderer:
+  `detail::Resolved<R, T>` settles the optional operations — `list`,
+  `negate`, `strength_of`, `context_for` — with `if constexpr` where the type
+  is visible, and every call in the walk is direct. `Renderer<T>` stays, as
+  the TODO foresaw, but wraps the template: it erases around the whole walk,
+  so its table has three entries (render, destroy, relocate) instead of
+  eighteen and a held renderer costs one indirect call per expression rather
+  than one per node. Its forwarding members went with the old table; what it
+  offers is `render(e, held)` and `held.render(e)`. Behaviour is unchanged:
+  a named renderer is still copied, `std::ref` still reaches your own
+  object — now tested through `Renderer<T>` too — and the static assertions
+  that name a missing group of operations moved to `Resolved`, where both
+  paths meet them. `docs/design.md` records the change of mind.
 
 - [ ] **Apply `.clang-format` wholesale when §9.6 lands.** It was committed
   as "closest, not applied" (§7) to protect line history; a rewrite that

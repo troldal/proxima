@@ -1260,15 +1260,22 @@ Three layers, in `include/proxima/render.hpp` and `src/core/render.cpp`:
 3. **The renderer.** A fold: children arrive already rendered, and it says how
    to combine them.
 
-**Type-erased, not a base class.** A user's renderer is a plain struct owing
-this library nothing; conformance is a concept and `Renderer<T>` is a move-only
-value with a hand-written vtable and small-buffer storage, so nothing virtual
-appears in the user's own type and a small renderer never allocates. This is the
-opposite call from `ITransport`, deliberately: a transport is built by a factory,
-lives behind a `unique_ptr` for a kernel's whole life and is replaced on restart,
-so its polymorphism is real; a renderer is a value constructed at the call site.
+**A template, not a base class.** A user's renderer is a plain struct owing
+this library nothing; conformance is a concept, and `render(e, r)` walks the
+concrete type, so every operation is a direct call. This is the opposite call
+from `ITransport`, deliberately: a transport is built by a factory, lives
+behind a `unique_ptr` for a kernel's whole life and is replaced on restart, so
+its polymorphism is real; a renderer is a value constructed at the call site.
 `std::ref` is supported because value semantics otherwise swallow a renderer
 that accumulates state.
+
+The walk was first written over `Renderer<T>`, a move-only value with a
+hand-written vtable and small-buffer storage that erased every renderer —
+which `render` built, walked once and discarded, paying an indirect call per
+node for a capability nothing used (TODO §9.5). `Renderer<T>` is still there
+for when one type must hold any renderer, but it now erases around the whole
+walk: one indirect call per expression, and a table of three entries rather
+than eighteen.
 
 **Generic over the output type**, which is the load-bearing part rather than a
 flourish: two-dimensional text has to know each subexpression's width, height

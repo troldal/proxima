@@ -155,8 +155,9 @@ options: `{:>30}`, `{:tex:*<40}`. An unknown notation is a `std::format_error`,
 so with a constant format string it does not compile.
 
 A renderer is a **plain struct** — it inherits nothing, overrides nothing, and
-owes this library no base class. Conformance is a concept, and `proxima::Renderer<T>`
-erases the type, so one value can hold any of them. Supply `integer`, `real`,
+owes this library no base class. Conformance is a concept, and `render` walks your type
+directly; `proxima::Renderer<T>` erases it, for when one value must hold any of
+them. Supply `integer`, `real`,
 `symbol`, `verbatim`, `sum`, `product`, `fraction`, `power`, `call`, `relation`
 and `group`; `root`, `list` and `negate` are synthesised from those if you omit
 them. Pass `std::ref(yours)` instead of the object to keep a renderer that

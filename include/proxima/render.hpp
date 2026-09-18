@@ -302,32 +302,225 @@ constexpr Construct construct_of(DisplayKind kind) {
     return Construct::Sum;
 }
 
-/// The operation table a Renderer forwards through.
+/// A concrete renderer with its optional operations resolved: what the walk
+/// calls. Each optional operation is decided here, where the renderer's type
+/// is still visible, so one that does not define it gets a version built from
+/// the operations it does define. Nothing is inherited, nothing is
+/// overridden, and nothing is called through a pointer.
 ///
-/// A hand-written vtable rather than an abstract base: the point of erasing
+/// root() is the exception: it is not synthesised here but by the walk, the
+/// only place the grouping of both base and exponent can be decided — see
+/// root_as_power. For a renderer without one, the walk never reaches root().
+template <typename R, typename T>
+struct Resolved {
+    static_assert(RendersAtoms<R, T>,
+                  "the renderer is missing integer(), real(), symbol() or "
+                  "verbatim(), or one of them does not return exactly T");
+    static_assert(RendersArithmetic<R, T>,
+                  "the renderer is missing sum(), product(), fraction() or "
+                  "power(), or one of them does not return exactly T");
+    static_assert(RendersApplications<R, T>,
+                  "the renderer is missing call() or relation(), or one of "
+                  "them does not return exactly T");
+    static_assert(RendersGrouping<R, T>,
+                  "the renderer is missing group(), which says how to "
+                  "parenthesise");
+
+    R &renderer;
+
+    T root(const T &radicand, unsigned index) {
+        if constexpr (RendersRoot<R, T>) {
+            return renderer.root(radicand, index);
+        } else {
+            static_cast<void>(radicand);
+            static_cast<void>(index);
+            return renderer.verbatim(std::string_view{}); // Unreachable.
+        }
+    }
+
+    T list(std::span<const T> items) {
+        if constexpr (RendersList<R, T>) {
+            return renderer.list(items);
+        } else {
+            return renderer.call("list", items);
+        }
+    }
+
+    T negate(const T &inner) {
+        if constexpr (RendersNegation<R, T>) {
+            return renderer.negate(inner);
+        } else {
+            // A sum of one negated term, which is what negation is; every
+            // renderer already handles a leading minus there.
+            const Term<T> single{inner, true};
+            return renderer.sum(std::span<const Term<T>>(&single, 1));
+        }
+    }
+
+    Strength strength_of(Construct construct) {
+        if constexpr (DeclaresStrength<R>) {
+            return renderer.strength_of(construct);
+        } else {
+            return default_strength(construct);
+        }
+    }
+
+    Strength context_for(Slot slot) {
+        if constexpr (DeclaresContext<R>) {
+            return renderer.context_for(slot);
+        } else {
+            return default_context(slot);
+        }
+    }
+};
+
+/// `radicand^(1/index)`, as a display tree, for a renderer with no notation
+/// for roots of its own.
+///
+/// Built as nodes and walked rather than assembled from already-rendered
+/// text, which is the whole point. Text cannot say whether the radicand needs
+/// brackets as a power base; an earlier version that tried printed
+/// `sqrt(1 - x^2)` as `1 - x^2^(1/2)`, which is a different expression.
+inline DisplayNode root_as_power(const DisplayNode &root) {
+    DisplayNode one;
+    one.kind = DisplayKind::Integer;
+    one.integer = Integer(1);
+
+    DisplayNode index;
+    index.kind = DisplayKind::Integer;
+    index.integer = Integer(root.index);
+
+    DisplayNode exponent;
+    exponent.kind = DisplayKind::Fraction;
+    exponent.children.push_back(std::move(one));
+    exponent.children.push_back(std::move(index));
+
+    DisplayNode power;
+    power.kind = DisplayKind::Power;
+    power.children.push_back(root.children.front());
+    power.children.push_back(std::move(exponent));
+    return power;
+}
+
+/// Layer two: the walk, with grouping applied. A template on the concrete
+/// renderer, so every operation is a direct call the compiler can inline.
+///
+/// Generic over the output type too, which is the reason the walk is in a
+/// header at all — a 2-D text renderer returns boxes with a width, height and
+/// baseline, not strings, and an interface fixed to std::string would
+/// foreclose exactly the renderer that needs it most.
+template <typename R, typename T>
+T render_node(const DisplayNode &node, Strength context,
+              Resolved<R, T> &resolved) {
+    R &renderer = resolved.renderer;
+
+    if constexpr (!RendersRoot<R, T>) {
+        if (node.kind == DisplayKind::Root) {
+            return render_node(root_as_power(node), context, resolved);
+        }
+    }
+
+    const auto child = [&](const DisplayNode &operand, Slot slot) {
+        return render_node(operand, resolved.context_for(slot), resolved);
+    };
+    const auto children = [&](Slot slot) {
+        std::vector<T> rendered;
+        rendered.reserve(node.children.size());
+        for (const DisplayNode &operand : node.children) {
+            rendered.push_back(child(operand, slot));
+        }
+        return rendered;
+    };
+
+    T value = [&]() -> T {
+        switch (node.kind) {
+        case DisplayKind::Integer:
+            return renderer.integer(node.integer);
+        case DisplayKind::Real:
+            return renderer.real(node.real);
+        case DisplayKind::Symbol:
+            return renderer.symbol(std::string_view(node.text));
+        case DisplayKind::Verbatim:
+            return renderer.verbatim(std::string_view(node.text));
+
+        case DisplayKind::Sum: {
+            std::vector<Term<T>> terms;
+            terms.reserve(node.children.size());
+            for (std::size_t i = 0; i < node.children.size(); ++i) {
+                const bool negated
+                    = i < node.negated.size() && node.negated[i];
+                terms.push_back(
+                    {child(node.children[i],
+                           negated ? Slot::NegatedTerm : Slot::SumTerm),
+                     negated});
+            }
+            return renderer.sum(std::span<const Term<T>>(terms));
+        }
+
+        case DisplayKind::Negate:
+            return resolved.negate(child(node.children[0], Slot::NegatedTerm));
+
+        case DisplayKind::Product: {
+            const std::vector<T> factors = children(Slot::Factor);
+            return renderer.product(std::span<const T>(factors));
+        }
+
+        case DisplayKind::Fraction:
+            return renderer.fraction(child(node.children[0], Slot::Numerator),
+                                     child(node.children[1], Slot::Denominator));
+
+        case DisplayKind::Power:
+            return renderer.power(child(node.children[0], Slot::Base),
+                                  child(node.children[1], Slot::Exponent));
+
+        case DisplayKind::Root:
+            return resolved.root(child(node.children[0], Slot::Radicand),
+                                 node.index);
+
+        case DisplayKind::Call: {
+            const std::vector<T> args = children(Slot::Argument);
+            return renderer.call(std::string_view(node.text),
+                                 std::span<const T>(args));
+        }
+
+        case DisplayKind::List: {
+            const std::vector<T> items = children(Slot::Argument);
+            return resolved.list(items);
+        }
+
+        case DisplayKind::Relation:
+            return renderer.relation(node.rel_op,
+                                     child(node.children[0], Slot::RelationSide),
+                                     child(node.children[1],
+                                           Slot::RelationSide));
+        }
+        return renderer.verbatim(std::string_view{});
+    }();
+
+    if (resolved.strength_of(construct_of(node.kind)) < context) {
+        return renderer.group(value);
+    }
+    return value;
+}
+
+/// Renders `expr` with a concrete renderer, held by reference.
+template <typename T, typename R>
+T render_with(const Expr &expr, R &renderer) {
+    Resolved<R, T> resolved{renderer};
+    return render_node(to_display(expr), Strength::Loosest, resolved);
+}
+
+/// The three things a Renderer needs of the renderer it holds: to render
+/// with it, to destroy it, and to move it.
+///
+/// A hand-written table rather than an abstract base: the point of erasing
 /// the renderer is that a user's type is a plain struct, owing nothing to
 /// this library — no inheritance, no overrides, and nothing virtual in their
-/// own type.
+/// own type. It erases at the top, around the whole walk, so an erased
+/// renderer pays one indirect call per expression rather than one per node.
 template <typename T>
 struct RendererVTable {
-    T (*integer)(void *, const Integer &);
-    T (*real)(void *, double);
-    T (*symbol)(void *, std::string_view);
-    T (*verbatim)(void *, std::string_view);
-    T (*sum)(void *, std::span<const Term<T>>);
-    T (*product)(void *, std::span<const T>);
-    T (*fraction)(void *, const T &, const T &);
-    T (*power)(void *, const T &, const T &);
-    /// Null when the renderer defines no root(); the walk then renders the
-    /// equivalent power instead.
-    T (*root)(void *, const T &, unsigned);
-    T (*call)(void *, std::string_view, std::span<const T>);
-    T (*list)(void *, std::span<const T>);
-    T (*relation)(void *, RelOp, const T &, const T &);
-    T (*group)(void *, const T &);
-    T (*negate)(void *, const T &);
-    Strength (*strength_of)(void *, Construct);
-    Strength (*context_for)(void *, Slot);
+    T (*render)(void *, const Expr &);
     void (*destroy)(void *) noexcept;
     /// Moves the held renderer into `destination`, returning where it landed.
     void *(*relocate)(void *source, void *destination) noexcept;
@@ -362,12 +555,35 @@ inline constexpr std::size_t kRendererStorage = 6 * sizeof(void *);
 
 } // namespace detail
 
-/// A renderer, as a value.
+/// Renders `expr` with anything that satisfies RendererFor, deducing the
+/// output type from the renderer itself: `proxima::render(e, TeX{})`.
 ///
-/// Constructed from any type satisfying RendererFor<R, T>; that type is
-/// erased, so this is one concrete type whatever renderer it holds. Small
-/// renderers — which is nearly all of them, since most are stateless or hold
-/// a little configuration — are stored inline and never allocate.
+/// Walks the concrete renderer directly; nothing is erased. A renderer passed
+/// as a named object is copied, and the copy renders — pass `std::ref(yours)`
+/// to render with your own object and read its state afterwards.
+template <typename R, typename T = RenderResult<std::remove_cvref_t<R>>>
+T render(const Expr &expr, R &&renderer) {
+    using Bare = std::remove_cvref_t<R>;
+    using Actual = typename detail::Unwrap<Bare>::type;
+    if constexpr (!std::same_as<Actual, Bare>) {
+        return detail::render_with<T>(expr, renderer.get());
+    } else if constexpr (std::is_lvalue_reference_v<R>) {
+        Bare copy(renderer);
+        return detail::render_with<T>(expr, copy);
+    } else {
+        // A temporary, rendered with in place.
+        return detail::render_with<T>(expr, renderer);
+    }
+}
+
+/// A renderer, as a value: one type, whatever renderer producing T it holds.
+///
+/// Only needed to choose a renderer at run time or to keep several in one
+/// container; render() on a concrete renderer needs none of this. Built on
+/// the same walk, instantiated for the held renderer when it is adopted, so
+/// holding one costs an indirect call per expression and nothing per node.
+/// Small renderers — which is nearly all of them, since most are stateless or
+/// hold a little configuration — are stored inline and never allocate.
 ///
 /// Move-only. Requiring copyability would constrain every user's type for a
 /// capability almost nothing wants; it is the wart std::move_only_function
@@ -375,7 +591,8 @@ inline constexpr std::size_t kRendererStorage = 6 * sizeof(void *);
 /// state afterwards:
 ///
 ///     TeXRenderer tex;
-///     const std::string out = proxima::render(expr, std::ref(tex));
+///     proxima::Renderer<std::string> held = std::ref(tex);
+///     const std::string out = proxima::render(expr, held);
 ///     for (const std::string &package : tex.packages_used()) { ... }
 template <typename T>
 class Renderer {
@@ -417,47 +634,8 @@ public:
     Renderer(const Renderer &) = delete;
     Renderer &operator=(const Renderer &) = delete;
 
-    T integer(const Integer &value) { return vtable_->integer(object_, value); }
-    T real(double value) { return vtable_->real(object_, value); }
-    T symbol(std::string_view name) { return vtable_->symbol(object_, name); }
-    T verbatim(std::string_view source) {
-        return vtable_->verbatim(object_, source);
-    }
-    T sum(std::span<const Term<T>> terms) {
-        return vtable_->sum(object_, terms);
-    }
-    T product(std::span<const T> factors) {
-        return vtable_->product(object_, factors);
-    }
-    T fraction(const T &numerator, const T &denominator) {
-        return vtable_->fraction(object_, numerator, denominator);
-    }
-    T power(const T &base, const T &exponent) {
-        return vtable_->power(object_, base, exponent);
-    }
-    /// Only for a renderer that defines root() — see renders_roots(). One that
-    /// does not has its roots rendered as powers by the walk itself, which is
-    /// the only place the grouping of both base and exponent can be decided.
-    T root(const T &radicand, unsigned index) {
-        return vtable_->root(object_, radicand, index);
-    }
-
-    /// Whether the held renderer defines root().
-    bool renders_roots() const { return vtable_->root != nullptr; }
-    T call(std::string_view head, std::span<const T> args) {
-        return vtable_->call(object_, head, args);
-    }
-    T list(std::span<const T> items) { return vtable_->list(object_, items); }
-    T relation(RelOp op, const T &lhs, const T &rhs) {
-        return vtable_->relation(object_, op, lhs, rhs);
-    }
-    T group(const T &inner) { return vtable_->group(object_, inner); }
-    T negate(const T &inner) { return vtable_->negate(object_, inner); }
-
-    Strength strength_of(Construct construct) {
-        return vtable_->strength_of(object_, construct);
-    }
-    Strength context_for(Slot slot) { return vtable_->context_for(object_, slot); }
+    /// Renders `expr` with the held renderer.
+    T render(const Expr &expr) { return vtable_->render(object_, expr); }
 
 private:
     template <typename R>
@@ -465,23 +643,6 @@ private:
         using Bare = std::remove_cvref_t<R>;
         using M = detail::Model<Bare>;
         using Stored = typename M::Stored;
-        using Actual = typename detail::Unwrap<Bare>::type;
-
-        static_assert(
-            RendersAtoms<Actual, T>,
-            "the renderer is missing integer(), real(), symbol() or "
-            "verbatim(), or one of them does not return exactly T");
-        static_assert(
-            RendersArithmetic<Actual, T>,
-            "the renderer is missing sum(), product(), fraction() or power(), "
-            "or one of them does not return exactly T");
-        static_assert(
-            RendersApplications<Actual, T>,
-            "the renderer is missing call() or relation(), or one of them does "
-            "not return exactly T");
-        static_assert(RendersGrouping<Actual, T>,
-                      "the renderer is missing group(), which says how to "
-                      "parenthesise");
 
         constexpr bool kInlineStorage
             = sizeof(Stored) <= detail::kRendererStorage
@@ -500,99 +661,18 @@ private:
         }
     }
 
-    template <typename Actual>
-    static Strength strength_of_in(Actual &renderer, Construct construct) {
-        if constexpr (DeclaresStrength<Actual>) {
-            return renderer.strength_of(construct);
-        } else {
-            static_cast<void>(renderer);
-            return default_strength(construct);
-        }
-    }
-
-    template <typename Actual>
-    static Strength context_for_in(Actual &renderer, Slot slot) {
-        if constexpr (DeclaresContext<Actual>) {
-            return renderer.context_for(slot);
-        } else {
-            static_cast<void>(renderer);
-            return default_context(slot);
-        }
-    }
-
-    using RootFn = T (*)(void *, const T &, unsigned);
-
-    /// The root slot: the renderer's own function if it has one, else null.
-    /// Two constrained overloads rather than a conditional, because the
-    /// branch calling root() must not even be instantiated for a renderer
-    /// that lacks it.
-    template <typename R>
-    static constexpr RootFn root_slot() {
-        return nullptr;
-    }
-
-    template <typename R>
-        requires RendersRoot<typename detail::Unwrap<R>::type, T>
-    static constexpr RootFn root_slot() {
-        return [](void *p, const T &radicand, unsigned index) -> T {
-            return detail::Model<R>::get(p).root(radicand, index);
-        };
-    }
-
-    /// Builds the operation table for one concrete renderer.
-    ///
-    /// This is where the optional operations are resolved: the concrete type
-    /// is still visible here, so a `requires` test decides whether the slot
-    /// gets the renderer's own function or one synthesised from the
-    /// operations it does have. A renderer that never heard of roots still
-    /// renders them, through its own power().
+    /// The table for one concrete renderer. Its render entry instantiates the
+    /// walk for that renderer, which is where a renderer missing a required
+    /// operation is reported, by Resolved's assertions.
     template <typename R, bool Inline>
     static const detail::RendererVTable<T> &vtable_for() {
         using M = detail::Model<R>;
         using Stored = typename M::Stored;
-        using Actual = typename detail::Unwrap<R>::type;
 
         static constexpr detail::RendererVTable<T> kTable = {
-            [](void *p, const Integer &v) { return M::get(p).integer(v); },
-            [](void *p, double v) { return M::get(p).real(v); },
-            [](void *p, std::string_view n) { return M::get(p).symbol(n); },
-            [](void *p, std::string_view s) { return M::get(p).verbatim(s); },
-            [](void *p, std::span<const Term<T>> t) { return M::get(p).sum(t); },
-            [](void *p, std::span<const T> f) { return M::get(p).product(f); },
-            [](void *p, const T &n, const T &d) {
-                return M::get(p).fraction(n, d);
+            [](void *p, const Expr &expr) -> T {
+                return detail::render_with<T>(expr, M::get(p));
             },
-            [](void *p, const T &b, const T &e) {
-                return M::get(p).power(b, e);
-            },
-            // Not synthesised here: see root_as_power.
-            root_slot<R>(),
-            [](void *p, std::string_view head, std::span<const T> args) {
-                return M::get(p).call(head, args);
-            },
-            [](void *p, std::span<const T> items) -> T {
-                if constexpr (RendersList<Actual, T>) {
-                    return M::get(p).list(items);
-                } else {
-                    return M::get(p).call("list", items);
-                }
-            },
-            [](void *p, RelOp op, const T &l, const T &r) {
-                return M::get(p).relation(op, l, r);
-            },
-            [](void *p, const T &inner) { return M::get(p).group(inner); },
-            [](void *p, const T &inner) -> T {
-                if constexpr (RendersNegation<Actual, T>) {
-                    return M::get(p).negate(inner);
-                } else {
-                    // A sum of one negated term, which is what negation is;
-                    // every renderer already handles a leading minus there.
-                    const Term<T> single{inner, true};
-                    return M::get(p).sum(std::span<const Term<T>>(&single, 1));
-                }
-            },
-            [](void *p, Construct c) { return strength_of_in(M::get(p), c); },
-            [](void *p, Slot s) { return context_for_in(M::get(p), s); },
             [](void *p) noexcept {
                 static_cast<Stored *>(p)->~Stored();
                 if constexpr (!Inline) {
@@ -619,145 +699,10 @@ private:
     const detail::RendererVTable<T> *vtable_ = nullptr;
 };
 
-namespace detail {
-
-/// `radicand^(1/index)`, as a display tree, for a renderer with no notation
-/// for roots of its own.
-///
-/// Built as nodes and walked rather than assembled from already-rendered
-/// text, which is the whole point. Text cannot say whether the radicand needs
-/// brackets as a power base; an earlier version that tried printed
-/// `sqrt(1 - x^2)` as `1 - x^2^(1/2)`, which is a different expression.
-inline DisplayNode root_as_power(const DisplayNode &root) {
-    DisplayNode one;
-    one.kind = DisplayKind::Integer;
-    one.integer = Integer(1);
-
-    DisplayNode index;
-    index.kind = DisplayKind::Integer;
-    index.integer = Integer(root.index);
-
-    DisplayNode exponent;
-    exponent.kind = DisplayKind::Fraction;
-    exponent.children.push_back(std::move(one));
-    exponent.children.push_back(std::move(index));
-
-    DisplayNode power;
-    power.kind = DisplayKind::Power;
-    power.children.push_back(root.children.front());
-    power.children.push_back(std::move(exponent));
-    return power;
-}
-
-/// Layer two: the walk, with grouping applied. Generic over the renderer's
-/// output type, which is the whole reason this is a template — a 2-D text
-/// renderer returns boxes with a width, height and baseline, not strings, and
-/// an interface fixed to std::string would foreclose exactly the renderer
-/// that needs it most.
-template <typename T>
-T render_node(const DisplayNode &node, Strength context, Renderer<T> &renderer) {
-    if (node.kind == DisplayKind::Root && !renderer.renders_roots()) {
-        return render_node(root_as_power(node), context, renderer);
-    }
-
-    const auto child = [&](const DisplayNode &operand, Slot slot) {
-        return render_node(operand, renderer.context_for(slot), renderer);
-    };
-    const auto children = [&](Slot slot) {
-        std::vector<T> rendered;
-        rendered.reserve(node.children.size());
-        for (const DisplayNode &operand : node.children) {
-            rendered.push_back(child(operand, slot));
-        }
-        return rendered;
-    };
-
-    T value = [&]() -> T {
-        switch (node.kind) {
-        case DisplayKind::Integer:
-            return renderer.integer(node.integer);
-        case DisplayKind::Real:
-            return renderer.real(node.real);
-        case DisplayKind::Symbol:
-            return renderer.symbol(node.text);
-        case DisplayKind::Verbatim:
-            return renderer.verbatim(node.text);
-
-        case DisplayKind::Sum: {
-            std::vector<Term<T>> terms;
-            terms.reserve(node.children.size());
-            for (std::size_t i = 0; i < node.children.size(); ++i) {
-                const bool negated
-                    = i < node.negated.size() && node.negated[i];
-                terms.push_back(
-                    {child(node.children[i],
-                           negated ? Slot::NegatedTerm : Slot::SumTerm),
-                     negated});
-            }
-            return renderer.sum(terms);
-        }
-
-        case DisplayKind::Negate:
-            return renderer.negate(child(node.children[0], Slot::NegatedTerm));
-
-        case DisplayKind::Product: {
-            const std::vector<T> factors = children(Slot::Factor);
-            return renderer.product(factors);
-        }
-
-        case DisplayKind::Fraction:
-            return renderer.fraction(child(node.children[0], Slot::Numerator),
-                                     child(node.children[1], Slot::Denominator));
-
-        case DisplayKind::Power:
-            return renderer.power(child(node.children[0], Slot::Base),
-                                  child(node.children[1], Slot::Exponent));
-
-        case DisplayKind::Root:
-            return renderer.root(child(node.children[0], Slot::Radicand),
-                                 node.index);
-
-        case DisplayKind::Call: {
-            const std::vector<T> args = children(Slot::Argument);
-            return renderer.call(node.text, args);
-        }
-
-        case DisplayKind::List: {
-            const std::vector<T> items = children(Slot::Argument);
-            return renderer.list(items);
-        }
-
-        case DisplayKind::Relation:
-            return renderer.relation(node.rel_op,
-                                     child(node.children[0], Slot::RelationSide),
-                                     child(node.children[1],
-                                           Slot::RelationSide));
-        }
-        return renderer.verbatim("");
-    }();
-
-    if (renderer.strength_of(construct_of(node.kind)) < context) {
-        return renderer.group(value);
-    }
-    return value;
-}
-
-} // namespace detail
-
 /// Renders `expr` with an already-erased renderer.
 template <typename T>
 T render(const Expr &expr, Renderer<T> &renderer) {
-    return detail::render_node(detail::to_display(expr), Strength::Loosest,
-                              renderer);
-}
-
-/// Renders `expr` with anything that satisfies RendererFor, deducing the
-/// output type from the renderer itself: `proxima::render(e, TeX{})`.
-template <typename R, typename T = RenderResult<std::remove_cvref_t<R>>>
-    requires(!std::same_as<std::remove_cvref_t<R>, Renderer<T>>)
-T render(const Expr &expr, R &&renderer) {
-    Renderer<T> erased(std::forward<R>(renderer));
-    return render(expr, erased);
+    return renderer.render(expr);
 }
 
 } // namespace proxima

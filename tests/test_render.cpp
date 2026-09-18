@@ -432,9 +432,9 @@ TEST_CASE("optional operations are synthesised from the required ones") {
 }
 
 TEST_CASE("a renderer can be held by reference and read afterwards") {
-    // The wrapper owns what it is given, so a renderer accumulating state
-    // would otherwise be unreachable once rendering finished. std::ref is the
-    // way to keep your own object.
+    // render() copies a named renderer, so one accumulating state would
+    // otherwise be unreachable once rendering finished. std::ref is the way to
+    // keep your own object.
     struct Counting {
         int symbols = 0;
         std::string integer(const proxima::Integer &v) { return v.to_string(); }
@@ -493,10 +493,17 @@ TEST_CASE("a renderer can be held by reference and read afterwards") {
     // Reachable afterwards, which is the whole point of std::ref here.
     CHECK(counter.symbols == 3);
 
+    SUBCASE("and so can an erased one") {
+        Counting held;
+        proxima::Renderer<std::string> erased = std::ref(held);
+        CHECK(proxima::render(Expr(x) * Expr(y), erased) == "xy");
+        CHECK(held.symbols == 2);
+    }
+
     SUBCASE("whereas a renderer passed by value is consumed") {
         Counting owned;
         static_cast<void>(proxima::render(Expr(x) + Expr(y), owned));
-        // `owned` was copied into the wrapper; the copy did the counting.
+        // `owned` was copied; the copy did the counting.
         CHECK(owned.symbols == 0);
     }
 }
@@ -527,6 +534,7 @@ TEST_CASE("the erased renderer is a movable value") {
 
     proxima::Renderer<std::string> renderer{Trivial{}};
     CHECK(proxima::render(Expr(7), renderer) == "7");
+    CHECK(renderer.render(Expr(10)) == "10");
 
     proxima::Renderer<std::string> moved = std::move(renderer);
     CHECK(proxima::render(Expr(8), moved) == "8");
