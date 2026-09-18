@@ -249,7 +249,7 @@ void combining() {
           | fxt::and_then(FXT_LIFT(proxima::expand));
     show("tangent to x^3 - 2x at x = 1", describe(tangent));
 
-#if defined(DEMO_FULL_FXT)
+#if defined(DEMO_FULL_FXT) && !(defined(_MSC_VER) && defined(__clang__))
     // zip gathers several results into one result holding a tuple, and
     // mapply spreads the tuple over a function: L'Hopital's rule for
     // sin(x)/x at 0, as the limit of the ratio of the derivatives.
@@ -260,6 +260,10 @@ void combining() {
           | fxt::and_then(
               [](const Expr &ratio) { return proxima::limit(ratio, x, 0); });
     show("limit of sin(x)/x at 0, by L'Hopital", describe(lhopital));
+#elif defined(DEMO_FULL_FXT)
+    // clang-cl's Microsoft name mangling cannot mangle the pack expansion in
+    // fxt::zip's signature yet ("cannot mangle this pack expansion yet").
+    std::cout << "  (skipped: clang-cl cannot compile fxt::zip)\n";
 #else
     needs_newer_compiler("fxt::zip and fxt::mapply");
 #endif

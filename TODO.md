@@ -1795,6 +1795,14 @@ to the kernel. That is where the work is.
   accesses that 23 accepts (`a3ce5a0`). `a3ce5a0` is the first run with all
   six jobs green.
 
+  The fuzz job then found its first bug, on its fourth run: postfix `!` and
+  `!!` were read in a loop with no depth counted, but print as nested calls,
+  so `x!!!…` parsed at any length and printed text too deep to read back — a
+  few thousand long, it overflowed the stack printing. The parser now counts
+  each postfix level as its printed form will need it, against the depth
+  limit and the stack budget, with the operand's height included; the input
+  is in the corpus as `found-postfix-chain`.
+
 - [x] **Property tests for the invariants the design rests on.** Every
   guarantee below is asserted on hand-picked cases and none on generated
   ones: normalisation is idempotent (`Expr::add(e.args()) == e` for every

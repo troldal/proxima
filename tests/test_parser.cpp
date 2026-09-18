@@ -342,6 +342,40 @@ TEST_CASE("text nested too deep is refused, not a stack overflow") {
     }
 }
 
+TEST_CASE("a chain of factorials is counted as the nesting it prints as") {
+    // Found by fuzzing: postfix operators were read in a loop, with no depth
+    // counted, but print as nested calls. `x!!!…` parsed at any length and
+    // printed text too deep to read back, and a few thousand long it
+    // overflowed the stack while printing.
+    const auto chain
+        = [](std::size_t bangs) { return "x" + std::string(bangs, '!'); };
+
+    SUBCASE("a long chain prints to text that reads back, in every build") {
+        const auto parsed = Expr::parse(chain(100));
+        REQUIRE(parsed.has_value());
+        const auto again = Expr::parse(parsed->str());
+        REQUIRE(again.has_value());
+        CHECK(*again == *parsed);
+    }
+    SUBCASE("a longer one is refused as too deep, not a crash") {
+        CHECK(refused(chain(300), "nested too deep"));
+        CHECK(refused(chain(4000), "nested too deep"));
+    }
+    SUBCASE("counting the height of what the chain is applied to") {
+        // Parentheses do not nest the tree; calls do. A short chain on a deep
+        // operand is as deep as a long chain on a shallow one.
+        std::string calls = "x";
+        for (int i = 0; i < 150; ++i) {
+            calls = "f(" + calls + ")";
+        }
+        CHECK(Expr::parse(calls).has_value());
+        CHECK(refused(calls + std::string(100, '!'), "nested too deep"));
+        CHECK(Expr::parse(std::string(150, '(') + "x" + std::string(150, ')')
+                          + std::string(50, '!'))
+                  .has_value());
+    }
+}
+
 TEST_CASE("statements are not expressions, and are refused") {
     // Assignment, definition and quoting are Maxima *programs*. Refusing them
     // here is the boundary that keeps this a parser for expressions; proxima::parse

@@ -1,11 +1,13 @@
 #include <proxima/errors.hpp>
 #include <proxima/expr.hpp>
 
+#include <algorithm>
 #include <charconv>
 #include <cstdint>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #if defined(_MSC_VER)
@@ -300,6 +302,30 @@ constexpr std::size_t kMaxParseDepth = 1000;
 /// by not doing it.
 constexpr std::uintptr_t kParseStackBudget = std::uintptr_t{256} * 1024;
 
+/// The stack charged for each level a postfix operator's printed form needs.
+///
+/// The printer writes `x!` as `factorial(x)`, and reading that back recurses
+/// once per call; parsing `x!` did not recurse at all. Measured, a nested
+/// call costs about 1.5 KB of stack in an MSVC Debug build, the most of any
+/// build, and under 1 KB in GCC's Debug builds and under AddressSanitizer.
+constexpr std::uintptr_t kStackPerPrintedLevel = std::uintptr_t{2} * 1024;
+
+/// How many levels deep `expr` is, 1 for a leaf. Walked with a stack of its
+/// own rather than by recursion.
+std::size_t height(const Expr &expr) {
+    std::size_t deepest = 0;
+    std::vector<std::pair<const Expr *, std::size_t>> pending{{&expr, 1}};
+    while (!pending.empty()) {
+        const auto [node, level] = pending.back();
+        pending.pop_back();
+        deepest = std::max(deepest, level);
+        for (const Expr &operand : node->args()) {
+            pending.emplace_back(&operand, level + 1);
+        }
+    }
+    return deepest;
+}
+
 /// An address inside the current stack frame: the real stack, even under
 /// AddressSanitizer, which can move locals off it.
 inline std::uintptr_t stack_address() {
@@ -369,7 +395,16 @@ private:
         } leave{depth_};
 
         Expr left = prefix();
+        // The height of `left` while a run of postfix operators builds on
+        // it, so that the run measures it once; 0 otherwise.
+        std::size_t postfix_height = 0;
         while (left_binding_power(current_.kind) > minimum_power) {
+            if (current_.kind == Token::Kind::Bang
+                || current_.kind == Token::Kind::BangBang) {
+                postfix_height = postfix_level(left, postfix_height);
+            } else {
+                postfix_height = 0;
+            }
             switch (current_.kind) {
             case Token::Kind::Plus:
             case Token::Kind::Minus:
@@ -385,6 +420,31 @@ private:
             }
         }
         return left;
+    }
+
+    /// Counts the level a postfix operator adds, returning the height of the
+    /// expression it builds.
+    ///
+    /// `!` and `!!` nest the tree a level each, like a call, but are read in
+    /// expression()'s loop rather than by recursing, so nothing else counts
+    /// them. Their printed form is a call, and a reparse reads it by
+    /// recursion: `depth_` levels in, as this is, and then one level per
+    /// node of the operand and its operators. So they are counted here
+    /// against the same limits. Found by fuzzing: `x!!!…` parsed at any
+    /// length, and printed as text too deeply nested to read back — a few
+    /// thousand long, it overflowed the stack printing.
+    std::size_t postfix_level(const Expr &operand, std::size_t known_height) {
+        const std::size_t levels
+            = (known_height == 0 ? height(operand) : known_height) + 1;
+        const std::uintptr_t here = stack_address();
+        const std::uintptr_t used
+            = here < stack_base_ ? stack_base_ - here : here - stack_base_;
+        if (depth_ + levels > kMaxParseDepth
+            || used + levels * kStackPerPrintedLevel > kParseStackBudget) {
+            throw ParseError("expression nested too deep at offset "
+                             + std::to_string(current_.at));
+        }
+        return levels;
     }
 
     // A run of `+` and `-`, or of `*` and `/`, is collected and built once.
