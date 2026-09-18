@@ -1710,16 +1710,28 @@ to the kernel. That is where the work is.
   than a `std::generator`, which GCC 13's library and libc++ lack; see §9.6
   item 7.
 
-- [ ] **`std::ranges::to` and views (C++23)** where the code loops by hand to
+- [x] ~~**`std::ranges::to` and views (C++23)**~~ where the code loops by hand to
   build a vector: `map_arguments` is `form.items() | views::drop(1) |
   views::transform(from_maxima) | ranges::to<std::vector>()`; `solve`'s
   by-name collection, `sorted_children`, `Compiled`'s variable names likewise.
   Readability, not speed.
 
-- [ ] **`std::print` / `std::println` (C++23)** in the examples and the tour
+  *Outcome:* struck while GCC 13 is a supported compiler. GCC 13's library, which the Windows MinGW build uses, has neither
+  `std::ranges::to`, `<print>`, `<flat_map>` nor `<generator>` (checked with
+  the feature-test macros; GCC 16 on Linux has all four). Two
+  spellings of the same loop, one per library, would cost the readability
+  this was for. Revisit when the floor is GCC 14. Views without `to` are in
+  use where they help: `Expr::add(range)` and `nodes(e)`.
+
+- [x] ~~**`std::print` / `std::println` (C++23)**~~ in the examples and the tour
   in place of iostream; the library already formats with `std::format`.
 
-- [ ] **`std::flat_map` (C++23)** for `Bindings`, as above.
+  *Outcome:* struck for the same reason: `<print>` arrives in GCC 14. The
+  examples keep iostream until the floor moves.
+
+- [x] ~~**`std::flat_map` (C++23)**~~ for `Bindings`, as above.
+
+  *Outcome:* struck: `<flat_map>` arrives in GCC 15. See also §9.6 item 8.
 
 - [x] **FXT itself.** Header-only, MIT, the same author, `std::expected`
   underneath by default. Its `operator|` is constrained on `expected_like`,
@@ -1732,13 +1744,22 @@ to the kernel. That is where the work is.
 
   *Outcome:* a dependency, decided by its author; see §9.6 item 11.
 
-- [ ] **A property-testing library** — RapidCheck, or Catch2's generators if
+- [x] ~~**A property-testing library**~~ — RapidCheck, or Catch2's generators if
   the suite ever moved — for §9.5's invariants. A sixty-line generator over
   `Kind` inside the existing doctest suite would do as well.
 
-- [ ] **Keep hand-written, as before:** the Pratt parser, the s-expression
+  *Outcome:* not needed: the generator in `tests/test_properties.cpp`
+  (`301b59e`) is some two hundred lines inside the existing doctest suite,
+  seeded and reproducible, and has since carried eleven properties.
+
+- [x] **Keep hand-written, as before:** the Pratt parser, the s-expression
   reader, the LRU. And one candidate for *removal* rather than replacement:
   §9.5, the render vtable.
+
+  *Outcome:* kept, and confirmed by what happened since: the Pratt parser
+  took the run-of-operators change in `d7f32f8` in forty lines, and the
+  s-expression reader and the LRU needed nothing. The render vtable is the
+  next item.
 
 ### 9.5 Build, tests, process
 
