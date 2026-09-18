@@ -1592,7 +1592,7 @@ to the kernel. That is where the work is.
   can be returned by value. Return `Compiled`, or `auto`; if a type-erased
   form is wanted, `std::move_only_function`.
 
-  *Outcome:* returns the `Compiled` itself, in COMMIT, which is a callable
+  *Outcome:* returns the `Compiled` itself, in `8c9f6d9`, which is a callable
   `double(double)` and converts to a `std::function` wherever one is wanted,
   so the tour's `std::function` still compiles unchanged. Not
   `std::move_only_function`: a `Compiled` is copyable and there is nothing to
