@@ -1436,7 +1436,7 @@ to the kernel. That is where the work is.
   prefix then. Also: `replace` and `contains` revisit shared subtrees, which a
   memo keyed by node identity would avoid for DAG-shaped expressions. Low.
 
-  *Outcome:* the allocation half is done in COMMIT, in `transform` and in the
+  *Outcome:* the allocation half is done in `a7f1f16`, in `transform` and in the
   new `rewrite` alike: no vector until an operand has changed, the untouched
   prefix copied in then. Not measured. The memo is not done.
 
@@ -1921,7 +1921,7 @@ they are ordered so that each is useful without the next.
   representation-identity trick that `transform` needs today; and `nodes(e)`
   makes `any_of` a `std::ranges::any_of`. All pure, all in the core.
 
-  *Outcome:* done in COMMIT, with two departures. `nodes(e)` is not a
+  *Outcome:* done in `a7f1f16`, with two departures. `nodes(e)` is not a
   `std::generator`: GCC 13's library and libc++ do not have it. It is a
   hand-written input range, an explicit stack of operand spans, which is
   portable and allocates no coroutine frame; it keeps its own copy of the
@@ -1941,7 +1941,7 @@ they are ordered so that each is useful without the next.
   kernel; `Compiled` is already immutable. `fxt::immutable<T>` is the right
   wrapper to show in the examples for a `Bindings` built up and then frozen.
 
-  *Outcome:* `Bindings::with(symbol, value)` in COMMIT, `[[nodiscard]]`,
+  *Outcome:* `Bindings::with(symbol, value)` in `a7f1f16`, `[[nodiscard]]`,
   beside `set`, which stays for bindings built up locally. `std::flat_map`
   is not used: GCC 13's library does not have it. `fxt::immutable` is not
   shown: a `const Bindings` built with `with` already says it.
@@ -1951,7 +1951,7 @@ they are ordered so that each is useful without the next.
   state. The code already honours it; the documentation should promise it,
   because it is the property that makes the rest of this section possible.
 
-  *Outcome:* the README's *What is pure, and what is not* in COMMIT. Checked
+  *Outcome:* the README's *What is pure, and what is not* in `a7f1f16`. Checked
   against the code first: the one piece of mutable state in the core is
   `Compiled`'s thread-local scratch stack, which no caller can observe; the
   process-wide state is `shared_kernel()` and the `Context` registry.
