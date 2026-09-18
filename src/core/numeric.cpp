@@ -308,13 +308,13 @@ bool walk(const Expr &expr, const Bindings &bindings, double &result,
 
 } // namespace
 
-double eval_numeric(const Expr &expr, const Bindings &bindings) {
-    double result = 0.0;
+result<double> eval_numeric(const Expr &expr, const Bindings &bindings) {
+    double value = 0.0;
     std::string failure;
-    if (!walk(expr, bindings, result, &failure)) {
-        throw EvalError(failure);
+    if (!walk(expr, bindings, value, &failure)) {
+        return fxt::unexpected(fail(Cause::Eval, std::move(failure)));
     }
-    return result;
+    return value;
 }
 
 bool is_evaluable(const Expr &expr, const Bindings &bindings) {
@@ -564,6 +564,23 @@ double Compiled::operator()(std::span<const double> values) const {
 
 double Compiled::operator()(double value) const {
     return (*this)(std::span<const double>(&value, 1));
+}
+
+result<Compiled> compile(const Expr &expr, std::span<const Symbol> variables,
+                         const Bindings &constants) {
+    // The constructor is the one place the preparation is written, and it
+    // reports through EvalError; this is that report as a value.
+    try {
+        return Compiled(expr, variables, constants);
+    } catch (const EvalError &error) {
+        return fxt::unexpected(fail(Cause::Eval, error.what()));
+    }
+}
+
+result<Compiled> compile(const Expr &expr, const Symbol &variable,
+                         const Bindings &constants) {
+    const Symbol variables[] = {variable};
+    return compile(expr, std::span<const Symbol>(variables), constants);
 }
 
 std::function<double(double)> as_function(const Expr &expr, const Symbol &variable,

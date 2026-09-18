@@ -282,9 +282,9 @@ TEST_CASE("arithmetic agrees with Maxima on large random values") {
     };
 
     const auto maxima_says = [&kernel](const std::string &expression) {
-        const proxima::Reply reply = kernel.eval_pure(expression);
-        REQUIRE(reply.ok);
-        return reply.value;
+        const auto reply = kernel.eval_pure(expression);
+        REQUIRE(reply.has_value());
+        return *reply;
     };
 
     for (int trial = 0; trial < 25; ++trial) {
@@ -327,7 +327,7 @@ TEST_CASE("a factorial from Maxima is a number here") {
 
     // And Maxima agrees.
     const auto confirmed = kernel.eval_pure("is(" + doubled.str() + " = 2*30!)");
-    CHECK(confirmed.value == "T");
+    CHECK(confirmed.value() == "T");
 }
 
 } // TEST_SUITE("maxima")

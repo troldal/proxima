@@ -31,6 +31,11 @@
 #include <proxima/tex.hpp>       // proxima::to_tex
 #include <proxima/version.hpp>   // proxima::version
 
+// Proxima's results are FXT's, so FXT's adaptors apply to them directly.
+#include <fxt/monads/AndThen.hpp>
+#include <fxt/monads/Transform.hpp>
+#include <fxt/monads/ValueOr.hpp>
+
 #include <chrono>
 #include <filesystem>
 #include <functional>
@@ -199,7 +204,7 @@ void parsing_offline() {
     // calls, lists, strings — and produces the same expression the operators
     // in section 1 would build.
     const proxima::Symbol x("x");
-    const proxima::Expr parsed = proxima::Expr::parse("x^2 + 3*x + 2");
+    const proxima::Expr parsed = *proxima::Expr::parse("x^2 + 3*x + 2");
     show("Expr::parse(\"x^2 + 3*x + 2\")", parsed);
     show("  same as the operators build?",
          parsed == pow(x, 2) + 3 * x + 2 ? "true" : "false");
@@ -208,25 +213,30 @@ void parsing_offline() {
     // right-associative, and unary minus binds more loosely than ^. Printed,
     // both look just like their input, so compare them with expressions built
     // explicitly to see how they were grouped.
-    const proxima::Expr tower = proxima::Expr::parse("2^3^2");
+    const proxima::Expr tower = *proxima::Expr::parse("2^3^2");
     show("Expr::parse(\"2^3^2\")", tower);
     show("  is it 2^(3^2)?",
          tower == pow(proxima::Expr(2), pow(proxima::Expr(3), 2)) ? "true" : "false");
-    const proxima::Expr negated = proxima::Expr::parse("-x^2");
+    const proxima::Expr negated = *proxima::Expr::parse("-x^2");
     show("Expr::parse(\"-x^2\")", negated);
     show("  is it -(x^2)?", negated == -pow(x, 2) ? "true" : "false");
 
     // It parses; it does not evaluate. 5! stays factorial(5). proxima::parse, in
     // part two, hands text to Maxima's own parser instead, which evaluates
     // as it reads and accepts everything Maxima does.
-    show("Expr::parse(\"5!\")", proxima::Expr::parse("5!"));
+    show("Expr::parse(\"5!\")", *proxima::Expr::parse("5!"));
 
-    // Malformed text throws proxima::ParseError, naming where it went wrong.
-    try {
-        proxima::Expr::parse("x + * 2");
-    } catch (const proxima::ParseError &error) {
-        show("Expr::parse(\"x + * 2\") throws", error.what());
-    }
+    // Malformed text is a Failure, not an exception — Expr::parse returns a
+    // proxima::result, like everything here that can fail for an ordinary
+    // reason — and its message names where the text went wrong. The `*`
+    // above is the result being read on the spot; check it first when the
+    // text is not yours. proxima::unwrap turns a failure into the exception
+    // its cause names, for code that would rather catch.
+    const auto malformed = proxima::Expr::parse("x + * 2");
+    show("Expr::parse(\"x + * 2\") has a value", malformed ? "yes" : "no");
+    show("  its failure says", malformed.error().message());
+    show("  and its cause is Parse",
+         proxima::cause_of(malformed.error()) == proxima::Cause::Parse ? "yes" : "no");
 }
 
 // --- 4. Functions and constants ---------------------------------------------
@@ -389,19 +399,18 @@ void numeric_evaluation() {
     // eval_numeric: one evaluation, with symbols bound by name. Maxima's named
     // constants (%pi, %e, inf) need no binding.
     show("eval_numeric(f, {x: 1, a: 2})",
-         std::to_string(proxima::eval_numeric(f, {{"x", 1.0}, {"a", 2.0}})));
-    show("eval_numeric(pi() / 2)", std::to_string(proxima::eval_numeric(proxima::pi() / 2)));
+         std::to_string(*proxima::eval_numeric(f, {{"x", 1.0}, {"a", 2.0}})));
+    show("eval_numeric(pi() / 2)", std::to_string(*proxima::eval_numeric(proxima::pi() / 2)));
 
     // is_evaluable asks first, without throwing.
     show("is_evaluable(f) with nothing bound", proxima::is_evaluable(f) ? "yes" : "no");
 
-    // Otherwise, anything that cannot become a number throws proxima::EvalError:
-    // an unbound symbol, a function with no numeric meaning here, a relation.
-    try {
-        proxima::eval_numeric(f, {{"x", 1.0}});
-    } catch (const proxima::EvalError &error) {
-        show("with a left unbound", error.what());
-    }
+    // Otherwise, anything that cannot become a number is a Failure with
+    // Cause::Eval: an unbound symbol, a function with no numeric meaning
+    // here, a relation.
+    const auto unbound = proxima::eval_numeric(f, {{"x", 1.0}});
+    show("with a left unbound", unbound ? std::to_string(*unbound)
+                                        : "Failure: " + unbound.error().message());
 
     // For many evaluations, compile once. Compiled resolves every symbol and
     // function up front into a flat instruction list, so each call is just
@@ -445,17 +454,17 @@ void calculus_and_algebra() {
     const proxima::Symbol y("y");
     const proxima::Expr f = pow(x, 3) * proxima::sin(x);
 
-    show("diff(x^3 sin(x), x)", proxima::diff(f, x));
-    show("diff(x^3 sin(x), x, 2)", proxima::diff(f, x, 2)); // Second derivative.
-    show("expand((x + y)^3)", proxima::expand(pow(x + y, 3)));
-    show("factor(x^2 - y^2)", proxima::factor(pow(x, 2) - pow(y, 2)));
-    show("ratsimp((x^2 - 1)/(x - 1))", proxima::ratsimp((pow(x, 2) - 1) / (x - 1)));
-    show("subst(x^2 + y, x, 3)", proxima::subst(pow(x, 2) + y, x, 3));
+    show("diff(x^3 sin(x), x)", *proxima::diff(f, x));
+    show("diff(x^3 sin(x), x, 2)", *proxima::diff(f, x, 2)); // Second derivative.
+    show("expand((x + y)^3)", *proxima::expand(pow(x + y, 3)));
+    show("factor(x^2 - y^2)", *proxima::factor(pow(x, 2) - pow(y, 2)));
+    show("ratsimp((x^2 - 1)/(x - 1))", *proxima::ratsimp((pow(x, 2) - 1) / (x - 1)));
+    show("subst(x^2 + y, x, 3)", *proxima::subst(pow(x, 2) + y, x, 3));
 
     // Results are expressions like any other, so they compare structurally
     // with ones you build yourself.
     show("expand((x+1)^2) == x^2 + 2x + 1",
-         proxima::expand(pow(x + 1, 2)) == pow(x, 2) + 2 * x + 1 ? "true" : "false");
+         *proxima::expand(pow(x + 1, 2)) == pow(x, 2) + 2 * x + 1 ? "true" : "false");
 
     // Operations that can legitimately fail return std::expected. Check it
     // before using the value.
@@ -513,27 +522,27 @@ void when_there_is_no_answer() {
     // reason — usually Maxima's own words.
     const auto hopeless = proxima::integrate(proxima::exp(proxima::sin(x)), x);
     show("integrate(e^sin(x), x)",
-         hopeless ? hopeless->str() : "Failure: " + hopeless.error().message);
+         hopeless ? hopeless->str() : "Failure: " + hopeless.error().message());
 
     // Maxima does not always signal failure as an error. For solve it hands
     // back something that is not a solution, such as x = sin(x); the library
     // recognises that and reports a Failure, so a success really is one.
     const auto circular = proxima::solve(eq(x, proxima::sin(x)), x);
     show("solve(x = sin(x), x)",
-         circular ? "solved?" : "Failure: " + circular.error().message);
+         circular ? "solved?" : "Failure: " + circular.error().message());
 
     // Some questions Maxima itself rejects, like a divergent integral. That
     // arrives as a Failure too, in Maxima's words.
     const auto divergent = proxima::integrate(proxima::Expr(1) / x, x, 0, 1);
     show("integrate(1/x, x, 0, 1)",
-         divergent ? divergent->str() : "Failure: " + divergent.error().message);
+         divergent ? divergent->str() : "Failure: " + divergent.error().message());
 
     // An infinite answer is still an answer. From both sides at once, 1/x
     // grows without a sign, and Maxima says `infinity` — its complex
     // infinity, not the inf and minf of the one-sided limits in section 7.
     const auto both_sides = proxima::limit(proxima::Expr(1) / x, x, 0);
     show("limit(1/x, x, 0), both sides",
-         both_sides ? both_sides->str() : "Failure: " + both_sides.error().message);
+         both_sides ? both_sides->str() : "Failure: " + both_sides.error().message());
 
     // A limit that does not exist is a Failure, however Maxima puts it.
     // abs(x)/x is -1 on one side of 0 and 1 on the other: Maxima answers `ind`,
@@ -542,21 +551,29 @@ void when_there_is_no_answer() {
     // limit is an ordinary value.
     const auto bounded = proxima::limit(proxima::abs(x) / x, x, 0);
     show("limit(abs(x)/x, x, 0)",
-         bounded ? bounded->str() : "Failure: " + bounded.error().message);
+         bounded ? bounded->str() : "Failure: " + bounded.error().message());
     const auto one_sided = proxima::limit(proxima::abs(x) / x, x, 0, proxima::Side::FromAbove);
     show("limit(abs(x)/x, x, 0, FromAbove)",
-         one_sided ? one_sided->str() : "Failure: " + one_sided.error().message);
+         one_sided ? one_sided->str() : "Failure: " + one_sided.error().message());
 
-    // Operations with no ordinary way to fail — diff, expand, factor,
-    // ratsimp, subst — throw proxima::MaximaError instead, because a failure
-    // there means something is wrong with the question. An Opaque node holds
-    // Maxima source the library never interpreted, and this one does not
-    // parse.
-    try {
-        proxima::diff(proxima::Expr::opaque("(1"), x);
-    } catch (const proxima::MaximaError &error) {
-        show("diff(<unparseable text>, x) throws", error.what());
-    }
+    // Every operation returns a proxima::result, diff included: it fails only
+    // when something is wrong with the question, but that is still an
+    // outcome, not an exception. An Opaque node holds Maxima source the
+    // library never interpreted, and this one does not parse. The cause says
+    // which kind of failure it was.
+    const auto refused = proxima::diff(proxima::Expr::opaque("(1"), x);
+    show("diff(<unparseable text>, x)",
+         refused ? refused->str() : "Failure: " + refused.error().message());
+    show("  cause", proxima::to_string(proxima::cause_of(refused.error())));
+
+    // The results are FXT's, so they compose with FXT's adaptors directly:
+    // and_then, transform, value_or and the rest, and a chain stops at the
+    // first failure.
+    const auto chained = proxima::diff(pow(x, 3), x)
+                         | fxt::and_then([](const proxima::Expr &d) { return proxima::factor(d); })
+                         | fxt::transform([](const proxima::Expr &e) { return e.str(); })
+                         | fxt::value_or(std::string("no answer"));
+    show("diff(x^3) | and_then(factor) | str", chained);
 }
 
 // --- 9. Assumptions -------------------------------------------------------------
@@ -573,7 +590,7 @@ void assumptions() {
     // Failure naming exactly the fact that is missing.
     const auto unknown = proxima::integrate(pow(x, n), x);
     show("integrate(x^n, x)",
-         unknown ? unknown->str() : "Failure: " + unknown.error().message);
+         unknown ? unknown->str() : "Failure: " + unknown.error().message());
 
     // Supply facts in an proxima::Context. Everything assumed inside it is
     // discarded when it goes out of scope — a real Maxima context, not a
@@ -586,29 +603,29 @@ void assumptions() {
         }
 
         // The same expression can simplify differently under different facts.
-        show("  sqrt(x^2), nothing assumed of x", proxima::expand(proxima::sqrt(pow(x, 2))));
+        show("  sqrt(x^2), nothing assumed of x", *proxima::expand(proxima::sqrt(pow(x, 2))));
         scope.assume(gt(x, 0));
-        show("  sqrt(x^2), with x > 0", proxima::expand(proxima::sqrt(pow(x, 2))));
+        show("  sqrt(x^2), with x > 0", *proxima::expand(proxima::sqrt(pow(x, 2))));
 
         // Contexts nest.
         {
             proxima::Context inner;
 
             // An inner scope still sees what the outer one assumed...
-            show("    sqrt(x^2), inherited x > 0", proxima::expand(proxima::sqrt(pow(x, 2))));
+            show("    sqrt(x^2), inherited x > 0", *proxima::expand(proxima::sqrt(pow(x, 2))));
 
             // ...and adds facts of its own. declare records a property of a
             // symbol, rather than a relation.
             inner.declare(k, proxima::Feature::Integer);
             show("    sin(k*pi), k declared integer",
-                 proxima::expand(proxima::sin(k * proxima::pi())));
+                 *proxima::expand(proxima::sin(k * proxima::pi())));
 
             // facts() lists every fact in force here, innermost first: the
             // declaration, then the outer scope's n > 0 and x > 0.
             show("    inner.facts()", joined(inner.facts()));
         } // k is no longer an integer here.
 
-        show("  sin(k*pi), after the inner scope", proxima::expand(proxima::sin(k * proxima::pi())));
+        show("  sin(k*pi), after the inner scope", *proxima::expand(proxima::sin(k * proxima::pi())));
         show("  scope.facts()", joined(scope.facts()));
     } // n > 0 and x > 0 are gone here.
 
@@ -678,28 +695,33 @@ void the_kernel() {
     // --- talking to Maxima directly --------------------------------------
     //
     // Beneath the operations, a Kernel evaluates anything you give it and
-    // hands back Maxima's reply as a Reply: ok, and either the value — as
-    // the text of Maxima's internal form — or Maxima's reason for failing.
+    // hands back Maxima's reply as a result<std::string>: the value, as the
+    // text of Maxima's internal form, or a Failure with Maxima's reason.
     //
     // Prefer eval_pure for questions. It uses the cache, on the promise that
     // the text changes nothing in Maxima.
-    const proxima::Reply pi = second.eval_pure("float(%pi)");
-    show("eval_pure(\"float(%pi)\")", pi.ok ? pi.value : pi.reason);
+    const auto pi = second.eval_pure("float(%pi)");
+    show("eval_pure(\"float(%pi)\")", pi ? *pi : pi.error().message());
 
     // An Expr can be sent instead of text; it travels as structure, so
     // nothing about it can be misread. Note the reply is Maxima's internal
-    // form, here the rational 1/2.
-    const proxima::Reply via_expr = second.eval_pure(proxima::sin(proxima::pi() / 6));
-    show("eval_pure(sin(pi()/6))", via_expr.ok ? via_expr.value : via_expr.reason);
+    // form, here the rational 1/2 — and to_expr reads it back into an Expr,
+    // composing with the reply as every operation does.
+    const auto via_expr = second.eval_pure(proxima::sin(proxima::pi() / 6));
+    show("eval_pure(sin(pi()/6))", via_expr ? *via_expr : via_expr.error().message());
+    show("  read back with to_expr",
+         (via_expr | fxt::and_then(proxima::to_expr))
+             .transform([](const proxima::Expr &e) { return e.str(); })
+             .value_or("?"));
 
     // Text Maxima cannot parse is an ordinary failure with a reason, not an
     // exception, and costs one round trip.
-    const proxima::Reply broken = second.eval_pure("(1");
-    show("eval_pure(\"(1\") ok?", broken.ok ? "yes" : "no: " + broken.reason);
+    const auto broken = second.eval_pure("(1");
+    show("eval_pure(\"(1\") has a value?", broken ? "yes" : "no: " + broken.error().message());
 
     // Asking the same question again is answered from memory.
     const auto before = second.cache_stats();
-    second.eval_pure("float(%pi)");
+    static_cast<void>(second.eval_pure("float(%pi)"));
     show("the same question again: cache hits",
          std::to_string(before.hits) + " -> "
              + std::to_string(second.cache_stats().hits));
@@ -708,8 +730,8 @@ void the_kernel() {
     // an assignment, a definition. Since there is no telling from the text
     // what changed, it empties the cache, and turns off the on-disk cache for
     // this kernel for good. Use it only when you mean it.
-    const proxima::Reply assigned = second.eval("tour_value: 42");
-    show("eval(\"tour_value: 42\")", assigned.ok ? assigned.value : assigned.reason);
+    const auto assigned = second.eval("tour_value: 42");
+    show("eval(\"tour_value: 42\")", assigned ? *assigned : assigned.error().message());
 
     // --- timeouts and recovery -------------------------------------------
     //
@@ -719,12 +741,12 @@ void the_kernel() {
     // for later calls. The restart takes a moment.
     second.set_timeout(std::chrono::milliseconds(1));
     try {
-        proxima::expand(pow(x + y + z, 200), second);
+        static_cast<void>(proxima::expand(pow(x + y + z, 200), second));
     } catch (const proxima::TimeoutError &error) {
         show("expand((x+y+z)^200), 1 ms timeout", error.what());
     }
     second.set_timeout(std::chrono::minutes(2));
-    show("  and the next call", proxima::expand(pow(x + 1, 2), second));
+    show("  and the next call", *proxima::expand(pow(x + 1, 2), second));
 
     std::filesystem::remove_all(cache_directory, ignored); // Tidy up.
 }

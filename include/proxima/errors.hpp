@@ -33,12 +33,14 @@ public:
     using KernelError::KernelError;
 };
 
-/// Maxima signalled an error while evaluating.
+/// Maxima produced no answer, and the caller asked for the value anyway.
 ///
-/// Thrown only by the operations that have no ordinary way to fail — diff,
-/// expand, subst and the like. The ones that *can* ordinarily fail, such as
-/// integrate and solve, report it as an proxima::Failure instead, because "there is
-/// no closed form" is an answer rather than a malfunction.
+/// Thrown by proxima::unwrap on a result whose Cause is neither Parse nor
+/// Eval. Nothing in this library throws it for an ordinary outcome of its
+/// own accord: every operation returns a proxima::result, and this is the
+/// exception a caller who prefers catching to checking gets from it. The
+/// one place it is thrown directly is proxima::Context, whose assume() and
+/// declare() are statements rather than questions.
 class MaximaError : public Error {
 public:
     using Error::Error;
@@ -61,6 +63,16 @@ public:
 /// library cannot interpret. In practice the latter means either a Maxima
 /// construct the reader does not yet handle, or a genuine protocol bug.
 class ParseError : public Error {
+public:
+    using Error::Error;
+};
+
+/// A fold of floating-point numbers left the range of a double: `1e308 *
+/// 10.0`, or an integer of a few hundred digits multiplied by a real. Thrown
+/// by the arithmetic operators and builders, since a value cannot be
+/// returned from them — and distinct, so a caller can tell it from misuse.
+/// Maxima refuses the same arithmetic.
+class OverflowError : public Error {
 public:
     using Error::Error;
 };

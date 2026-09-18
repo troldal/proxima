@@ -72,9 +72,14 @@ produced them.
 | `expand` `factor` `ratsimp` `subst` | algebraic rearrangement (`simplify` is an older name for `ratsimp`) |
 | `trigsimp` `trigexpand` `radcan` `partfrac(f, x)` `coeff(f, x, n)` | more rearrangement |
 | `taylor(f, x, a, n)` | Taylor expansion, as an ordinary expression |
-| `sum(t, k, a, b)` `product(t, k, a, b)` | closed forms; a `Failure` when there is none |
+| `sum(t, k, a, b)` `product(t, k, a, b)` | closed forms; `Cause::NoClosedForm` when there is none |
 | `ode2(equation, y, x)` | first- and second-order ODEs, written with `derivative(y, x)` |
 | `is(predicate)` | `Truth::True`, `False` or `Unknown` under the assumptions in force |
+
+Every one of them returns a `proxima::result<T>` — `fxt::expected<T,
+fxt::failure>` — so `*diff(f, x)` is the derivative and `diff(f, x) |
+fxt::and_then(...)` is a pipeline; see *Failure is an outcome, not an
+exception*.
 | `to_float(f)` `nroots(p, a, b)` `realroots(p)` `find_root(f, x, a, b)` | numbers from Maxima: floats, root counts, isolated and numeric roots |
 | `lhs(r)` `rhs(r)` | local, no kernel: the sides of a relation |
 | `parse(text)` | Maxima's own parser, for anything the offline one will not take |
@@ -273,16 +278,17 @@ by default: a library should compute the same answer on every machine.
   - openSUSE: `zypper install maxima maxima-exec-sbcl`
   - Debian/Ubuntu: `apt install maxima maxima-sbcl`
 
-Nothing else needs installing. The library depends on two parts of Boost —
+Nothing else needs installing. The library depends on
+[FXT](https://github.com/troldal/FXT), whose `fxt::failure` and
+`fxt::expected` are its result type, and on two parts of Boost —
 Boost.Multiprecision, which backs `proxima::Integer`'s large values, and
 Boost.Process (v2), which starts the Maxima child and talks to it over
-Boost.Asio pipes. Both are fetched by CPM at configure time and built as part
-of the project, so there is no system package to add and no version to match.
-Maxima is not needed to build at all; it is located when a kernel first starts.
+Boost.Asio pipes. All are fetched by CPM at configure time, so there is no
+system package to add and no version to match. Maxima is not needed to build
+at all; it is located when a kernel first starts.
 
-Neither is in a public header, so code that includes `<proxima/expr.hpp>`
-compiles without Boost: measured with GCC, about 0.04 s and 14,000
-preprocessed lines above the standard headers it uses.
+FXT is in the public headers, being the result type; Boost is not, so code
+that includes `<proxima/expr.hpp>` compiles without it.
 
 The first configure downloads Boost and takes a minute or so. After that the
 sources live in a **shared CPM cache** rather than in each build tree, so the
@@ -290,13 +296,16 @@ other presets configure in seconds. The cache defaults to `~/.cache/CPM`; set
 `CPM_SOURCE_CACHE`, in the environment or on the command line, to put it
 elsewhere.
 
-`cmake --install` installs Boost into the same prefix as this library. That is
-deliberate rather than untidy: `proxima` is a static library, so a consumer's
-executable links the Boost.Process it was built with. A consumer's
-`find_package(proxima)` resolves Boost from that prefix — the same Boost this
-library was compiled against — and asks for Boost.Process alone; nothing of
-Boost reaches the consumer's include path. Consumers who carry their own Boost
-should expect it to be found first only if their `CMAKE_PREFIX_PATH` says so.
+`cmake --install` installs FXT's headers and Boost into the same prefix as
+this library. That is deliberate rather than untidy: `<proxima/result.hpp>`
+includes FXT, so a consumer needs its headers on the include path, and gets
+them from the same directory as Proxima's own; and `proxima` is a static
+library, so a consumer's executable links the Boost.Process it was built with.
+A consumer's `find_package(proxima)` resolves Boost from that prefix — the
+same Boost this library was compiled against — and asks for Boost.Process
+alone; nothing of Boost reaches the consumer's include path. Consumers who
+carry their own FXT or Boost should expect it to be found first only if their
+`CMAKE_PREFIX_PATH` says so.
 
 Discovery order: `Config::maxima_root`, then `$MAXIMA_ROOT`, `$MAXIMA_PREFIX`,
 the parent of any `$PATH` entry named `bin`, then the conventional install
@@ -332,21 +341,41 @@ target_link_libraries(my_app PRIVATE proxima::proxima)
 
 ## Failure is an outcome, not an exception
 
-Three kinds of thing can go wrong, and they are kept apart deliberately.
+Every operation that can fail for an ordinary reason returns a value saying
+so: `proxima::result<T>`, which is `fxt::expected<T, fxt::failure>` from
+[FXT](https://github.com/troldal/FXT). `proxima::Failure` *is* `fxt::failure`,
+so a Proxima result takes part in any FXT pipeline with nothing to convert.
+What Proxima adds is a `proxima::Cause`, carried as the failure's context, so
+a program can branch on *why* without reading the message.
 
 | | |
 |---|---|
-| `proxima::Failure`, returned in `std::expected` | an ordinary mathematical outcome: no closed form, no solution, unparseable source |
-| `proxima::MaximaError`, thrown | Maxima objected to an operation with no ordinary way to fail — `diff`, `expand`, `subst`. Means a caller mistake |
+| `proxima::result<T>`, returned | an ordinary outcome: no closed form (`Cause::NoClosedForm`), nothing solved (`NotSolved`), a fact Maxima needed (`NeedsAssumption`), text that would not parse (`Parse`), an expression with no number in it (`Eval`), Maxima objecting to an argument (`MaximaError`) |
 | `proxima::KernelError`, thrown | the conversation broke down: the kernel died, or nothing answered in time |
 
 ```cpp
-if (const auto result = proxima::integrate(proxima::exp(proxima::sin(x)), x)) {
-    use(*result);
-} else {
-    std::cerr << result.error().message << '\n';   // no closed form for ...
+const auto area = proxima::integrate(proxima::exp(proxima::sin(x)), x);
+if (!area) {
+    std::cerr << area.error().message() << '\n';        // no closed form for ...
+    if (proxima::cause_of(area.error()) == proxima::Cause::NeedsAssumption) { ... }
 }
+
+// Composed, with FXT's adaptors: the chain stops at the first failure.
+const std::string answer = proxima::diff(f, x)
+                         | fxt::and_then([](const proxima::Expr &d) { return proxima::factor(d); })
+                         | fxt::transform(proxima::to_tex)
+                         | fxt::value_or(std::string("no answer"));
 ```
+
+`*diff(f, x)` reads a result on the spot — `diff` fails only for a malformed
+argument — and `proxima::unwrap(r)` throws a failure as the exception its
+cause names (`ParseError`, `EvalError`, `OverflowError`, otherwise
+`MaximaError`), for code that would rather catch than check. Nothing in the
+library throws those of its own accord, except `Context::assume` and
+`declare`, which are statements rather than questions.
+
+`Expr::parse`, `eval_numeric` and `compile` (the value-returning form of
+`Compiled`'s constructor) follow the same rule, with no kernel involved.
 
 ## When Maxima needs a fact it has not been told
 
@@ -357,7 +386,8 @@ missing fact, so it tells you exactly what to supply:
 
 ```cpp
 const auto stuck = proxima::integrate(pow(proxima::Expr(x), proxima::Expr(n)), x);
-stuck.error().message;
+proxima::cause_of(stuck.error());   // Cause::NeedsAssumption
+stuck.error().message();
 // "this computation needs an assumption that was not supplied.
 //  Maxima asked: Is n equal to -1?"
 

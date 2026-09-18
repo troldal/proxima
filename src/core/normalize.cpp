@@ -180,7 +180,7 @@ Expr fold(std::span<const Expr> numbers, bool is_product) {
         // overflow: 1e308 * 10.0, or an integer of a few hundred digits made a
         // double. It used to become infinity silently; Maxima refuses it too.
         if (!std::isfinite(folded)) {
-            throw Error("floating-point overflow: the numbers in this "
+            throw OverflowError("floating-point overflow: the numbers in this "
                         + std::string(is_product ? "product" : "sum")
                         + " do not fit in a double");
         }

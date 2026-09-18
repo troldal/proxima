@@ -44,7 +44,9 @@ CheckOptions:
   readability-identifier-naming.UnionCase: CamelCase
   readability-identifier-naming.EnumCase: CamelCase
   readability-identifier-naming.TypeAliasCase: CamelCase
-  readability-identifier-naming.TypeAliasIgnoredRegexp: '^(type|value_type|size_type|difference_type|reference|const_reference|pointer|iterator|const_iterator)$'
+  # `result` is lower_case on purpose: it is FXT's `fxt::result`, and reads as
+  # its `fxt::expected` does.
+  readability-identifier-naming.TypeAliasIgnoredRegexp: '^(type|value_type|size_type|difference_type|reference|const_reference|pointer|iterator|const_iterator|result)$'
   readability-identifier-naming.TypedefCase: CamelCase
   readability-identifier-naming.ConceptCase: CamelCase
   readability-identifier-naming.TemplateParameterCase: CamelCase

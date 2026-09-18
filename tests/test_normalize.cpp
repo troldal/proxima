@@ -185,8 +185,8 @@ TEST_CASE("an integer power of a power is combined, as Maxima combines it") {
     CHECK(pow(pow(Expr(x), Expr(y)), 3) == pow(Expr(x), 3 * Expr(y)));
     CHECK(pow(pow(Expr(x), Expr::rational(1, 2)), 2) == Expr(x));
 
-    CHECK(Expr::parse(pow(Expr(x), -2).str()) == pow(Expr(x), -2));
-    CHECK(Expr::parse(pow(Expr(x), Expr::rational(-1, 2)).str())
+    CHECK(*Expr::parse(pow(Expr(x), -2).str()) == pow(Expr(x), -2));
+    CHECK(*Expr::parse(pow(Expr(x), Expr::rational(-1, 2)).str())
           == pow(Expr(x), Expr::rational(-1, 2)));
 
     SUBCASE("but not a fractional or symbolic power of one, which would be wrong") {
@@ -233,7 +233,7 @@ TEST_CASE("a reciprocal is kept in the one form division produces") {
                               pow(Expr(-0.0), -1), pow(Expr(-0.0), 2),
                               Expr(-0.0) * Expr(x), Expr(-0.0)}) {
             CAPTURE(e.str());
-            CHECK(Expr::parse(e.str()) == e);
+            CHECK(*Expr::parse(e.str()) == e);
         }
     }
 }

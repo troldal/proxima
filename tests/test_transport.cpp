@@ -100,7 +100,7 @@ TEST_CASE("a successful reply yields the internal s-expression") {
     ScriptedSession scripted(
         {frame(2, true, "((MTIMES SIMP) 2 $X ((%SIN SIMP) $X))")});
 
-    const proxima::Reply reply = scripted.session->eval(Payload::text("2*x*sin(x)"));
+    const proxima::detail::Reply reply = scripted.session->eval(Payload::text("2*x*sin(x)"));
     CHECK(reply.ok);
     CHECK(reply.value == "((MTIMES SIMP) 2 $X ((%SIN SIMP) $X))");
     CHECK(reply.reason.empty());
@@ -113,7 +113,7 @@ TEST_CASE("a Maxima error is a value, not an exception") {
         {frame(2, false, "NIL",
                "integrate: variable must not be a number; found: 5")});
 
-    const proxima::Reply reply = scripted.session->eval(Payload::text("integrate(x, 5)"));
+    const proxima::detail::Reply reply = scripted.session->eval(Payload::text("integrate(x, 5)"));
     CHECK_FALSE(reply.ok);
     CHECK(reply.reason == "integrate: variable must not be a number; found: 5");
     CHECK(reply.value.empty());
@@ -421,7 +421,7 @@ TEST_CASE("a statement and its record are one conversation") {
     ScriptedSession scripted({frame(2, true, "$DONE"), frame(3, true, "$ANSWER")});
     MaximaSession &session = *scripted.session;
 
-    std::future<proxima::Reply> asking;
+    std::future<proxima::detail::Reply> asking;
     session.converse_atomically([&](MaximaSession::Conversation &conversation) {
         conversation.eval_tracked(Payload::text("assume(x > 0)"));
 

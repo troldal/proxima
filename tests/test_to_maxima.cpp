@@ -205,9 +205,9 @@ TEST_SUITE("maxima") {
 
 /// Sends `expr` as a form and maps the reply back.
 Expr round_trip(proxima::Kernel &kernel, const Expr &expr) {
-    const proxima::Reply reply = kernel.eval_pure(expr);
-    REQUIRE_MESSAGE(reply.ok, reply.reason);
-    return from_maxima(parse_sexpr(reply.value));
+    const auto reply = kernel.eval_pure(expr);
+    REQUIRE_MESSAGE(reply.has_value(), reply.error().message());
+    return from_maxima(parse_sexpr(*reply));
 }
 
 TEST_CASE("an expression survives the trip out and back unchanged") {
@@ -268,7 +268,7 @@ TEST_CASE("Maxima simplifies what it is handed") {
           == Expr::function("double_factorial", {Expr(x)}));
     CHECK(round_trip(kernel, proxima::sin(Expr(0))) == Expr(0));
     CHECK(round_trip(kernel, Expr::rational(4, 6)) == Expr::rational(2, 3));
-    CHECK(proxima::diff(pow(x, 3), x, 1, kernel) == 3 * pow(x, 2));
+    CHECK(*proxima::diff(pow(x, 3), x, 1, kernel) == 3 * pow(x, 2));
 }
 
 TEST_CASE("a symbol with a space in its name is an ordinary unknown") {
@@ -276,7 +276,7 @@ TEST_CASE("a symbol with a space in its name is an ordinary unknown") {
     // frame, a two-minute stall. Now the name travels bar-quoted.
     proxima::Kernel kernel;
     const Symbol odd("x y");
-    CHECK(proxima::diff(pow(odd, 2), odd, 1, kernel) == 2 * odd);
+    CHECK(*proxima::diff(pow(odd, 2), odd, 1, kernel) == 2 * odd);
 }
 
 TEST_CASE("text Maxima cannot read is a failure, not a stall") {
@@ -292,27 +292,29 @@ TEST_CASE("text Maxima cannot read is a failure, not a stall") {
     };
 
     SUBCASE("through the raw text entry point") {
-        proxima::Reply reply;
+        proxima::result<std::string> reply;
         CHECK(within([&] { reply = kernel.eval("(1"); }));
-        CHECK_FALSE(reply.ok);
-        CHECK_FALSE(reply.reason.empty());
+        REQUIRE_FALSE(reply.has_value());
+        CHECK_FALSE(reply.error().message().empty());
+        CHECK(proxima::cause_of(reply.error()) == proxima::Cause::MaximaError);
     }
     SUBCASE("through a statement terminator that used to cut the wrapper") {
-        proxima::Reply reply;
+        proxima::result<std::string> reply;
         CHECK(within([&] { reply = kernel.eval("1$ 2"); }));
         // Contained either way: parsed up to the terminator, or refused.
         CHECK(within([&] { reply = kernel.eval_pure("2+2"); }));
-        CHECK(reply.ok);
-        CHECK(reply.value == "4");
+        REQUIRE(reply.has_value());
+        CHECK(*reply == "4");
     }
     SUBCASE("through an Opaque node reaching a typed operation") {
         const Symbol x("x");
         CHECK(within([&] {
-            CHECK_THROWS_AS(proxima::diff(Expr::opaque("(1"), x, 1, kernel),
-                            proxima::MaximaError);
+            const auto refused = proxima::diff(Expr::opaque("(1"), x, 1, kernel);
+            REQUIRE_FALSE(refused.has_value());
+            CHECK(proxima::cause_of(refused.error()) == proxima::Cause::MaximaError);
         }));
         // And the session is intact afterwards.
-        CHECK(proxima::diff(pow(x, 2), x, 1, kernel) == 2 * x);
+        CHECK(*proxima::diff(pow(x, 2), x, 1, kernel) == 2 * x);
     }
 }
 

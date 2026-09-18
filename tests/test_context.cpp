@@ -24,16 +24,16 @@ TEST_CASE("an assumption changes what Maxima can conclude") {
     const Symbol x("x");
 
     // Without knowing the sign, the best Maxima can do is |x|.
-    CHECK(proxima::simplify(proxima::sqrt(pow(Expr(x), 2))) == proxima::abs(Expr(x)));
+    CHECK(*proxima::simplify(proxima::sqrt(pow(Expr(x), 2))) == proxima::abs(Expr(x)));
 
     {
         Context ctx;
         ctx.assume(gt(Expr(x), Expr(0)));
-        CHECK(proxima::simplify(proxima::sqrt(pow(Expr(x), 2))) == Expr(x));
+        CHECK(*proxima::simplify(proxima::sqrt(pow(Expr(x), 2))) == Expr(x));
     }
 
     // And the scope really is a scope.
-    CHECK(proxima::simplify(proxima::sqrt(pow(Expr(x), 2))) == proxima::abs(Expr(x)));
+    CHECK(*proxima::simplify(proxima::sqrt(pow(Expr(x), 2))) == proxima::abs(Expr(x)));
 }
 
 TEST_CASE("a declaration is undone too, which forget would not manage") {
@@ -42,9 +42,9 @@ TEST_CASE("a declaration is undone too, which forget would not manage") {
     {
         Context ctx;
         ctx.declare(n, Feature::Integer);
-        CHECK(proxima::shared_kernel().eval("featurep(n, integer)").value == "T");
+        CHECK(proxima::shared_kernel().eval("featurep(n, integer)").value() == "T");
     }
-    CHECK(proxima::shared_kernel().eval("featurep(n, integer)").value == "NIL");
+    CHECK(proxima::shared_kernel().eval("featurep(n, integer)").value() == "NIL");
 }
 
 TEST_CASE("Maxima accepts every Feature") {
@@ -59,7 +59,7 @@ TEST_CASE("Maxima accepts every Feature") {
         CAPTURE(name);
         const Symbol s("feature_probe_" + name);
         CHECK_NOTHROW(ctx.declare(s, feature));
-        CHECK(proxima::shared_kernel().eval("featurep(" + s.name() + ", " + name + ")").value
+        CHECK(proxima::shared_kernel().eval("featurep(" + s.name() + ", " + name + ")").value()
               == "T");
     }
 }
@@ -76,13 +76,13 @@ TEST_CASE("contexts nest, inheriting the enclosing scope's facts") {
         inner.assume(gt(Expr(b), Expr(0)));
         // The inner scope can see both, which is what supcontext buys over
         // newcontext.
-        CHECK(proxima::shared_kernel().eval("is(ctx_a > 0)").value == "T");
-        CHECK(proxima::shared_kernel().eval("is(ctx_b > 0)").value == "T");
+        CHECK(proxima::shared_kernel().eval("is(ctx_a > 0)").value() == "T");
+        CHECK(proxima::shared_kernel().eval("is(ctx_b > 0)").value() == "T");
     }
 
     // Leaving the inner scope discards only its own assumption.
-    CHECK(proxima::shared_kernel().eval("is(ctx_a > 0)").value == "T");
-    CHECK(proxima::shared_kernel().eval("is(ctx_b > 0)").value != "T");
+    CHECK(proxima::shared_kernel().eval("is(ctx_a > 0)").value() == "T");
+    CHECK(proxima::shared_kernel().eval("is(ctx_b > 0)").value() != "T");
 }
 
 TEST_CASE("facts reports what is in force") {
@@ -166,14 +166,14 @@ TEST_CASE("contexts ended out of order leave the survivors intact") {
     inner->assume(gt(Expr(b), Expr(0)));
 
     outer.reset(); // The outer scope ends first.
-    CHECK(kernel.eval("is(order_b > 0)").value == "T");
-    CHECK(kernel.eval("is(order_a > 0)").value == "T");
+    CHECK(kernel.eval("is(order_b > 0)").value() == "T");
+    CHECK(kernel.eval("is(order_a > 0)").value() == "T");
 
     inner.reset();
-    CHECK(kernel.eval("is(order_a > 0)").value != "T");
-    CHECK(kernel.eval("is(order_b > 0)").value != "T");
-    CHECK(kernel.eval("context").value == "$INITIAL");
-    CHECK(kernel.eval("contexts").value.find("PROXIMA_CTX") == std::string::npos);
+    CHECK(kernel.eval("is(order_a > 0)").value() != "T");
+    CHECK(kernel.eval("is(order_b > 0)").value() != "T");
+    CHECK(kernel.eval("context").value() == "$INITIAL");
+    CHECK(kernel.eval("contexts").value().find("PROXIMA_CTX") == std::string::npos);
 }
 
 TEST_CASE("a restart after an out-of-order end rebuilds the surviving scope") {
@@ -190,13 +190,13 @@ TEST_CASE("a restart after an out-of-order end rebuilds the surviving scope") {
     inner->assume(gt(Expr(b), Expr(0)));
     outer.reset();
 
-    CHECK_THROWS_AS(kernel.eval("quit()"), proxima::KernelError);
-    CHECK(kernel.eval("is(order_restart_b > 0)").value == "T");
-    CHECK(kernel.eval("is(order_restart_a > 0)").value == "T");
+    CHECK_THROWS_AS(static_cast<void>(kernel.eval("quit()")), proxima::KernelError);
+    CHECK(kernel.eval("is(order_restart_b > 0)").value() == "T");
+    CHECK(kernel.eval("is(order_restart_a > 0)").value() == "T");
 
     inner.reset();
-    CHECK(kernel.eval("is(order_restart_a > 0)").value != "T");
-    CHECK(kernel.eval("context").value == "$INITIAL");
+    CHECK(kernel.eval("is(order_restart_a > 0)").value() != "T");
+    CHECK(kernel.eval("context").value() == "$INITIAL");
 }
 
 TEST_CASE("a Context that outlives its Kernel reports it instead of calling into it") {
@@ -226,10 +226,10 @@ TEST_CASE("a Context that outlives its Kernel reports it instead of calling into
     {
         Context again(fresh);
         again.assume(gt(Expr(x), Expr(0)));
-        CHECK(fresh.eval("is(outlived_probe > 0)").value == "T");
+        CHECK(fresh.eval("is(outlived_probe > 0)").value() == "T");
     }
-    CHECK(fresh.eval("is(outlived_probe > 0)").value != "T");
-    CHECK(fresh.eval("context").value == "$INITIAL");
+    CHECK(fresh.eval("is(outlived_probe > 0)").value() != "T");
+    CHECK(fresh.eval("context").value() == "$INITIAL");
 }
 
 TEST_CASE("a contradictory assumption is refused") {
@@ -266,10 +266,10 @@ TEST_CASE("a question Maxima would ask becomes an error, not a deadlock") {
     REQUIRE_FALSE(ambiguous.has_value());
 
     // And the message names the missing fact, so it is actionable.
-    CHECK(ambiguous.error().message.find("assumption") != std::string::npos);
-    CHECK(ambiguous.error().message.find("equal to -1") != std::string::npos);
+    CHECK(ambiguous.error().message().find("assumption") != std::string::npos);
+    CHECK(ambiguous.error().message().find("equal to -1") != std::string::npos);
     // Without the (mtext) marker Maxima wraps its prompts in.
-    CHECK(ambiguous.error().message.find("mtext") == std::string::npos);
+    CHECK(ambiguous.error().message().find("mtext") == std::string::npos);
 }
 
 TEST_CASE("the session stays synchronised after a suppressed question") {
@@ -280,9 +280,9 @@ TEST_CASE("the session stays synchronised after a suppressed question") {
 
     REQUIRE_FALSE(proxima::integrate(pow(Expr(x), Expr(n)), x).has_value());
 
-    CHECK(proxima::shared_kernel().eval("2 + 2").value == "4");
-    CHECK(proxima::diff(pow(Expr(x), 2), x) == 2 * Expr(x));
-    CHECK(proxima::shared_kernel().eval("6*7").value == "42");
+    CHECK(proxima::shared_kernel().eval("2 + 2").value() == "4");
+    CHECK(*proxima::diff(pow(Expr(x), 2), x) == 2 * Expr(x));
+    CHECK(proxima::shared_kernel().eval("6*7").value() == "42");
 }
 
 TEST_CASE("supplying the assumption lets the computation through") {
@@ -299,7 +299,7 @@ TEST_CASE("supplying the assumption lets the computation through") {
     const auto integral = proxima::integrate(pow(Expr(x), Expr(n)), x);
     REQUIRE(integral.has_value());
     // x^(n+1)/(n+1)
-    CHECK(proxima::simplify(proxima::diff(*integral, x)) == pow(Expr(x), Expr(n)));
+    CHECK(*proxima::simplify(*proxima::diff(*integral, x)) == pow(Expr(x), Expr(n)));
 }
 
 // --- surviving a kernel that dies -----------------------------------------
@@ -317,16 +317,16 @@ TEST_CASE("a kernel that dies is restarted with its assumptions intact") {
 
     Context ctx(kernel);
     ctx.assume(gt(Expr(x), Expr(0)));
-    REQUIRE(kernel.eval("is(restart_probe > 0)").value == "T");
+    REQUIRE(kernel.eval("is(restart_probe > 0)").value() == "T");
 
     // Ask Maxima to leave. The call itself fails, because the reply never
     // arrives.
-    CHECK_THROWS_AS(kernel.eval("quit()"), proxima::KernelError);
+    CHECK_THROWS_AS(static_cast<void>(kernel.eval("quit()")), proxima::KernelError);
 
     // But the session is usable again...
-    CHECK(kernel.eval("2 + 2").value == "4");
+    CHECK(kernel.eval("2 + 2").value() == "4");
     // ...and the assumption survived the restart.
-    CHECK(kernel.eval("is(restart_probe > 0)").value == "T");
+    CHECK(kernel.eval("is(restart_probe > 0)").value() == "T");
 }
 
 TEST_CASE("an assumption dropped before a death does not come back") {
@@ -336,13 +336,13 @@ TEST_CASE("an assumption dropped before a death does not come back") {
     {
         Context ctx(kernel);
         ctx.assume(gt(Expr(x), Expr(0)));
-        REQUIRE(kernel.eval("is(restart_scope_probe > 0)").value == "T");
+        REQUIRE(kernel.eval("is(restart_scope_probe > 0)").value() == "T");
     }
 
-    CHECK_THROWS_AS(kernel.eval("quit()"), proxima::KernelError);
-    CHECK(kernel.eval("2 + 2").value == "4");
+    CHECK_THROWS_AS(static_cast<void>(kernel.eval("quit()")), proxima::KernelError);
+    CHECK(kernel.eval("2 + 2").value() == "4");
     // The scope had ended, so replay must not resurrect it.
-    CHECK(kernel.eval("is(restart_scope_probe > 0)").value != "T");
+    CHECK(kernel.eval("is(restart_scope_probe > 0)").value() != "T");
 }
 
 TEST_CASE("a timeout loses the call, not the session") {
@@ -357,14 +357,14 @@ TEST_CASE("a timeout loses the call, not the session") {
     // integral finishes inside a single poll, so it would race the deadline
     // rather than reliably exceed it.
     const auto start = std::chrono::steady_clock::now();
-    CHECK_THROWS_AS(kernel.eval("expand((x+y+z)^200)"), proxima::TimeoutError);
+    CHECK_THROWS_AS(static_cast<void>(kernel.eval("expand((x+y+z)^200)")), proxima::TimeoutError);
     // Including the restart. Recovery used to wait two seconds for the busy
     // Maxima to quit, which it never does; this call took about 2.5 s then.
     CHECK(std::chrono::steady_clock::now() - start < std::chrono::milliseconds(1500));
 
     kernel.set_timeout(std::chrono::seconds(30));
     // The restart means the next caller is not left holding a wedged kernel.
-    CHECK(kernel.eval("2 + 2").value == "4");
+    CHECK(kernel.eval("2 + 2").value() == "4");
 }
 
 } // TEST_SUITE("maxima")

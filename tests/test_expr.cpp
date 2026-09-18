@@ -281,7 +281,7 @@ TEST_CASE("a Real is never NaN or infinite") {
         CHECK(Expr(inf) == Expr::symbol("inf"));
         CHECK(Expr(-inf) == Expr::symbol("minf"));
         CHECK(Expr::real(inf).kind() == Kind::Symbol);
-        CHECK(Expr::parse(Expr(-inf).str()) == Expr(-inf));
+        CHECK(*Expr::parse(Expr(-inf).str()) == Expr(-inf));
 
         // A symbol does not fold, so neither sum is refused as NaN any more.
         const Symbol x("x");
@@ -293,12 +293,15 @@ TEST_CASE("a Real is never NaN or infinite") {
     SUBCASE("and arithmetic that would overflow to one is refused") {
         // As Maxima refuses it, with FLOATING-POINT-OVERFLOW. It used to fold
         // silently to infinity, from finite numbers.
-        CHECK_THROWS_AS(static_cast<void>(Expr(1e308) * Expr(10.0)), proxima::Error);
-        CHECK_THROWS_AS(static_cast<void>(Expr(1e308) + Expr(1e308)), proxima::Error);
+        // A distinct exception, so a caller can tell it from misuse; the
+        // parser, which can return a value, reports it as Cause::Overflow.
+        CHECK_THROWS_AS(static_cast<void>(Expr(1e308) * Expr(10.0)), proxima::OverflowError);
+        CHECK_THROWS_AS(static_cast<void>(Expr(1e308) + Expr(1e308)), proxima::OverflowError);
         const Expr huge(proxima::Integer("1" + std::string(400, '0')));
-        CHECK_THROWS_AS(static_cast<void>(huge * Expr(1.0)), proxima::Error);
-        CHECK_THROWS_AS(static_cast<void>(Expr::parse("1" + std::string(400, '0') + "/5.0")),
-                        proxima::Error);
+        CHECK_THROWS_AS(static_cast<void>(huge * Expr(1.0)), proxima::OverflowError);
+        const auto parsed = Expr::parse("1" + std::string(400, '0') + "/5.0");
+        REQUIRE_FALSE(parsed.has_value());
+        CHECK(proxima::cause_of(parsed.error()) == proxima::Cause::Overflow);
 
         // Dividing by a tiny real would overflow its reciprocal: it stays a
         // negative power instead.

@@ -1,6 +1,7 @@
 #include <proxima/expr.hpp>
 #include <proxima/integer.hpp>
 #include <proxima/mathml.hpp>
+#include <proxima/result.hpp>
 #include <proxima/tex.hpp>
 
 #include <ostream>
@@ -9,6 +10,34 @@
 // that including proxima/expr.hpp does not also pull in <ostream> or the renderers.
 
 namespace proxima {
+
+std::string_view to_string(Cause cause) {
+    switch (cause) {
+    case Cause::Unknown:
+        return "unknown";
+    case Cause::MaximaError:
+        return "Maxima error";
+    case Cause::NeedsAssumption:
+        return "needs an assumption";
+    case Cause::NoClosedForm:
+        return "no closed form";
+    case Cause::NotSolved:
+        return "not solved";
+    case Cause::NoLimit:
+        return "no limit";
+    case Cause::UnexpectedAnswer:
+        return "unexpected answer";
+    case Cause::Parse:
+        return "parse";
+    case Cause::Eval:
+        return "eval";
+    case Cause::Argument:
+        return "argument";
+    case Cause::Overflow:
+        return "overflow";
+    }
+    return "unknown";
+}
 
 std::ostream &operator<<(std::ostream &out, const Expr &expr) {
     return out << expr.str();

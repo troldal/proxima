@@ -2,12 +2,11 @@
 
 #include <proxima/config.hpp>
 #include <proxima/expr.hpp>
-#include <proxima/reply.hpp>
+#include <proxima/result.hpp>
 
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <expected>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -29,7 +28,11 @@ class MaximaSession;
 /// form the operations use. The other takes Maxima source text, for anything
 /// an Expr cannot say; Maxima parses it itself, inside the same error trap,
 /// so a malformed string is an ordinary failure rather than a stall. Both
-/// hand back the text of Maxima's internal reply.
+/// hand back the text of Maxima's internal reply, as a proxima::result: the
+/// wire form on success, and a Failure carrying Maxima's message — with
+/// Cause::MaximaError, or Cause::NeedsAssumption when Maxima wanted a fact —
+/// when Maxima signalled an error. proxima::to_expr reads the wire form into
+/// an Expr: `kernel.eval_pure(form) | fxt::and_then(proxima::to_expr)`.
 ///
 /// Thread-safe: calls are serialised, so concurrent callers take turns rather
 /// than interleaving requests on one pipe. That makes a Kernel safe to share,
@@ -56,12 +59,11 @@ public:
     /// Evaluates Maxima source text — `integrate(x^2, x)` — or, in the Expr
     /// form, an expression sent as structure.
     ///
-    /// A Maxima error comes back as a Reply with `ok == false` and a reason,
-    /// because failing to integrate something is an ordinary outcome. That
-    /// includes text Maxima cannot even parse: it is read inside the error
-    /// trap, so `eval("(1")` fails with a message rather than waiting out
-    /// Config::timeout. Only infrastructure failures throw: see
-    /// proxima::KernelError.
+    /// A Maxima error is the Failure, because failing to integrate something
+    /// is an ordinary outcome. That includes text Maxima cannot even parse:
+    /// it is read inside the error trap, so `eval("(1")` fails with a message
+    /// rather than waiting out Config::timeout. Only infrastructure failures
+    /// throw: see proxima::KernelError.
     ///
     /// **Discards the reply cache.** This entry point can evaluate anything,
     /// including statements that change Maxima's state — an assignment, a new
@@ -75,8 +77,8 @@ public:
     /// persistent answer is keyed on the state this kernel has recorded, and an
     /// eval may have changed Maxima in a way nothing recorded. It stays off
     /// until restart(); persistence_active() says which way things stand.
-    Reply eval(std::string_view expression);
-    Reply eval(const Expr &form);
+    result<std::string> eval(std::string_view expression);
+    result<std::string> eval(const Expr &form);
 
     /// Evaluates a *pure* expression, consulting and filling the reply cache.
     ///
@@ -88,8 +90,8 @@ public:
     /// Cached answers are still answers to *this* kernel's current state. The
     /// cache is discarded whenever that state might have changed: any eval(),
     /// any assumption added or dropped through proxima::Context.
-    Reply eval_pure(std::string_view expression);
-    Reply eval_pure(const Expr &form);
+    result<std::string> eval_pure(std::string_view expression);
+    result<std::string> eval_pure(const Expr &form);
 
     /// Evaluates a statement that changes Maxima's state in a way this
     /// kernel's replay journal accounts for.
@@ -102,22 +104,20 @@ public:
     ///
     /// proxima::Context is the intended caller; there is rarely a reason to use this
     /// directly. Use eval() for anything else, which assumes the worst.
-    Reply eval_tracked(std::string_view statement);
-    Reply eval_tracked(const Expr &form);
+    result<std::string> eval_tracked(std::string_view statement);
+    result<std::string> eval_tracked(const Expr &form);
 
     /// eval, with the reply read into an expression: the way to call a Maxima
     /// function this library has not wrapped without reading s-expressions.
     /// `kernel.eval_expr("gcd(12, 18)")` is 6.
-    ///
-    /// A Maxima error is the Failure, carrying Maxima's message.
     ///
     /// **This is a statement, not a query.** Like eval, every call discards the
     /// reply cache and switches Config::cache_directory off for this kernel
     /// until restart(), because the text might have changed anything. For a
     /// question known to change nothing — `gcd(12, 18)` is one — read an
     /// eval_pure reply with proxima::to_expr instead, which keeps both.
-    std::expected<Expr, Failure> eval_expr(std::string_view expression);
-    std::expected<Expr, Failure> eval_expr(const Expr &form);
+    result<Expr> eval_expr(std::string_view expression);
+    result<Expr> eval_expr(const Expr &form);
 
     /// Forgets every cached reply. Rarely needed directly — state changes made
     /// through this library already do it — but the escape hatch if Maxima has
@@ -190,12 +190,14 @@ private:
     std::shared_ptr<const int> lifetime_ = std::make_shared<const int>(0);
 };
 
-/// A reply read into an expression: its value when `ok`, and a Failure
-/// carrying the reason when not. How every operation in proxima/ops.hpp reads its
-/// reply, and how to read one from eval_pure or eval_tracked.
+/// Reads the wire form of a reply — the text of Maxima's internal
+/// s-expression, as eval and eval_pure hand it back — into an expression.
+/// Composes with a reply directly: `kernel.eval_pure(form) |
+/// fxt::and_then(proxima::to_expr)` is how every operation in proxima/ops.hpp
+/// reads its answer.
 ///
-/// Throws proxima::ParseError if the value is not a Maxima term. No reply from a
-/// kernel should be one: it would mean the protocol itself had failed.
-std::expected<Expr, Failure> to_expr(const Reply &reply);
+/// Throws proxima::ParseError if the text is not a Maxima term. No reply from
+/// a kernel should be one: it would mean the protocol itself had failed.
+result<Expr> to_expr(std::string_view wire);
 
 } // namespace proxima

@@ -11,7 +11,7 @@
 #include "transport/process_env.hpp"
 
 #include <proxima/config.hpp>
-#include <proxima/reply.hpp>
+#include "kernel/reply.hpp"
 
 #include <chrono>
 #include <cstdint>

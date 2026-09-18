@@ -58,20 +58,20 @@ int main() {
         // Two ways to build an expression: with operators, or from text.
         // Expr::parse needs no running Maxima.
         const proxima::Expr f = pow(proxima::Expr(x), 2) + 3 * x + 2;
-        const proxima::Expr from_text = proxima::Expr::parse("x^2 + 3*x + 2");
+        const proxima::Expr from_text = *proxima::Expr::parse("x^2 + 3*x + 2");
 
         std::cout << "f                = " << f.str() << '\n';
         std::cout << "  from text      = " << from_text.str() << "   "
                   << (from_text == f ? "(the same expression)"
                                     : "(a different one!)")
                   << '\n';
-        std::cout << "f'               = " << proxima::diff(f, x).str() << '\n';
+        std::cout << "f'               = " << proxima::diff(f, x)->str() << '\n';
         std::cout << "f(5)             = "
-                  << proxima::subst(f, x, proxima::Expr(5)).str() << '\n';
+                  << proxima::subst(f, x, proxima::Expr(5))->str() << '\n';
         std::cout << "expand((x+1)^3)  = "
-                  << proxima::expand(pow(x + 1, 3)).str() << '\n';
+                  << proxima::expand(pow(x + 1, 3))->str() << '\n';
         std::cout << "factor(x^2-1)    = "
-                  << proxima::factor(pow(proxima::Expr(x), 2) - 1).str() << '\n';
+                  << proxima::factor(pow(proxima::Expr(x), 2) - 1)->str() << '\n';
 
         // Exact arithmetic: not 0.7333...
         std::cout << "1/3 + 2/5        = "
@@ -83,7 +83,7 @@ int main() {
         if (const auto integral = proxima::integrate(integrand, x)) {
             std::cout << "int x^2 sin(x)   = " << integral->str() << '\n';
             std::cout << "  differentiated = "
-                      << proxima::ratsimp(proxima::diff(*integral, x)).str() << '\n';
+                      << proxima::ratsimp(*proxima::diff(*integral, x))->str() << '\n';
         }
 
         if (const auto area = proxima::integrate(x * x, x, proxima::Expr(0), proxima::Expr(1))) {
@@ -127,13 +127,13 @@ int main() {
             quadratic && !quadratic->empty()) {
             show_rendered("a root of a*x^2 + b*x + c = 0:", quadratic->back());
         }
-        show_rendered("d/dx sin(x)/x:", proxima::diff(proxima::sin(x) / x, x));
+        show_rendered("d/dx sin(x)/x:", *proxima::diff(proxima::sin(x) / x, x));
         std::cout << '\n';
 
         // The other parser hands the text to Maxima itself, which accepts
         // everything its own syntax allows — but evaluates as it reads, so the
         // two answer differently.
-        std::cout << "Expr::parse(5!)  = " << proxima::Expr::parse("5!").str()
+        std::cout << "Expr::parse(5!)   = " << proxima::Expr::parse("5!")->str()
                   << "   (parsed, not evaluated)\n";
         if (const auto via_maxima = proxima::parse("5!")) {
             std::cout << "proxima::parse(5!)    = " << via_maxima->str()
@@ -145,7 +145,7 @@ int main() {
         const auto hopeless = proxima::integrate(proxima::exp(proxima::sin(x)), x);
         std::cout << "int e^sin(x)     = "
                   << (hopeless ? hopeless->str()
-                               : "no result: " + hopeless.error().message)
+                               : "no result: " + hopeless.error().message())
                   << '\n';
 
         // Some results depend on facts Maxima has not been told. Rather than
@@ -156,7 +156,7 @@ int main() {
         const auto unknown = proxima::integrate(power, x);
         std::cout << "int x^n          = "
                   << (unknown ? unknown->str()
-                              : "no result: " + unknown.error().message)
+                              : "no result: " + unknown.error().message())
                   << '\n';
 
         // Supplying it in a scope, which is discarded on the way out.

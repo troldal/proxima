@@ -36,8 +36,8 @@ std::filesystem::path scratch(const std::string &name) {
     return path;
 }
 
-proxima::Reply valued(const std::string &value) {
-    proxima::Reply reply;
+proxima::detail::Reply valued(const std::string &value) {
+    proxima::detail::Reply reply;
     reply.ok = true;
     reply.value = value;
     return reply;
@@ -78,7 +78,7 @@ TEST_CASE("values containing newlines and quotes survive") {
     const auto directory = scratch("awkward");
     const PersistentCache cache(directory, "stamp");
 
-    proxima::Reply reply;
+    proxima::detail::Reply reply;
     reply.ok = false;
     reply.value = "";
     reply.reason = "line one\nline \"two\"\n\nand a trailing newline\n";
@@ -150,7 +150,7 @@ TEST_CASE("a length larger than the file is a miss, not an exception") {
         out << "proxima-cache-1\n1000\nshort";
     }
 
-    std::optional<proxima::Reply> found;
+    std::optional<proxima::detail::Reply> found;
     CHECK_NOTHROW(found = cache.find("q"));
     CHECK_FALSE(found.has_value());
 }
@@ -374,19 +374,19 @@ TEST_CASE("an answer survives the kernel that computed it") {
 
     {
         proxima::Kernel first(config);
-        proxima::expand(question, first);
+        static_cast<void>(proxima::expand(question, first));
         CHECK(file_count(directory) > 0);
     }
 
     // A second kernel, a fresh Maxima process, and an empty in-memory cache.
     proxima::Kernel second(config);
-    const Expr answer = proxima::expand(question, second);
+    const Expr answer = *proxima::expand(question, second);
 
     // The count is what makes this conclusive: an answer computed afresh would
     // land in the in-memory cache too, so the presence of an entry proves
     // nothing on its own. Only persistent_hits distinguishes the two.
     CHECK(second.cache_stats().persistent_hits == 1);
-    CHECK(answer == proxima::expand(question, second));
+    CHECK(answer == *proxima::expand(question, second));
 }
 
 TEST_CASE("an assumption is part of the key, not an afterthought") {
@@ -406,13 +406,13 @@ TEST_CASE("an assumption is part of the key, not an afterthought") {
         proxima::Kernel assuming(config);
         proxima::Context ctx(assuming);
         ctx.assume(gt(Expr(x), Expr(0)));
-        CHECK(proxima::simplify(root, assuming) == Expr(x));
+        CHECK(*proxima::simplify(root, assuming) == Expr(x));
     }
 
     // A different process would see only the directory. This kernel makes no
     // assumption, so it must not be handed the assuming kernel's answer.
     proxima::Kernel plain(config);
-    CHECK(proxima::simplify(root, plain) == proxima::abs(Expr(x)));
+    CHECK(*proxima::simplify(root, plain) == proxima::abs(Expr(x)));
 }
 
 TEST_CASE("a raw eval switches persistence off for that kernel") {
@@ -426,22 +426,21 @@ TEST_CASE("a raw eval switches persistence off for that kernel") {
     proxima::Kernel kernel(config);
     const Symbol x("x");
 
-    proxima::expand(pow(Expr(x) + 1, 5), kernel);
+    static_cast<void>(proxima::expand(pow(Expr(x) + 1, 5), kernel));
     const std::size_t before = file_count(directory);
     CHECK(before > 0);
     CHECK(kernel.persistence_active());
 
-    kernel.eval("raw_eval_probe: 7");
+    static_cast<void>(kernel.eval("raw_eval_probe: 7"));
     CHECK_FALSE(kernel.persistence_active());
-    proxima::expand(pow(Expr(x) + 1, 6), kernel);
-
+    static_cast<void>(proxima::expand(pow(Expr(x) + 1, 6), kernel));
     // Still working, just no longer writing entries it could not honestly key.
     CHECK(file_count(directory) == before);
 
     // And no longer reading them either: asking again for something already on
     // disk goes to Maxima rather than to a key that no longer describes this
     // session.
-    proxima::expand(pow(Expr(x) + 1, 5), kernel);
+    static_cast<void>(proxima::expand(pow(Expr(x) + 1, 5), kernel));
     CHECK(kernel.cache_stats().persistent_hits == 0);
 
     SUBCASE("until a restart discards the unrecorded change") {
@@ -450,12 +449,12 @@ TEST_CASE("a raw eval switches persistence off for that kernel") {
         CHECK(kernel.persistence_active());
         // The raw eval's binding went with the old process, which is exactly
         // what makes the disk answers trustworthy again.
-        CHECK(kernel.eval("is(raw_eval_probe = 7)").value != "T");
+        CHECK(kernel.eval("is(raw_eval_probe = 7)").value() != "T");
         // That check was a raw eval as well, and switched persistence off in
         // turn — so restart once more before reading from disk.
         CHECK_FALSE(kernel.persistence_active());
         kernel.restart();
-        proxima::expand(pow(Expr(x) + 1, 5), kernel);
+        static_cast<void>(proxima::expand(pow(Expr(x) + 1, 5), kernel));
         CHECK(kernel.cache_stats().persistent_hits == 1);
     }
 }
@@ -469,10 +468,10 @@ TEST_CASE("a kernel restarted after dying resumes persistence") {
     config.cache_directory = directory;
 
     proxima::Kernel kernel(config);
-    kernel.eval("recovered_probe: 7");
+    static_cast<void>(kernel.eval("recovered_probe: 7"));
     REQUIRE_FALSE(kernel.persistence_active());
 
-    CHECK_THROWS_AS(kernel.eval("quit()"), proxima::KernelError);
+    CHECK_THROWS_AS(static_cast<void>(kernel.eval("quit()")), proxima::KernelError);
     CHECK(kernel.persistence_active());
 }
 
@@ -483,7 +482,7 @@ TEST_CASE("persistence is off unless a directory is asked for") {
 
     proxima::Kernel kernel(config);
     const Symbol x("x");
-    CHECK_NOTHROW(proxima::expand(pow(Expr(x) + 1, 3), kernel));
+    CHECK_NOTHROW(static_cast<void>(proxima::expand(pow(Expr(x) + 1, 3), kernel)));
 }
 
 } // TEST_SUITE("maxima")

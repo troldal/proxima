@@ -53,7 +53,7 @@ TEST_CASE("replace rewrites a symbol locally, and the result is normalised") {
         const Symbol a("a");
         const Expr f = Expr(a) * pow(Expr(x), 2) + Expr(x);
         const proxima::Compiled fixed(proxima::replace(f, a, Expr(2.5)), x);
-        CHECK(fixed(3.0) == doctest::Approx(proxima::eval_numeric(f, {{"a", 2.5}, {"x", 3.0}})));
+        CHECK(fixed(3.0) == doctest::Approx(*proxima::eval_numeric(f, {{"a", 2.5}, {"x", 3.0}})));
     }
 }
 

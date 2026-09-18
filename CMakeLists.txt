@@ -84,6 +84,34 @@ CPMAddPackage(
 )
 unset(BUILD_SHARED_LIBS)
 
+# FXT, the functional extensions this library's result type is built on:
+# proxima::Failure is fxt::failure and proxima::result<T> is fxt::result<T>,
+# so a Proxima result takes part in any FXT pipeline directly. Header-only,
+# and DOWNLOAD_ONLY: FXT's own CMakeLists fetches a second CPM and the
+# TartanLlama fallbacks for std::expected and std::optional, none of which a
+# C++23 build needs, so the interface target is declared here instead.
+# fixed_string is the one header FXT's string enums include, fetched so that
+# <fxt.hpp> compiles for a consumer as it does for FXT itself.
+CPMAddPackage(
+        NAME fxt
+        GITHUB_REPOSITORY troldal/FXT
+        GIT_TAG a07e1431dea5dfb44b355cbd37e8fb4a68724fd0
+        DOWNLOAD_ONLY YES
+)
+CPMAddPackage(
+        NAME fixed_string
+        GITHUB_REPOSITORY unterumarmung/fixed_string
+        GIT_TAG v0.1.1
+        DOWNLOAD_ONLY YES
+)
+add_library(fxt INTERFACE)
+target_include_directories(fxt SYSTEM INTERFACE
+        $<BUILD_INTERFACE:${fxt_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${fixed_string_SOURCE_DIR}/include>
+)
+target_compile_features(fxt INTERFACE cxx_std_23)
+add_library(fxt::fxt ALIAS fxt)
+
 add_library(proxima
         src/core/expr.cpp
         src/core/format.cpp
@@ -111,6 +139,13 @@ add_library(proxima
         src/wire/sexpr.cpp
         src/wire/to_maxima.cpp
 )
+
+# PUBLIC: <proxima/result.hpp> includes FXT's Expected.hpp and Failure.hpp,
+# and so does every header that reports a failure. In the build tree the
+# include directories come from the fxt target above; for an installed
+# library, FXT's headers are installed beside this library's (see below) and
+# so are found through the same include directory, with no target to export.
+target_link_libraries(proxima PUBLIC $<BUILD_INTERFACE:fxt::fxt>)
 
 # PRIVATE, and only while building: multiprecision is header-only, and only
 # src/core/integer.cpp and the normaliser include it, through
@@ -211,6 +246,15 @@ install(TARGETS proxima
 )
 
 install(DIRECTORY include/proxima DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+# FXT's headers go with this library's: the public result type is FXT's, so
+# an installed <proxima/result.hpp> that could not find <fxt/...> would not
+# compile. Installed unversioned, under the names FXT's own includes use, so
+# a consumer's `#include <fxt.hpp>` resolves too. A consumer carrying its own
+# FXT sees whichever include directory comes first; the two are the same
+# headers at the commit pinned above.
+install(DIRECTORY "${fxt_SOURCE_DIR}/include/" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY "${fixed_string_SOURCE_DIR}/include/" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/generated/proxima/version.hpp"
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/proxima)
 

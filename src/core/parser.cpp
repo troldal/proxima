@@ -552,8 +552,19 @@ private:
 
 } // namespace
 
-Expr Expr::parse(std::string_view source) {
-    return Parser(source).parse();
+result<Expr> Expr::parse(std::string_view source) {
+    // The parser reports through ParseError internally, where an exception
+    // is the simplest way out of a recursive descent; at the boundary it is
+    // an ordinary outcome, and becomes one.
+    try {
+        return Parser(source).parse();
+    } catch (const ParseError &error) {
+        return fxt::unexpected(fail(Cause::Parse, error.what()));
+    } catch (const OverflowError &error) {
+        // `1e308 * 10.0` parses; building it does not. Still no answer, and
+        // still the text's fault, so still a value.
+        return fxt::unexpected(fail(Cause::Overflow, error.what()));
+    }
 }
 
 } // namespace proxima

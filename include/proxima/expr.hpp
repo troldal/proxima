@@ -1,6 +1,7 @@
 #pragma once
 
 #include <proxima/integer.hpp>
+#include <proxima/result.hpp>
 
 #include <compare>
 #include <concepts>
@@ -149,8 +150,9 @@ public:
     /// computed. proxima::parse differs here as well as in grammar: it hands the
     /// text to Maxima, which evaluates as it reads, and answers 120 and 8.
     ///
-    /// Throws proxima::ParseError, naming the offset, for anything malformed.
-    static Expr parse(std::string_view source);
+    /// A Failure with Cause::Parse, naming the offset, for anything malformed,
+    /// and with Cause::Overflow for numbers whose fold leaves a double's range.
+    static result<Expr> parse(std::string_view source);
 
     static Expr integer(Integer value);
 

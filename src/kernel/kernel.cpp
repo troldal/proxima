@@ -1,5 +1,6 @@
 #include <proxima/kernel.hpp>
 
+#include "kernel/reply.hpp"
 #include "kernel/session.hpp"
 #include "wire/from_maxima.hpp"
 #include "wire/sexpr.hpp"
@@ -8,7 +9,11 @@
 #include <proxima/errors.hpp>
 #include <proxima/expr.hpp>
 
+#include <utility>
+
 namespace proxima {
+
+using detail::to_result;
 
 // The special members are defined here rather than in the header because
 // detail::MaximaSession is incomplete at the point of declaration.
@@ -35,43 +40,40 @@ detail::MaximaSession &Kernel::session() const {
 // Text becomes an eval_string payload, an Expr a cppread one. Either way the
 // session only ever sees a call on a string literal it escaped itself.
 
-Reply Kernel::eval(std::string_view expression) {
-    return session().eval(detail::Payload::text(expression));
+result<std::string> Kernel::eval(std::string_view expression) {
+    return to_result(session().eval(detail::Payload::text(expression)));
 }
 
-Reply Kernel::eval(const Expr &form) {
-    return session().eval(detail::Payload::form(detail::to_maxima(form)));
+result<std::string> Kernel::eval(const Expr &form) {
+    return to_result(session().eval(detail::Payload::form(detail::to_maxima(form))));
 }
 
-Reply Kernel::eval_pure(std::string_view expression) {
-    return session().eval_pure(detail::Payload::text(expression));
+result<std::string> Kernel::eval_pure(std::string_view expression) {
+    return to_result(session().eval_pure(detail::Payload::text(expression)));
 }
 
-Reply Kernel::eval_pure(const Expr &form) {
-    return session().eval_pure(detail::Payload::form(detail::to_maxima(form)));
+result<std::string> Kernel::eval_pure(const Expr &form) {
+    return to_result(session().eval_pure(detail::Payload::form(detail::to_maxima(form))));
 }
 
-Reply Kernel::eval_tracked(std::string_view statement) {
-    return session().eval_tracked(detail::Payload::text(statement));
+result<std::string> Kernel::eval_tracked(std::string_view statement) {
+    return to_result(session().eval_tracked(detail::Payload::text(statement)));
 }
 
-Reply Kernel::eval_tracked(const Expr &form) {
-    return session().eval_tracked(detail::Payload::form(detail::to_maxima(form)));
+result<std::string> Kernel::eval_tracked(const Expr &form) {
+    return to_result(session().eval_tracked(detail::Payload::form(detail::to_maxima(form))));
 }
 
-std::expected<Expr, Failure> Kernel::eval_expr(std::string_view expression) {
-    return to_expr(eval(expression));
+result<Expr> Kernel::eval_expr(std::string_view expression) {
+    return eval(expression).and_then(to_expr);
 }
 
-std::expected<Expr, Failure> Kernel::eval_expr(const Expr &form) {
-    return to_expr(eval(form));
+result<Expr> Kernel::eval_expr(const Expr &form) {
+    return eval(form).and_then(to_expr);
 }
 
-std::expected<Expr, Failure> to_expr(const Reply &reply) {
-    if (!reply.ok) {
-        return std::unexpected(Failure{reply.reason});
-    }
-    return detail::from_maxima(detail::parse_sexpr(reply.value));
+result<Expr> to_expr(std::string_view wire) {
+    return detail::from_maxima(detail::parse_sexpr(wire));
 }
 
 void Kernel::invalidate_cache() {

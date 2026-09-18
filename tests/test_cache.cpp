@@ -21,8 +21,8 @@ using proxima::detail::ReplyCache;
 
 namespace {
 
-proxima::Reply valued(const std::string &value) {
-    proxima::Reply reply;
+proxima::detail::Reply valued(const std::string &value) {
+    proxima::detail::Reply reply;
     reply.ok = true;
     reply.value = value;
     return reply;
@@ -38,7 +38,7 @@ TEST_CASE("a cache returns what it was given") {
     CHECK(cache.misses() == 1);
 
     cache.insert("a", valued("1"));
-    const proxima::Reply *found = cache.find("a");
+    const proxima::detail::Reply *found = cache.find("a");
     REQUIRE(found != nullptr);
     CHECK(found->value == "1");
     CHECK(cache.hits() == 1);
@@ -140,10 +140,10 @@ TEST_CASE("an answer already given is not asked for again") {
     proxima::Kernel kernel;
     const Symbol x("x");
 
-    const Expr first = proxima::diff(pow(Expr(x), 10), x, 1, kernel);
+    const Expr first = *proxima::diff(pow(Expr(x), 10), x, 1, kernel);
     const auto after_first = kernel.cache_stats();
 
-    const Expr second = proxima::diff(pow(Expr(x), 10), x, 1, kernel);
+    const Expr second = *proxima::diff(pow(Expr(x), 10), x, 1, kernel);
     const auto after_second = kernel.cache_stats();
 
     CHECK(first == second);
@@ -172,26 +172,26 @@ TEST_CASE("an assumption invalidates answers computed without it") {
     const Symbol x("cache_assumption_probe");
     const Expr root = proxima::sqrt(pow(Expr(x), 2));
 
-    CHECK(proxima::simplify(root, kernel) == proxima::abs(Expr(x)));
+    CHECK(*proxima::simplify(root, kernel) == proxima::abs(Expr(x)));
 
     {
         proxima::Context ctx(kernel);
         ctx.assume(gt(Expr(x), Expr(0)));
-        CHECK(proxima::simplify(root, kernel) == Expr(x));
+        CHECK(*proxima::simplify(root, kernel) == Expr(x));
     }
 
     // And leaving the scope invalidates just as much as entering it did.
-    CHECK(proxima::simplify(root, kernel) == proxima::abs(Expr(x)));
+    CHECK(*proxima::simplify(root, kernel) == proxima::abs(Expr(x)));
 }
 
 TEST_CASE("a raw eval discards the cache, since it could have changed anything") {
     proxima::Kernel kernel;
     const Symbol x("x");
 
-    proxima::diff(pow(Expr(x), 3), x, 1, kernel);
+    static_cast<void>(proxima::diff(pow(Expr(x), 3), x, 1, kernel));
     REQUIRE(kernel.cache_stats().entries > 0);
 
-    kernel.eval("2 + 2");
+    static_cast<void>(kernel.eval("2 + 2"));
     CHECK(kernel.cache_stats().entries == 0);
 }
 
@@ -202,14 +202,14 @@ TEST_CASE("a binding made through eval cannot leave a stale answer behind") {
     proxima::Kernel kernel;
     const Symbol x("x");
 
-    REQUIRE(kernel.eval("cache_binding_probe: 2").ok);
+    REQUIRE(kernel.eval("cache_binding_probe: 2").has_value());
     const Expr before
-        = proxima::simplify(Expr::symbol("cache_binding_probe") * Expr(x), kernel);
+        = *proxima::simplify(Expr::symbol("cache_binding_probe") * Expr(x), kernel);
     CHECK(before == 2 * Expr(x));
 
-    REQUIRE(kernel.eval("cache_binding_probe: 3").ok);
+    REQUIRE(kernel.eval("cache_binding_probe: 3").has_value());
     const Expr after
-        = proxima::simplify(Expr::symbol("cache_binding_probe") * Expr(x), kernel);
+        = *proxima::simplify(Expr::symbol("cache_binding_probe") * Expr(x), kernel);
     CHECK(after == 3 * Expr(x));
 }
 
@@ -220,9 +220,8 @@ TEST_CASE("caching can be turned off") {
     proxima::Kernel kernel(config);
     const Symbol x("x");
 
-    proxima::diff(pow(Expr(x), 4), x, 1, kernel);
-    proxima::diff(pow(Expr(x), 4), x, 1, kernel);
-
+    static_cast<void>(proxima::diff(pow(Expr(x), 4), x, 1, kernel));
+    static_cast<void>(proxima::diff(pow(Expr(x), 4), x, 1, kernel));
     CHECK(kernel.cache_stats().entries == 0);
     CHECK(kernel.cache_stats().hits == 0);
 }
@@ -232,7 +231,7 @@ TEST_CASE("a cached answer is worth having") {
     // and that skipping it is worth the bookkeeping.
     proxima::Kernel kernel;
     const Symbol x("x");
-    const Expr heavy = proxima::expand(pow(Expr(x) + 1, 40), kernel);
+    const Expr heavy = *proxima::expand(pow(Expr(x) + 1, 40), kernel);
 
     const auto timed = [&](auto &&work) {
         const auto start = std::chrono::steady_clock::now();
@@ -240,8 +239,8 @@ TEST_CASE("a cached answer is worth having") {
         return std::chrono::steady_clock::now() - start;
     };
 
-    const auto cold = timed([&] { proxima::factor(heavy, kernel); });
-    const auto warm = timed([&] { proxima::factor(heavy, kernel); });
+    const auto cold = timed([&] { static_cast<void>(proxima::factor(heavy, kernel)); });
+    const auto warm = timed([&] { static_cast<void>(proxima::factor(heavy, kernel)); });
 
     CHECK(warm < cold);
 }

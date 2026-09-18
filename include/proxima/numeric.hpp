@@ -1,6 +1,7 @@
 #pragma once
 
 #include <proxima/expr.hpp>
+#include <proxima/result.hpp>
 #include <proxima/symbol.hpp>
 
 #include <cstddef>
@@ -84,14 +85,15 @@ private:
 /// `minf`. An explicit binding wins over them, so a symbol called `%e` can be
 /// given a different value if that is genuinely what is wanted.
 ///
-/// Throws proxima::EvalError for anything it cannot turn into a number: an unbound
-/// symbol, a function it does not know, a relation, or an Opaque node — the
-/// last being Maxima source text this library never interpreted, which is
-/// precisely why it cannot be evaluated here.
-double eval_numeric(const Expr &expr, const Bindings &bindings = {});
+/// A Failure, with Cause::Eval, for anything it cannot turn into a number: an
+/// unbound symbol, a function it does not know, a relation, or an Opaque
+/// node — the last being Maxima source text this library never interpreted,
+/// which is precisely why it cannot be evaluated here.
+result<double> eval_numeric(const Expr &expr, const Bindings &bindings = {});
 
 /// True when eval_numeric could succeed: every symbol bound and every function
-/// known. Cheaper than catching, when the caller wants to ask before committing.
+/// known. Cheaper than evaluating, when the caller wants to ask before
+/// committing, and builds no message.
 bool is_evaluable(const Expr &expr, const Bindings &bindings = {});
 
 namespace detail {
@@ -146,7 +148,9 @@ public:
     /// in now. A name in
     /// `variables` shadows both.
     ///
-    /// Throws proxima::EvalError if the expression cannot be turned into numbers.
+    /// Throws proxima::EvalError if the expression cannot be turned into
+    /// numbers. A constructor cannot return a Failure; proxima::compile can,
+    /// and is the same preparation as a value.
     Compiled(const Expr &expr, std::span<const Symbol> variables,
              const Bindings &constants = {});
 
@@ -172,6 +176,13 @@ private:
     std::vector<std::string> variables_;
     std::size_t depth_ = 0;
 };
+
+/// Prepares `expr` as a function of `variables`, as Compiled's constructor
+/// does, with a Failure (Cause::Eval) in place of its exception.
+result<Compiled> compile(const Expr &expr, std::span<const Symbol> variables,
+                         const Bindings &constants = {});
+result<Compiled> compile(const Expr &expr, const Symbol &variable,
+                         const Bindings &constants = {});
 
 /// Binds `expr` to one variable for repeated evaluation.
 ///

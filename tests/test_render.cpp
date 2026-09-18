@@ -69,7 +69,7 @@ TEST_CASE("the presentation layer fixes what every renderer would get wrong") {
         // expression: the sign only reached the first term of the bracket.
         const Expr subtracted = Expr(x) - (Expr(1) + Expr(y));
         CHECK(subtracted.str() == "x - (1 + y)");
-        CHECK(Expr::parse(subtracted.str()) == subtracted);
+        CHECK(*Expr::parse(subtracted.str()) == subtracted);
     }
 }
 
@@ -108,7 +108,7 @@ TEST_CASE("infix output still reads back as the same expression") {
     };
     for (const Expr &expr : corpus) {
         CAPTURE(expr.str());
-        CHECK(Expr::parse(expr.str()) == expr);
+        CHECK(*Expr::parse(expr.str()) == expr);
     }
 }
 

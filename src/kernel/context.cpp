@@ -1,5 +1,6 @@
 #include <proxima/context.hpp>
 
+#include "kernel/reply.hpp"
 #include "kernel/session.hpp"
 #include "wire/from_maxima.hpp"
 #include "wire/sexpr.hpp"
@@ -90,12 +91,14 @@ detail::Payload form_of(const Expr &expr) {
     return detail::Payload::form(detail::to_maxima(expr));
 }
 
-Expr reply_or_throw(const Reply &reply) {
-    auto result = to_expr(reply);
-    if (!result) {
-        throw MaximaError(result.error().message);
-    }
-    return std::move(*result);
+/// A Context's statements are not questions, and a Maxima error in one is
+/// not an outcome the scope can carry on from: it is thrown.
+Expr reply_or_throw(result<std::string> reply) {
+    return unwrap(std::move(reply).and_then(to_expr));
+}
+
+Expr reply_or_throw(detail::Reply reply) {
+    return reply_or_throw(detail::to_result(std::move(reply)));
 }
 
 /// Every statement a Context issues changes Maxima's state in a way the

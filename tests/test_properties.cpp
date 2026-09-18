@@ -393,9 +393,11 @@ TEST_CASE("property: printed text parses back to the same expression") {
     // mixtures of rationals, reals, powers, relations and function calls.
     for_all(3, {}, [](const Expr &expr) {
         const std::string printed = expr.str();
-        Expr parsed;
-        REQUIRE_NOTHROW(parsed = Expr::parse(printed));
-        CHECK(parsed == expr);
+        const auto parsed = Expr::parse(printed);
+        if (!parsed) {
+            FAIL("refused: ", parsed.error().message());
+        }
+        CHECK(*parsed == expr);
     });
 }
 

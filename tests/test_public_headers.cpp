@@ -11,8 +11,8 @@
 #include <proxima/mathml.hpp>
 #include <proxima/numeric.hpp>
 #include <proxima/ops.hpp>
+#include <proxima/result.hpp>
 #include <proxima/render.hpp>
-#include <proxima/reply.hpp>
 #include <proxima/symbol.hpp>
 #include <proxima/tex.hpp>
 #include <proxima/traverse.hpp>

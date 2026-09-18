@@ -1,6 +1,6 @@
 #pragma once
 
-#include <proxima/reply.hpp>
+#include "kernel/reply.hpp"
 
 #include <cstddef>
 #include <list>
