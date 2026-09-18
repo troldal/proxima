@@ -1514,7 +1514,7 @@ to the kernel. That is where the work is.
   item 4 exposes that as a `match` with typed views and `std::optional`
   accessors, which is what C++23 makes pleasant.
 
-  *Outcome:* answered by §9.6 item 4 in COMMIT. The throwing accessors
+  *Outcome:* answered by §9.6 item 4 in `05f6d32`. The throwing accessors
   remain, documented as the form for code that has already checked the kind.
 
 - [ ] **`Bindings::set` mutates, in an otherwise value-oriented numeric
@@ -1843,7 +1843,7 @@ they are ordered so that each is useful without the next.
   compiler checks. The shared immutable representation is untouched; the
   views are references into it.
 
-  *Outcome:* done in COMMIT. `Expr::match(handlers...)` combines the
+  *Outcome:* done in `05f6d32`. `Expr::match(handlers...)` combines the
   handlers with `fxt::overload` and dispatches on the kind; a `requires`
   clause (`detail::HandlesEveryKind`) makes a set that misses a kind fail to
   compile, which the tests check with a concept rather than by hand. The
