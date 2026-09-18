@@ -915,13 +915,19 @@ parser printed.
 
 ### Genuinely undecided
 
-The rest of TODO §9.6 — pipe adaptors for every operation (item 3), `match`
-over expressions with optional accessors (4), assumptions as immutable
-values in place of the RAII `Context` (5), queries and statements as types
-in place of the `eval` verbs (6), traversal as folds and ranges (7) — is
-decided in direction and not in detail. Decided and built: the result type
-is FXT's (`fxt::result<T>` with a `proxima::Cause` as context; §9.6 items 1,
-2, 10 and 11), names are snake_case, and Boost is out of the public headers.
+Nothing in TODO §9.6's design is left undecided; it is built. The result
+type is FXT's (`fxt::result<T>` with a `proxima::Cause`); expressions are read
+with `match`; assumptions are values passed with each question, through a
+`proxima::Env`, in place of the RAII `Context`; the kernel's two verbs are
+`ask(Query)` and `tell(Statement)`; names are snake_case; Boost is out of the
+public headers. What remains open is in TODO §9's unticked items, none of
+them a design question.
+
+> **Superseded, below:** the sections on `Context`, the replay journal and
+> keying the persistent cache on the journal describe the design before
+> §9.6 item 5. Assumptions are now values, each distinct set has a Maxima
+> context of its own made on demand, and the cache keys carry the
+> assumptions' canonical text; there is no journal.
 
 ### The persistent cache, and what its key has to contain
 

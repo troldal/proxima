@@ -1249,7 +1249,7 @@ to the kernel. That is where the work is.
   `KernelError`, so `converse` restarts the child as it does for any broken
   conversation. Tested with two half-limit chunks and no closing delimiter.
 
-- [ ] **`Kernel::eval_expr` has `eval`'s destructive semantics.** It calls
+- [x] **`Kernel::eval_expr` has `eval`'s destructive semantics.** It calls
   `eval`, so it clears the reply cache and switches persistence off for the
   kernel — while being the convenient entry point a user reaches for to ask a
   question (`eval_expr("gcd(12, 18)")`, the README's own example). The safe
@@ -1265,6 +1265,11 @@ to the kernel. That is where the work is.
   it waits for that decision. Since `f868659` the pure question is a one-liner
   anyway — `kernel.eval_pure(form) | fxt::and_then(to_expr)` — which takes
   most of the sting out; the verb itself still waits for item 6.
+
+
+  *Outcome, with §9.6 item 6 (`f220f71`):* gone. `eval_expr` and its trap no
+  longer exist; `kernel.ask(Query::text("gcd(12, 18)"))` is the question, and
+  it is cached and persisted like any other.
 
 - [x] **The in-memory reply cache is bounded by count, not bytes.**
   `Config::cache_entries` is 4096; a single reply can be 889 KB
@@ -1460,7 +1465,7 @@ to the kernel. That is where the work is.
 
 ### 9.3 Ergonomics and the shape of the API
 
-- [ ] **Three verbs for evaluation, and the safe one has the longest name.**
+- [x] **Three verbs for evaluation, and the safe one has the longest name.**
   `eval` (clears the cache, stops persistence), `eval_pure`, `eval_tracked`,
   `eval_expr` (as `eval`), plus `remember`/`forget` to maintain the journal by
   hand. The distinction between them is a promise the caller makes and
@@ -1469,6 +1474,10 @@ to the kernel. That is where the work is.
   rename so the default is the safe one — `query` for the pure path, `execute`
   for a statement — and make `eval_tracked`, `remember` and `forget` internal
   once `Context` is their only client.
+
+
+  *Outcome:* done by §9.6 item 6 in `f220f71`: `ask(Query)` and
+  `tell(Statement)` are the only two, and the promise is a type.
 
 - [x] **`Reply` is a hand-rolled `expected` in a public header** — `ok`,
   `value`, `reason`. It should be `std::expected<std::string, Failure>` if the
@@ -1532,7 +1541,7 @@ to the kernel. That is where the work is.
   can be returned by value. Return `Compiled`, or `auto`; if a type-erased
   form is wanted, `std::move_only_function`.
 
-- [ ] **`shared_kernel()` is ambient global state that every operation
+- [x] **`shared_kernel()` is ambient global state that every operation
   defaults to.** Convenient for a script; for a library built on Proxima it
   means one Maxima for everyone, static-destruction order to reason about
   (§2 fixed the crash, not the design), and no way to tell from a call site
@@ -1540,13 +1549,23 @@ to the kernel. That is where the work is.
   first example three lines — but make the explicit form the one the
   documentation leads with, and see §9.6 item 3 for a `with_kernel` adaptor.
 
-- [ ] **`Context` is ambient too, and process-global.** Which Maxima context
+
+  *Outcome:* in `f220f71` every operation takes a `proxima::Env`, which names
+  the kernel — `shared_kernel()` only when it names none — and the
+  assumptions together, so a call site that wants to be explicit says both in
+  one argument. `shared_kernel()` stays the default: it is what keeps the
+  first example three lines.
+
+- [x] **`Context` is ambient too, and process-global.** Which Maxima context
   is *current* is state in the Maxima process, so the meaning of
   `integrate(f, x)` depends on which `Context` objects are alive on any
   thread at that moment; two threads each holding a `Context` on one kernel
   interleave. The registry, the out-of-order teardown, the
   exception-swallowing destructor and the journal all exist to manage that
   ambient state. §9.6 item 5 replaces it with a value.
+
+
+  *Outcome:* `Context` is gone, in `f220f71`; see §9.6 item 5.
 
 - [x] **Naming: camelCase against snake_case.** Proxima's free functions and
   members are camelCase — `evalNumeric`, `isEvaluable`, `toTeX`,
@@ -1576,10 +1595,13 @@ to the kernel. That is where the work is.
   updated with the code, so they still name things that exist; names of
   things since removed (`evalRaw`, `resetPersistence`) are left as they were.
 
-- [ ] **`Kernel::remember` and `forget` are public.** Manipulating the replay
+- [x] **`Kernel::remember` and `forget` are public.** Manipulating the replay
   journal by hand is an invitation to make the journal lie, which is the one
   thing the persistent cache cannot survive. Make them `detail` (see also
   §9.6 item 6, where they disappear).
+
+
+  *Outcome:* they disappeared, with the journal, in `f220f71`.
 
 - [ ] **README, PLAN and TODO are 400, 1,400 and 1,100 lines of narrative.**
   The *why* is unusually well recorded, which is the reason this review could
@@ -1609,11 +1631,16 @@ to the kernel. That is where the work is.
   the gcd and two divisions it replaces, now that those are machine
   arithmetic. So there is one hand reduction left, not two.
 
-- [ ] **`std::generator` (C++23) for traversal.** `for (const Expr &node :
+- [x] **`std::generator` (C++23) for traversal.** `for (const Expr &node :
   proxima::nodes(e))` reads better than a callback and composes with ranges:
   `any_of(e, p)` becomes `std::ranges::any_of(nodes(e), p)`. GCC 14 and MSVC
   19.39 have it; check libc++ 22 before relying on it, since clang is a
   supported compiler here.
+
+
+  *Outcome:* `nodes(e)` in `a7f1f16`, but a hand-written input range rather
+  than a `std::generator`, which GCC 13's library and libc++ lack; see §9.6
+  item 7.
 
 - [ ] **`std::ranges::to` and views (C++23)** where the code loops by hand to
   build a vector: `map_arguments` is `form.items() | views::drop(1) |
@@ -1700,10 +1727,14 @@ to the kernel. That is where the work is.
   touches most files anyway is the moment to reformat once and stop the
   drift.
 
-- [ ] **PLAN.md says "Genuinely undecided: nothing."** It should now list the
+- [x] **PLAN.md says "Genuinely undecided: nothing."** It should now list the
   decisions this section asks for — naming, values versus exceptions,
   assumptions as values, the opaque `Integer` — so that the plan and the TODO
   agree about what is open.
+
+
+  *Outcome:* updated in `f34d8db`, and again in `f220f71` now that §9.6 is
+  done.
 
 ### 9.6 A functional shape for the API, with FXT as the model
 
@@ -1869,7 +1900,7 @@ they are ordered so that each is useful without the next.
   equals the one the accessors rebuild, and that each optional accessor
   answers exactly when `kind()` says it should.
 
-- [ ] **5. Assumptions as values, not scopes.** The largest change and the
+- [x] **5. Assumptions as values, not scopes.** The largest change and the
   largest win. An `Assumptions` value is an immutable, ordered set of
   relations and declarations — structural equality, hashable, built with
   `assuming(gt(n, 0)).and(declared(n, Feature::Integer))`. Operations take
@@ -1894,7 +1925,37 @@ they are ordered so that each is useful without the next.
   `Context` can survive as sugar over it for callers who like RAII, but it
   would no longer be the mechanism.
 
-- [ ] **6. Queries and statements as types.** The four `eval` verbs and the
+
+  *Outcome:* done in `f220f71`, and `Context` did not survive as sugar: its
+  author chose to remove it, since sugar that behaved like the old scope
+  would need ambient "current assumptions" again. `proxima::Assumptions`
+  (`assumptions.hpp`, pure) is an immutable, canonical set of facts and
+  declarations — sorted and deduplicated, so the same facts in any order are
+  equal and hash alike — built with `assuming(fact)`, `assuming({...})`,
+  `declaring(symbol, feature)` and `.with(...)`. `and` is a keyword, so the
+  sketch's `.and(...)` became `.with(...)`. Every operation's last parameter
+  is a `proxima::Env`, implicitly built from a `Kernel &`, an `Assumptions`,
+  or both — one parameter, not two, so `integrate(f, x, kernel)` still
+  compiles. The session gives each distinct set a Maxima context of its own,
+  `supcontext(proxima_aN, initial)` followed by its `declare`s and
+  `assume`s, on first use; keeps the sixteen most recently used, killing the
+  rest; and switches only when a question arrives under a different set,
+  with no round trip when it is already current. The in-memory and on-disk
+  keys are the assumptions' canonical text plus the question, so asking
+  under different assumptions no longer invalidates anything, and the
+  persistence stamp is just the two versions. Contradictory facts are
+  `Cause::Inconsistent`, the context discarded and nothing cached. Gone: the
+  journal, `remember`, `forget`, `eval_tracked`, `converse_atomically`,
+  restamping, replay on restart, the process-wide scope registry,
+  out-of-order teardown and the destructor that swallowed exceptions —
+  about 550 lines. New tests: the value's equality and hashing; the
+  context protocol over a scripted transport (made once, switched to, made
+  again after restart, refused when inconsistent, evicted past sixteen);
+  against Maxima, answers per assumption, `is`, every `Feature`, two threads
+  asking under opposite assumptions at once, and a second kernel reading
+  from disk an answer asked under the same facts in another order.
+
+- [x] **6. Queries and statements as types.** The four `eval` verbs and the
   unchecked purity promise collapse into two types and two methods:
 
   ```cpp
@@ -1906,6 +1967,15 @@ they are ordered so that each is useful without the next.
   hatches by construction; `Statement::text("a: 7")` is the only thing that
   invalidates a cache, and it says so in its name. `eval_expr`'s trap (§9.1)
   cannot be written. `fxt::unit` is the natural success type for `tell`.
+
+
+  *Outcome:* done in `f220f71`. `Kernel::ask(Query, Assumptions = {})`
+  returns `result<Expr>` and is cached and persisted; `Kernel::tell(Statement)`
+  returns `result<fxt::unit>`, runs in Maxima's `initial` context, empties the
+  cache and stops persistence until restart. `eval`, `eval_pure`,
+  `eval_tracked` and `eval_expr` are gone, as its author chose, and
+  `to_expr` is internal. The library's own protocol tests read the wire text
+  through `detail::ask_wire`.
 
 - [x] **7. Traversal as folds and ranges.** `visit`, `any_of` and `transform`
   are three special cases of one catamorphism:
@@ -2005,11 +2075,16 @@ they are ordered so that each is useful without the next.
   tracked name; `<fxt.hpp>` and `Attempt.hpp` stay broken on Linux until FXT
   renames one or the other.
 
-- [ ] **12. What not to do.** Do not make `Expr` a public `std::variant`:
+- [x] **12. What not to do.** Do not make `Expr` a public `std::variant`:
   the shared, hash-once representation is the reason it is a value. Do not
   curry the operations: default arguments are the ergonomic win, and adaptors
   give the same pipelines without fighting arity. Do not try to make `Kernel`
   a pure value: it *is* the effect, and the design is honest about that.
+
+
+  *Outcome:* held to. `Expr` kept its representation and got `match`;
+  nothing was curried; `Kernel` holds the effect, and is now the only thing
+  that does.
 
 **Suggested order.** (1) The small, sharp things: `Feature::Prime`, the user
 directory, the parser's superlinear sum, `eval_expr`'s semantics, the frame
