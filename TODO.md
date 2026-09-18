@@ -1550,12 +1550,25 @@ to the kernel. That is where the work is.
 
   *Outcome:* done in `f868659`; see §9.6 items 1, 2 and 10.
 
-- [ ] **`Expr(x)` everywhere.** The README, the tour and the tests write
+- [x] **`Expr(x)` everywhere.** The README, the tour and the tests write
   `pow(proxima::Expr(x), 2)` and `gt(proxima::Expr(n), proxima::Expr(0))` where
   `pow(x, 2)`, `x * x + 3 * x + 2` and `gt(n, 0)` all compile: `Symbol`
   converts implicitly and `pow` accepts it. The documentation is teaching the
   verbose spelling. Show the terse one, and put `namespace px = proxima;` in
   the README's first example.
+
+  *Outcome:* done in COMMIT for the README (with `namespace px = proxima;` in
+  the first example and a sentence saying why no conversion is needed) and
+  the demo; the tour already had none. The tests keep `Expr(x)`: a test is
+  where the explicit form is worth exercising too, and rewriting 450 lines
+  of them buys nothing. Doing this found something worse than verbosity:
+  three README examples no longer compiled after the result type changed —
+  the first streamed a `result<double>`, one assigned `Expr::parse`'s result
+  to an `Expr`, and one nested operations that now return results. Fixed,
+  and `tests/test_readme.cpp` now compiles every README block and checks
+  the values its comments promise, so the README cannot drift from the API
+  unnoticed again. It caught one more on the way: binding a kernel with
+  `std::bind_back` needs an `Env`, not `std::ref(kernel)`.
 
 - [x] **Accessors that throw on the wrong kind.** `integer_value()`, `name()`,
   `real_value()`, `relation_op()`, `opaque_text()` and `arg(i)` each throw

@@ -33,6 +33,7 @@ add_executable(proxima_tests
         test_process_env.cpp
         test_properties.cpp
         test_public_headers.cpp
+        test_readme.cpp
         test_render.cpp
         test_sexpr.cpp
         test_to_maxima.cpp

@@ -11,15 +11,22 @@ standing in for expressions.
 #include <proxima/numeric.hpp>
 #include <proxima/ops.hpp>
 
-const proxima::Symbol x("x");
+namespace px = proxima;
 
-const proxima::Expr f = pow(proxima::Expr(x), 2) * proxima::sin(x);
+const px::Symbol x("x");
+const px::Expr f = pow(x, 2) * px::sin(x);
 
-if (const auto integral = proxima::integrate(f, x)) {
-    std::cout << integral->str() << '\n';                       // cos(x)*(2 - x^2) + 2*x*sin(x)
-    std::cout << proxima::eval_numeric(*integral, {{"x", 1.0}});      // 2.22324
+if (const auto integral = px::integrate(f, x)) {
+    std::cout << *integral << '\n';                          // cos(x)*(2 - x^2) + 2*x*sin(x)
+    std::cout << *px::eval_numeric(*integral, {{x, 1.0}});   // 2.22324
 }
 ```
+
+A `Symbol` is an expression wherever one is wanted, so `pow(x, 2)`,
+`x * x + 3 * x + 2` and `gt(x, 0)` need no conversion spelled out. The
+operations return a `proxima::result` — the answer, or why there is none —
+which is what the `if` and the `*` above are reading; see *Failure is an
+outcome, not an exception*.
 
 ## What it does
 
@@ -34,8 +41,8 @@ restart.
 ```cpp
 const proxima::Symbol x("x"), y("y");
 
-proxima::Expr f = pow(proxima::Expr(x), 2) + 3 * x + 2;   // operators
-f = proxima::Expr::parse("x^2 + 3*x + 2");           // or infix text, no kernel
+proxima::Expr f = pow(x, 2) + 3 * x + 2;          // operators
+f = *proxima::Expr::parse("x^2 + 3*x + 2");       // or infix text, no kernel
 ```
 
 Ten node kinds — `Integer`, `Rational`, `Real`, `Symbol`, `Add`, `Mul`, `Pow`,
@@ -123,10 +130,12 @@ Two expressions are equivalent in that order exactly when they are `==`.
 (`std::less` is not specialised for them: libc++ 22 ignores such a
 specialisation in its trees and calls `<` instead.)
 
-Results chain, because what comes back is an expression rather than text:
+Results chain, because what comes back is an expression rather than text —
+and a chain of operations stops at the first that fails:
 
 ```cpp
-proxima::expand(proxima::factor(proxima::diff(f, x)));
+proxima::diff(f, x) | fxt::and_then(FXT_LIFT(proxima::factor))
+                    | fxt::and_then(FXT_LIFT(proxima::expand));
 ```
 
 ### Two parsers
@@ -212,8 +221,8 @@ Once a closed form exists, turning it into numbers is ordinary arithmetic — no
 round trip per point.
 
 ```cpp
-proxima::eval_numeric(*integral, {{"x", 1.0}});        // 2.22324, one shot
-proxima::is_evaluable(e, bindings);                    // ask without catching
+*proxima::eval_numeric(*integral, {{x, 1.0}});        // 2.22324, one shot
+proxima::is_evaluable(e, bindings);                    // ask, without evaluating
 ```
 
 For repeated evaluation — plotting, root-finding, quadrature — compile once:
@@ -423,7 +432,7 @@ const std::string answer
     = proxima::diff(f, x)                                        // result<Expr>
     | fxt::and_then(FXT_LIFT(proxima::factor))                    // one argument: lift it
     | fxt::and_then([&](const proxima::Expr &e) { return proxima::diff(e, x); })
-    | fxt::and_then(std::bind_back(FXT_LIFT(proxima::expand), kernel))
+    | fxt::and_then(std::bind_back(FXT_LIFT(proxima::expand), proxima::Env(kernel)))
     | fxt::transform(proxima::to_tex)
     | fxt::value_or(std::string("no answer"));
 ```
@@ -454,14 +463,13 @@ cannot be answered. The kernel turns the question into an error naming the
 missing fact, so it tells you exactly what to supply:
 
 ```cpp
-const auto stuck = proxima::integrate(pow(proxima::Expr(x), proxima::Expr(n)), x);
+const auto stuck = proxima::integrate(pow(x, n), x);
 proxima::cause_of(stuck.error());   // Cause::NeedsAssumption
 stuck.error().message();
 // "this computation needs an assumption that was not supplied.
 //  Maxima asked: Is n equal to -1?"
 
-proxima::integrate(pow(proxima::Expr(x), proxima::Expr(n)), x,
-                   proxima::assuming(gt(n, 0)));             // x^(1 + n)/(1 + n)
+proxima::integrate(pow(x, n), x, proxima::assuming(gt(n, 0)));   // x^(1 + n)/(1 + n)
 ```
 
 The assumption belongs to that call alone. The next call, asked under nothing,

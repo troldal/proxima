@@ -57,7 +57,7 @@ int main() {
 
         // Two ways to build an expression: with operators, or from text.
         // Expr::parse needs no running Maxima.
-        const proxima::Expr f = pow(proxima::Expr(x), 2) + 3 * x + 2;
+        const proxima::Expr f = pow(x, 2) + 3 * x + 2;
         const proxima::Expr from_text = *proxima::Expr::parse("x^2 + 3*x + 2");
 
         std::cout << "f                = " << f.str() << '\n';
@@ -71,7 +71,7 @@ int main() {
         std::cout << "expand((x+1)^3)  = "
                   << proxima::expand(pow(x + 1, 3))->str() << '\n';
         std::cout << "factor(x^2-1)    = "
-                  << proxima::factor(pow(proxima::Expr(x), 2) - 1)->str() << '\n';
+                  << proxima::factor(pow(x, 2) - 1)->str() << '\n';
 
         // Exact arithmetic: not 0.7333...
         std::cout << "1/3 + 2/5        = "
@@ -79,7 +79,7 @@ int main() {
                   << '\n';
 
         // An integral, and the derivative of the result to check it.
-        const proxima::Expr integrand = pow(proxima::Expr(x), 2) * proxima::sin(x);
+        const proxima::Expr integrand = pow(x, 2) * proxima::sin(x);
         if (const auto integral = proxima::integrate(integrand, x)) {
             std::cout << "int x^2 sin(x)   = " << integral->str() << '\n';
             std::cout << "  differentiated = "
@@ -94,7 +94,7 @@ int main() {
             std::cout << "lim sin(x)/x     = " << l->str() << '\n';
         }
 
-        if (const auto roots = proxima::solve(eq(pow(proxima::Expr(x), 2), proxima::Expr(1)), x)) {
+        if (const auto roots = proxima::solve(eq(pow(x, 2), proxima::Expr(1)), x)) {
             std::cout << "solve x^2 = 1    = ";
             for (const proxima::Expr &root : *roots) {
                 std::cout << root.str() << ' ';
@@ -123,7 +123,7 @@ int main() {
         const proxima::Symbol b("b");
         const proxima::Symbol c("c");
         if (const auto quadratic
-                = proxima::solve(eq(a * pow(proxima::Expr(x), 2) + b * x + c, proxima::Expr(0)), x);
+                = proxima::solve(eq(a * pow(x, 2) + b * x + c, proxima::Expr(0)), x);
             quadratic && !quadratic->empty()) {
             show_rendered("a root of a*x^2 + b*x + c = 0:", quadratic->back());
         }
@@ -151,7 +151,7 @@ int main() {
         // Some results depend on facts Maxima has not been told. Rather than
         // asking — impossible over a pipe — it says which fact is missing.
         const proxima::Symbol n("n");
-        const proxima::Expr power = pow(proxima::Expr(x), proxima::Expr(n));
+        const proxima::Expr power = pow(x, n);
 
         const auto unknown = proxima::integrate(power, x);
         std::cout << "int x^n          = "
