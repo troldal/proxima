@@ -409,6 +409,41 @@ TEST_CASE("property: nodes, fold and visit see the same tree") {
     });
 }
 
+TEST_CASE("property: a chain of + or * builds what one add or mul does") {
+    // `acc = acc + term` takes a fast path — a binary-search insertion into
+    // the canonical sum — that must build exactly what the general path does.
+    // Random operands, so numbers, duplicates, nested sums and products all
+    // come through, some on the fast path and some not.
+    Generator generator(seed() ^ 11, {.opaque = true, .odd_names = true});
+    const int cases = case_count() / 10 + 5;
+    for (int i = 0; i < cases; ++i) {
+        // Exact operands only. With reals, grouping changes the answer's last
+        // bits — folding a*b*c one step at a time rounds differently from
+        // folding all three at once — so no two groupings need agree, fast
+        // path or not.
+        std::vector<Expr> operands;
+        while (operands.size() < 12) {
+            Expr operand = generator.expr();
+            if (!proxima::any_of(operand, [](const Expr &n) { return n.is(Kind::Real); })) {
+                operands.push_back(std::move(operand));
+            }
+        }
+        INFO("seed ", seed(), ", case ", i);
+        try {
+            Expr sum = operands.front();
+            Expr product = operands.front();
+            for (std::size_t k = 1; k < operands.size(); ++k) {
+                sum = sum + operands[k];
+                product = product * operands[k];
+            }
+            CHECK(sum == Expr::add(operands));
+            CHECK(product == Expr::mul(operands));
+        } catch (const proxima::OverflowError &) {
+            // Reals that overflow when folded: not a value either way.
+        }
+    }
+}
+
 TEST_CASE("property: equality, ordering and hashing agree") {
     // == is structural, canonical_order is a total order consistent with it,
     // and equal values hash equally. Checked over every pair of a batch that

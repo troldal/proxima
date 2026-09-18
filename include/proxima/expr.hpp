@@ -14,6 +14,7 @@
 #include <iosfwd>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
@@ -234,15 +235,29 @@ public:
 
     /// Builds a sum. One term returns that term; no terms returns zero.
     ///
-    /// The way to build a long sum. Each `+` normalises its whole result
-    /// afresh, so accumulating n terms one `+` at a time costs time quadratic
-    /// in n — measured, 4000 terms took over eight seconds — where one add()
-    /// over all of them takes milliseconds.
+    /// The way to build a long sum. Each `+` builds a whole new node, the
+    /// value being immutable, so accumulating n terms one `+` at a time costs
+    /// time quadratic in n — measured in Release, 16,000 terms take 1.2 s —
+    /// where one add() over all of them takes 3.5 ms.
     static Expr add(std::vector<Expr> terms);
+
+    /// The same, from any range of expressions — a view included:
+    /// `Expr::add(xs | std::views::transform([](const Expr &x) { return x * x; }))`.
+    template <std::ranges::input_range Terms>
+        requires std::convertible_to<std::ranges::range_reference_t<Terms>, Expr>
+    static Expr add(Terms &&terms) {
+        return add(collect(std::forward<Terms>(terms)));
+    }
 
     /// Builds a product. One factor returns that factor; none returns one.
     /// As with add(), build a long product here rather than one `*` at a time.
     static Expr mul(std::vector<Expr> factors);
+
+    template <std::ranges::input_range Factors>
+        requires std::convertible_to<std::ranges::range_reference_t<Factors>, Expr>
+    static Expr mul(Factors &&factors) {
+        return mul(collect(std::forward<Factors>(factors)));
+    }
 
     static Expr pow(Expr base, Expr exponent);
 
@@ -327,6 +342,18 @@ public:
 
 private:
     static Expr make_integer(Integer value);
+
+    template <typename Range>
+    static std::vector<Expr> collect(Range &&range) {
+        std::vector<Expr> items;
+        if constexpr (std::ranges::sized_range<Range>) {
+            items.reserve(static_cast<std::size_t>(std::ranges::size(range)));
+        }
+        for (auto &&item : range) {
+            items.emplace_back(std::forward<decltype(item)>(item));
+        }
+        return items;
+    }
 
     // References into the node, for match. Unchecked: called only once the
     // kind is known.
@@ -445,6 +472,10 @@ decltype(auto) Expr::match(Handlers &&...handlers) const {
 
 /// Arithmetic, normalised at once. Each builds a whole new canonical node, so
 /// to accumulate many operands use Expr::add or Expr::mul instead of a loop.
+///
+/// With reals, grouping can change the last bits of the folded number:
+/// `(a * b) * c` rounds once per step, `Expr::mul({a, b, c})` once for all
+/// three. Exact numbers fold to the same value whichever way.
 Expr operator+(const Expr &lhs, const Expr &rhs);
 Expr operator-(const Expr &lhs, const Expr &rhs);
 Expr operator*(const Expr &lhs, const Expr &rhs);

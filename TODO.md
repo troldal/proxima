@@ -1283,7 +1283,7 @@ to the kernel. That is where the work is.
   takes any older answer under its key with it, so a stale reply is never
   served in place of one that replaced it.
 
-- [ ] **Arithmetic operators can throw.** Since `98a69db`, `Expr(1e308) *
+- [x] **Arithmetic operators can throw.** Since `98a69db`, `Expr(1e308) *
   Expr(10.0)` throws `proxima::Error` from `operator*`, and so does any
   builder, `transform`, `replace` or `Expr::parse` that folds such numbers.
   Decided deliberately (§1, the infinity item), and it does match Maxima —
@@ -1360,7 +1360,7 @@ to the kernel. That is where the work is.
 
 ### 9.2 Performance
 
-- [ ] **Building a sum term by term is far worse than linear.** *Measured*
+- [x] **Building a sum term by term is far worse than linear.** *Measured*
   (Debug library, `-O2` probe, GCC 13, Windows):
 
   | terms | chained `operator+` | `Expr::parse` of the text | one `Expr::add` |
@@ -1393,6 +1393,23 @@ to the kernel. That is where the work is.
   builds a new immutable sum, so an insertion only removes the sort, not the
   copy), and a `proxima::sum(range)` helper, which belongs with the §9.6
   naming decision.
+
+  *Outcome, the rest (COMMIT):* both. The normaliser has a fast path for the
+  shape a loop makes — a canonical sum or product and one more operand that
+  is neither a number nor of the same kind — which inserts it by binary
+  search instead of flattening, partitioning and sorting everything again.
+  Measured in Release: chained `+` over 1,000 terms 50 → 4.8 ms, 4,000 terms
+  1,367 → 76 ms, 16,000 terms 31.4 s → 1.2 s. Still quadratic, the node being
+  immutable, and the documentation says so. The helper is a range overload,
+  `Expr::add(range)` and `Expr::mul(range)`, rather than `proxima::sum`,
+  which is already the closed-form series operation. A new property builds
+  sums and products of random exact operands by chaining and checks them
+  against one `add`/`mul`; a deliberately misplaced insertion fails it. It
+  also found what the parser outcome above took for granted: with *reals*
+  grouping changes the folded number's last bits — `(a*b)*c` rounds once per
+  step, `mul({a, b, c})` once — so "the same expression however grouped" is
+  true of exact numbers only. That was so before either change, and
+  `operator+`'s documentation now says it.
 
 - [x] **Including `<proxima/expr.hpp>` costs 1.46 s and 191,590 preprocessed
   lines per translation unit.** *Measured* (GCC 13, the project's Debug flags,

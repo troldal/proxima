@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -556,4 +557,15 @@ TEST_CASE("the optional accessors answer for any kind, without throwing") {
     CHECK(Expr(21).as_integer().transform([](const proxima::Integer &n) { return n * 2; })
           == proxima::Integer(42));
     CHECK(Expr(x).as_integer().value_or(proxima::Integer(-1)) == proxima::Integer(-1));
+}
+
+TEST_CASE("add and mul take any range of expressions") {
+    const Symbol x("x");
+    const Symbol y("y");
+    const std::vector<Expr> xs{Expr(x), Expr(y), Expr(2)};
+    const auto squares = xs | std::views::transform([](const Expr &e) { return e * e; });
+    CHECK(Expr::add(squares) == Expr(x) * x + Expr(y) * y + 4);
+    CHECK(Expr::mul(xs | std::views::take(2)) == Expr(x) * y);
+    // A vector still goes straight to the vector overload.
+    CHECK(Expr::add(xs) == x + y + 2);
 }

@@ -192,6 +192,30 @@ Expr fold(std::span<const Expr> numbers, bool is_product) {
 std::vector<Expr> normalize(std::vector<Expr> operands, Kind kind) {
     const bool is_product = kind == Kind::Mul;
 
+    // The shape a loop of `acc = acc + term` makes: a node of this kind, which
+    // is canonical already, and one more operand that is neither a number nor
+    // of this kind. Its place in the order is a binary search away, where the
+    // general path below flattens, partitions and sorts all n operands again.
+    // The result is the same — canonical order puts equal operands next to
+    // one another however they arrive — and the copy remains, the node being
+    // immutable, so a chain is still quadratic; but without the sort.
+    if (operands.size() == 2) {
+        const bool first_nested = operands[0].is(kind);
+        const Expr &nested = first_nested ? operands[0] : operands[1];
+        const Expr &other = first_nested ? operands[1] : operands[0];
+        if (nested.is(kind) && !other.is(kind) && !other.is_number()) {
+            const std::vector<Expr> &existing = nested.args();
+            const auto at = std::upper_bound(existing.begin(), existing.end(), other,
+                                             canonically_before);
+            std::vector<Expr> merged;
+            merged.reserve(existing.size() + 1);
+            merged.insert(merged.end(), existing.begin(), at);
+            merged.push_back(other);
+            merged.insert(merged.end(), at, existing.end());
+            return merged;
+        }
+    }
+
     // Flattened into a new vector only when some operand needs it. Otherwise
     // the caller's vector is already flat, so it is worked on in place and
     // handed back to become the node's operands. `x + y` used to copy its two
