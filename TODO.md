@@ -1782,6 +1782,19 @@ to the kernel. That is where the work is.
   transcripts were recorded with, so the Linux job's Maxima step is the one
   likely to need attention on its first run. The §7 CI item is this one.
 
+  *Since:* the repository is public at github.com/troldal/proxima, and the
+  first runs needed four fixes, all in the workflow or found by it. Ubuntu
+  has no SBCL-based Maxima at all, so the Maxima suite runs in an openSUSE
+  Tumbleweed container instead, against the 5.50 the transcripts were
+  recorded with (`9bfafbc`). Ubuntu's clang 18 cannot use libstdc++ 13's
+  `<expected>`, so fuzz and tidy use clang 19; its clang-scan-deps is packaged
+  separately, so CMake's C++20 module scan is now off in `CMakeLists.txt`
+  (`fe2dfd6`). And clang-tidy found what the local tidy runs had missed: the
+  wholesale reformat had moved three same-line `NOLINT`s off their lines,
+  now `NOLINTNEXTLINE` (`afce607`), and clang-tidy 19 flagged optional
+  accesses that 23 accepts (`a3ce5a0`). `a3ce5a0` is the first run with all
+  six jobs green.
+
 - [x] **Property tests for the invariants the design rests on.** Every
   guarantee below is asserted on hand-picked cases and none on generated
   ones: normalisation is idempotent (`Expr::add(e.args()) == e` for every
