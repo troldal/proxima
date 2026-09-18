@@ -9,12 +9,7 @@
 
 namespace proxima::detail {
 
-/// A Rational's value: reduced, with the sign on the numerator and a
-/// denominator that is always positive and coprime with it.
-struct Fraction {
-    Integer numerator;
-    Integer denominator;
-};
+using proxima::Fraction;
 
 /// A Function's head and arguments.
 struct Application {

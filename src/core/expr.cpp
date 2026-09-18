@@ -1,5 +1,7 @@
 #include "core/node.hpp"
 
+#include <proxima/symbol.hpp>
+
 #include "core/normalize.hpp"
 
 #include <proxima/errors.hpp>
@@ -20,7 +22,6 @@ Expr make_expr(std::shared_ptr<const Node> node) {
 namespace {
 
 using detail::Application;
-using detail::Fraction;
 using detail::Node;
 
 void hash_combine(std::size_t &seed, std::size_t value) {
@@ -237,6 +238,43 @@ bool Expr::is_negative_number() const {
     default:
         return false;
     }
+}
+
+const Integer &Expr::integer_ref() const { return node_->integer(); }
+const Fraction &Expr::fraction_ref() const { return node_->fraction(); }
+double Expr::real_ref() const { return node_->real(); }
+const std::string &Expr::text_ref() const { return node_->text(); }
+RelOp Expr::relation_ref() const { return node_->rel_op; }
+
+std::optional<Integer> Expr::as_integer() const {
+    if (node_->kind != Kind::Integer) {
+        return std::nullopt;
+    }
+    return node_->integer();
+}
+
+std::optional<Fraction> Expr::as_fraction() const {
+    if (node_->kind == Kind::Integer) {
+        return Fraction{node_->integer(), Integer(1)};
+    }
+    if (node_->kind == Kind::Rational) {
+        return node_->fraction();
+    }
+    return std::nullopt;
+}
+
+std::optional<double> Expr::as_real() const {
+    if (node_->kind != Kind::Real) {
+        return std::nullopt;
+    }
+    return node_->real();
+}
+
+std::optional<Symbol> Expr::as_symbol() const {
+    if (node_->kind != Kind::Symbol) {
+        return std::nullopt;
+    }
+    return Symbol(node_->text());
 }
 
 Integer Expr::integer_value() const {

@@ -60,6 +60,27 @@ produced them.
 
 `str()` renders Maxima-compatible infix, parenthesised by precedence.
 
+Reading an expression is a `match`: one handler per kind, each given a view of
+that node's parts by reference, and a set that misses a kind does not compile.
+A generic `[](const auto &)` handler catches the rest.
+
+```cpp
+namespace node = proxima::node;
+const std::string what = e.match(
+    [](const node::Integer &n) { return "the integer " + n.value.to_string(); },
+    [](const node::Symbol &s) { return "the symbol " + s.name; },
+    [](const node::Sum &s) { return std::to_string(s.terms.size()) + " terms"; },
+    [](const node::Call &c) { return "a call to " + c.head; },
+    [](const auto &) { return std::string("something else"); });
+
+e.as_integer();   // std::optional<Integer>; as_fraction, as_real and as_symbol likewise
+```
+
+The views are `node::Integer`, `Rational`, `Real`, `Symbol`, `Sum`, `Product`,
+`Power`, `Call`, `Relation` and `Opaque`. The accessors `integer_value()`,
+`name()`, `arg(i)` and the rest remain, for code that has already checked
+`is(Kind::...)`, and throw if it has not.
+
 ### Operations
 
 | | |

@@ -7,9 +7,11 @@
 #include <proxima/symbol.hpp>
 
 #include <algorithm>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -400,4 +402,158 @@ TEST_CASE("copies share representation without sharing identity") {
     CHECK(copy.hash() == original.hash());
     // Immutable, so sharing is invisible; this is just a cheap copy.
     CHECK(copy.str() == original.str());
+}
+
+// --- match and the optional accessors ------------------------------------------
+
+namespace node = proxima::node;
+
+namespace {
+
+/// One handler per kind, naming it: the total match every reader of a tree
+/// can start from.
+std::string kind_of(const Expr &expr) {
+    return expr.match([](const node::Integer &) { return std::string("integer"); },
+                      [](const node::Rational &) { return std::string("rational"); },
+                      [](const node::Real &) { return std::string("real"); },
+                      [](const node::Symbol &) { return std::string("symbol"); },
+                      [](const node::Sum &) { return std::string("sum"); },
+                      [](const node::Product &) { return std::string("product"); },
+                      [](const node::Power &) { return std::string("power"); },
+                      [](const node::Call &) { return std::string("call"); },
+                      [](const node::Relation &) { return std::string("relation"); },
+                      [](const node::Opaque &) { return std::string("opaque"); });
+}
+
+// A handler set that misses a kind is not a match: it does not compile. The
+// check is a concept, so it can be asked here rather than only seen as an
+// error.
+template <typename... Handlers>
+concept Matches = requires(const Expr &e, Handlers... handlers) { e.match(handlers...); };
+
+constexpr auto kIntegerOnly = [](const node::Integer &) { return 0; };
+constexpr auto kAnything = [](const auto &) { return 0; };
+
+static_assert(!Matches<decltype(kIntegerOnly)>, "a match must handle every kind");
+static_assert(Matches<decltype(kAnything)>, "a generic handler handles every kind");
+static_assert(Matches<decltype(kIntegerOnly), decltype(kAnything)>,
+              "a specific handler beside a generic one is still total");
+
+} // namespace
+
+TEST_CASE("match calls the handler for the node's kind") {
+    const Symbol x("x");
+    CHECK(kind_of(Expr(3)) == "integer");
+    CHECK(kind_of(Expr::rational(1, 3)) == "rational");
+    CHECK(kind_of(Expr(2.5)) == "real");
+    CHECK(kind_of(Expr(x)) == "symbol");
+    CHECK(kind_of(x + 1) == "sum");
+    CHECK(kind_of(2 * Expr(x)) == "product");
+    CHECK(kind_of(pow(Expr(x), 2)) == "power");
+    CHECK(kind_of(Expr::function("f", {Expr(x)})) == "call");
+    CHECK(kind_of(eq(Expr(x), Expr(1))) == "relation");
+    CHECK(kind_of(Expr::opaque("?foo")) == "opaque");
+}
+
+TEST_CASE("match hands over the node's parts, in canonical order") {
+    const Symbol x("x");
+    const Symbol y("y");
+
+    SUBCASE("leaves") {
+        const auto value = [](const Expr &e) {
+            return e.match([](const node::Integer &n) { return n.value.to_string(); },
+                           [](const node::Rational &q) {
+                               return q.numerator.to_string() + "/" + q.denominator.to_string();
+                           },
+                           [](const node::Symbol &s) { return s.name; },
+                           [](const node::Opaque &o) { return o.text; },
+                           [](const auto &) { return std::string("?"); });
+        };
+        CHECK(value(Expr(proxima::Integer("265252859812191058636308480000000")))
+              == "265252859812191058636308480000000");
+        CHECK(value(Expr::rational(-2, 6)) == "-1/3"); // Reduced, sign on top.
+        CHECK(value(Expr(x)) == "x");
+        CHECK(value(Expr::opaque("?foo")) == "?foo");
+        CHECK(Expr(2.5).match([](const node::Real &r) { return r.value; },
+                              [](const auto &) { return 0.0; })
+              == 2.5);
+    }
+    SUBCASE("operands") {
+        // x + y + 1 is stored with the number first.
+        const std::size_t terms = (Expr(y) + x + 1).match(
+            [](const node::Sum &s) {
+                CHECK(s.terms[0] == Expr(1));
+                return s.terms.size();
+            },
+            [](const auto &) { return std::size_t{0}; });
+        CHECK(terms == 3);
+
+        const Expr power = pow(Expr(x), 3);
+        power.match(
+            [&](const node::Power &p) {
+                CHECK(p.base == Expr(x));
+                CHECK(p.exponent == Expr(3));
+            },
+            [](const auto &) { FAIL("not a power"); });
+
+        lt(Expr(x), Expr(y)).match(
+            [&](const node::Relation &r) {
+                CHECK(r.op == proxima::RelOp::Less);
+                CHECK(r.lhs == Expr(x));
+                CHECK(r.rhs == Expr(y));
+            },
+            [](const auto &) { FAIL("not a relation"); });
+
+        Expr::function("f", {Expr(x), Expr(y)})
+            .match(
+                [&](const node::Call &c) {
+                    CHECK(c.head == "f");
+                    REQUIRE(c.args.size() == 2);
+                    CHECK(c.args[1] == Expr(y));
+                },
+                [](const auto &) { FAIL("not a call"); });
+    }
+    SUBCASE("by reference, not by copy") {
+        // The view is the node's own storage.
+        const Expr e = Expr::function("f", {Expr(x)});
+        e.match([&](const node::Call &c) { CHECK(c.args.data() == e.args().data()); },
+                [](const auto &) {});
+    }
+}
+
+TEST_CASE("match returns the common type of its handlers") {
+    const Symbol x("x");
+    const auto width = Expr(x).match([](const node::Symbol &) { return 1; },
+                                     [](const auto &) { return 2L; });
+    static_assert(std::same_as<decltype(width), const long>);
+    CHECK(width == 1);
+
+    // And void, for a match done for its effect.
+    int calls = 0;
+    Expr(x).match([&](const auto &) { ++calls; });
+    CHECK(calls == 1);
+}
+
+TEST_CASE("the optional accessors answer for any kind, without throwing") {
+    const Symbol x("x");
+
+    CHECK(Expr(7).as_integer() == proxima::Integer(7));
+    CHECK_FALSE(Expr(x).as_integer().has_value());
+    CHECK_FALSE(Expr::rational(1, 2).as_integer().has_value());
+
+    // Any exact number is a fraction; an Integer as n/1.
+    CHECK(Expr::rational(-1, 3).as_fraction() == proxima::Fraction{-1, 3});
+    CHECK(Expr(4).as_fraction() == proxima::Fraction{4, 1});
+    CHECK_FALSE(Expr(0.5).as_fraction().has_value());
+
+    CHECK(Expr(0.5).as_real() == 0.5);
+    CHECK_FALSE(Expr(1).as_real().has_value());
+
+    CHECK(Expr(x).as_symbol() == x);
+    CHECK_FALSE((x + 1).as_symbol().has_value());
+
+    // C++23's monadic optional composes with them.
+    CHECK(Expr(21).as_integer().transform([](const proxima::Integer &n) { return n * 2; })
+          == proxima::Integer(42));
+    CHECK(Expr(x).as_integer().value_or(proxima::Integer(-1)) == proxima::Integer(-1));
 }

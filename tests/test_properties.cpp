@@ -35,6 +35,7 @@
 #include <limits>
 #include <optional>
 #include <random>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -277,6 +278,34 @@ Expr rebuild(const Expr &expr) {
     return expr;
 }
 
+/// The same, through match: each view's parts back through the builders.
+Expr rebuild_by_match(const Expr &expr) {
+    namespace node = proxima::node;
+    const auto all = [](std::span<const Expr> operands) {
+        std::vector<Expr> rebuilt;
+        rebuilt.reserve(operands.size());
+        for (const Expr &operand : operands) {
+            rebuilt.push_back(rebuild_by_match(operand));
+        }
+        return rebuilt;
+    };
+    return expr.match(
+        [](const node::Integer &n) { return Expr::integer(n.value); },
+        [](const node::Rational &q) { return Expr::rational(q.numerator, q.denominator); },
+        [](const node::Real &r) { return Expr::real(r.value); },
+        [](const node::Symbol &s) { return Expr::symbol(s.name); },
+        [&](const node::Sum &s) { return Expr::add(all(s.terms)); },
+        [&](const node::Product &p) { return Expr::mul(all(p.factors)); },
+        [](const node::Power &p) {
+            return Expr::pow(rebuild_by_match(p.base), rebuild_by_match(p.exponent));
+        },
+        [&](const node::Call &c) { return Expr::function(c.head, all(c.args)); },
+        [](const node::Relation &r) {
+            return Expr::relation(r.op, rebuild_by_match(r.lhs), rebuild_by_match(r.rhs));
+        },
+        [](const node::Opaque &o) { return Expr::opaque(o.text); });
+}
+
 /// The trees for one property, each with its case number and the seed, for
 /// the failure report.
 template <typename Check>
@@ -339,6 +368,22 @@ TEST_CASE("property: building an expression from its own parts changes nothing")
         CHECK(again == expr);
         CHECK(again.hash() == expr.hash());
         CHECK(again.str() == expr.str());
+    });
+}
+
+TEST_CASE("property: match sees what the accessors see") {
+    // A second reader of every tree, through the views, must rebuild exactly
+    // the tree the accessors do — and the optional accessors must answer
+    // exactly when kind() says they should.
+    for_all(9, {.opaque = true, .odd_names = true}, [](const Expr &expr) {
+        CHECK(rebuild_by_match(expr) == expr);
+        proxima::visit(expr, [](const Expr &node) {
+            CHECK(node.as_integer().has_value() == node.is(Kind::Integer));
+            CHECK(node.as_real().has_value() == node.is(Kind::Real));
+            CHECK(node.as_fraction().has_value()
+                  == (node.is(Kind::Integer) || node.is(Kind::Rational)));
+            CHECK(node.as_symbol().has_value() == node.is(Kind::Symbol));
+        });
     });
 }
 

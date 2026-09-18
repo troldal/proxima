@@ -1506,13 +1506,16 @@ to the kernel. That is where the work is.
   verbose spelling. Show the terse one, and put `namespace px = proxima;` in
   the README's first example.
 
-- [ ] **Accessors that throw on the wrong kind.** `integer_value()`, `name()`,
+- [x] **Accessors that throw on the wrong kind.** `integer_value()`, `name()`,
   `real_value()`, `relation_op()`, `opaque_text()` and `arg(i)` each throw
   `proxima::Error` unless the caller has checked `is(Kind::…)` first, so every
   reader of a tree is a `switch` on `kind()` followed by calls that could
   throw if the switch is wrong. `Node` is a `std::variant` already; §9.6
   item 4 exposes that as a `match` with typed views and `std::optional`
   accessors, which is what C++23 makes pleasant.
+
+  *Outcome:* answered by §9.6 item 4 in COMMIT. The throwing accessors
+  remain, documented as the form for code that has already checked the kind.
 
 - [ ] **`Bindings::set` mutates, in an otherwise value-oriented numeric
   API.** Add `with(symbol, value)` returning a new `Bindings`, and consider
@@ -1819,7 +1822,7 @@ they are ordered so that each is useful without the next.
   expected-like types, so a chain starts from an operation's result or from
   `result<Expr>{f}` — to be added only if that wrapping proves common.
 
-- [ ] **4. `match` over expressions, and optional accessors.** `Node` is a
+- [x] **4. `match` over expressions, and optional accessors.** `Node` is a
   `std::variant` already; expose that as a visit over cheap, non-owning
   views, with `fxt::overload` or deducing-this doing the dispatch:
 
@@ -1839,6 +1842,28 @@ they are ordered so that each is useful without the next.
   `render.cpp`, `to_maxima.cpp` and the tests become total matches the
   compiler checks. The shared immutable representation is untouched; the
   views are references into it.
+
+  *Outcome:* done in COMMIT. `Expr::match(handlers...)` combines the
+  handlers with `fxt::overload` and dispatches on the kind; a `requires`
+  clause (`detail::HandlesEveryKind`) makes a set that misses a kind fail to
+  compile, which the tests check with a concept rather than by hand. The
+  views are `proxima::node::{Integer, Rational, Real, Symbol, Sum, Product,
+  Power, Call, Relation, Opaque}`, uniform structs of references and spans
+  into the node, so nothing is copied — cheaper than `integer_value()`,
+  which returns an `Integer` by value. The result is the common type of the
+  handlers' results, `void` included. The optional accessors are
+  `as_integer`, `as_fraction` (any exact number, an Integer as n/1),
+  `as_real` and `as_symbol`, owning their values so they are safe to keep;
+  `Fraction` moved from `detail` into the public API for that. Two
+  departures from the sketch: the views live in `proxima::node`, since
+  `Symbol` and `Integer` were taken, and the throwing accessors stay, as the
+  short form for code that has checked `is(Kind::...)`. `to_maxima`'s
+  encoder is the first reader rewritten as a match; the other kind
+  switches (`numeric.cpp`, `render.cpp`, `normalize.cpp`, `from_maxima.cpp`)
+  are left as they are, being correct and the hottest paths in the library.
+  A new property rebuilds every random tree through `match` and checks it
+  equals the one the accessors rebuild, and that each optional accessor
+  answers exactly when `kind()` says it should.
 
 - [ ] **5. Assumptions as values, not scopes.** The largest change and the
   largest win. An `Assumptions` value is an immutable, ordered set of

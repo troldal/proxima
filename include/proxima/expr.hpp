@@ -3,6 +3,8 @@
 #include <proxima/integer.hpp>
 #include <proxima/result.hpp>
 
+#include <fxt/utils/Overload.hpp>
+
 #include <compare>
 #include <concepts>
 #include <cstddef>
@@ -11,8 +13,12 @@
 #include <functional>
 #include <iosfwd>
 #include <memory>
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace proxima {
@@ -32,8 +38,46 @@ class Symbol;
 template <typename T>
 concept ExprArgument = std::same_as<T, Expr> || std::same_as<T, Symbol>;
 
+/// An exact fraction, reduced, with the sign on the numerator and a positive
+/// denominator coprime with it. What a Rational holds, and what
+/// Expr::as_fraction hands back for any exact number.
+struct Fraction {
+    Integer numerator;
+    Integer denominator;
+
+    bool operator==(const Fraction &) const = default;
+};
+
+/// One view per kind of node, for Expr::match. Defined after Expr, below.
+namespace node {
+struct Integer;
+struct Rational;
+struct Real;
+struct Symbol;
+struct Sum;
+struct Product;
+struct Power;
+struct Call;
+struct Relation;
+struct Opaque;
+} // namespace node
+
 namespace detail {
 struct Node;
+
+/// True when `Visitor` can be called with every node view: what makes a
+/// match total.
+template <typename Visitor>
+concept HandlesEveryKind = std::invocable<Visitor &, const node::Integer &>
+                           && std::invocable<Visitor &, const node::Rational &>
+                           && std::invocable<Visitor &, const node::Real &>
+                           && std::invocable<Visitor &, const node::Symbol &>
+                           && std::invocable<Visitor &, const node::Sum &>
+                           && std::invocable<Visitor &, const node::Product &>
+                           && std::invocable<Visitor &, const node::Power &>
+                           && std::invocable<Visitor &, const node::Call &>
+                           && std::invocable<Visitor &, const node::Relation &>
+                           && std::invocable<Visitor &, const node::Opaque &>;
 
 /// Wraps a finished node in an Expr. The single point at which the shared
 /// representation enters the value type, so nothing outside src/core can build
@@ -212,8 +256,47 @@ public:
     /// True for a number that is negative. False for every non-number.
     bool is_negative_number() const;
 
+    /// Calls whichever handler takes this node's view, and returns what it
+    /// returns. The handlers are combined with fxt::overload, so a generic
+    /// lambda `[](const auto &)` catches whatever the others do not:
+    ///
+    ///     const std::string what = e.match(
+    ///         [](const node::Integer &n) { return n.value.to_string(); },
+    ///         [](const node::Symbol &s) { return s.name; },
+    ///         [](const node::Sum &s) { return std::to_string(s.terms.size()) + " terms"; },
+    ///         [](const auto &) { return std::string("something else"); });
+    ///
+    /// **Total.** A set of handlers that misses a kind does not compile, so a
+    /// reader of a tree cannot forget one — where a `switch` on kind() falls
+    /// through silently, and an accessor asked of the wrong kind throws.
+    ///
+    /// The views are references into this expression's shared node: nothing
+    /// is copied, and they are valid for the duration of the handler. Keep the
+    /// Expr, not the view. The result type is the common type of what the
+    /// handlers return.
+    template <typename... Handlers>
+        requires detail::HandlesEveryKind<fxt::overload<std::decay_t<Handlers>...>>
+    decltype(auto) match(Handlers &&...handlers) const;
+
+    /// The value of an Integer; nothing for any other kind.
+    std::optional<Integer> as_integer() const;
+
+    /// An exact number as a fraction — an Integer as n/1 — and nothing for
+    /// anything else, a Real included.
+    std::optional<Fraction> as_fraction() const;
+
+    /// The value of a Real; nothing for any other kind. An exact number is
+    /// not converted: see proxima::eval_numeric for a number from anything.
+    std::optional<double> as_real() const;
+
+    /// A Symbol as the typed Symbol the calculus operations take; nothing for
+    /// any other kind. Include <proxima/symbol.hpp> to use it.
+    std::optional<Symbol> as_symbol() const;
+
     /// Accessors. Each throws proxima::Error if the expression is not of the kind it
-    /// asks for, rather than returning something meaningless.
+    /// asks for, rather than returning something meaningless. For code that has
+    /// already checked is(Kind::...); match and the as_ accessors above say
+    /// the same without the precondition.
     Integer integer_value() const;
     Integer numerator() const;
     Integer denominator() const;
@@ -245,6 +328,14 @@ public:
 private:
     static Expr make_integer(Integer value);
 
+    // References into the node, for match. Unchecked: called only once the
+    // kind is known.
+    const Integer &integer_ref() const;
+    const Fraction &fraction_ref() const;
+    double real_ref() const;
+    const std::string &text_ref() const;
+    RelOp relation_ref() const;
+
     explicit Expr(std::shared_ptr<const detail::Node> node)
         : node_(std::move(node)) {}
 
@@ -253,6 +344,104 @@ private:
 
     std::shared_ptr<const detail::Node> node_;
 };
+
+namespace node {
+
+/// What Expr::match hands each handler: the parts of one node, by reference.
+/// The operand spans are the canonical order the normaliser put them in.
+
+struct Integer {
+    const proxima::Integer &value;
+};
+
+struct Rational {
+    const proxima::Integer &numerator;
+    const proxima::Integer &denominator; ///< Positive, and coprime with the numerator.
+};
+
+struct Real {
+    double value;
+};
+
+struct Symbol {
+    const std::string &name;
+};
+
+struct Sum {
+    std::span<const Expr> terms;
+};
+
+struct Product {
+    std::span<const Expr> factors;
+};
+
+struct Power {
+    const Expr &base;
+    const Expr &exponent;
+};
+
+/// An uninterpreted application: `sin(x)`, `f(x, y)`, `[1, 2]` (head `list`).
+struct Call {
+    const std::string &head;
+    std::span<const Expr> args;
+};
+
+struct Relation {
+    RelOp op;
+    const Expr &lhs;
+    const Expr &rhs;
+};
+
+/// Maxima source text this library does not model.
+struct Opaque {
+    const std::string &text;
+};
+
+} // namespace node
+
+template <typename... Handlers>
+    requires detail::HandlesEveryKind<fxt::overload<std::decay_t<Handlers>...>>
+decltype(auto) Expr::match(Handlers &&...handlers) const {
+    fxt::overload<std::decay_t<Handlers>...> visit{std::forward<Handlers>(handlers)...};
+    using Visitor = decltype(visit);
+    using Result = std::common_type_t<std::invoke_result_t<Visitor &, const node::Integer &>,
+                                      std::invoke_result_t<Visitor &, const node::Rational &>,
+                                      std::invoke_result_t<Visitor &, const node::Real &>,
+                                      std::invoke_result_t<Visitor &, const node::Symbol &>,
+                                      std::invoke_result_t<Visitor &, const node::Sum &>,
+                                      std::invoke_result_t<Visitor &, const node::Product &>,
+                                      std::invoke_result_t<Visitor &, const node::Power &>,
+                                      std::invoke_result_t<Visitor &, const node::Call &>,
+                                      std::invoke_result_t<Visitor &, const node::Relation &>,
+                                      std::invoke_result_t<Visitor &, const node::Opaque &>>;
+    const std::vector<Expr> &operands = args();
+    switch (kind()) {
+    case Kind::Integer:
+        return static_cast<Result>(visit(node::Integer{integer_ref()}));
+    case Kind::Rational: {
+        const Fraction &fraction = fraction_ref();
+        return static_cast<Result>(visit(node::Rational{fraction.numerator, fraction.denominator}));
+    }
+    case Kind::Real:
+        return static_cast<Result>(visit(node::Real{real_ref()}));
+    case Kind::Symbol:
+        return static_cast<Result>(visit(node::Symbol{text_ref()}));
+    case Kind::Add:
+        return static_cast<Result>(visit(node::Sum{operands}));
+    case Kind::Mul:
+        return static_cast<Result>(visit(node::Product{operands}));
+    case Kind::Pow:
+        return static_cast<Result>(visit(node::Power{operands[0], operands[1]}));
+    case Kind::Function:
+        return static_cast<Result>(visit(node::Call{text_ref(), operands}));
+    case Kind::Relation:
+        return static_cast<Result>(
+            visit(node::Relation{relation_ref(), operands[0], operands[1]}));
+    case Kind::Opaque:
+        return static_cast<Result>(visit(node::Opaque{text_ref()}));
+    }
+    std::unreachable();
+}
 
 /// Arithmetic, normalised at once. Each builds a whole new canonical node, so
 /// to accumulate many operands use Expr::add or Expr::mul instead of a loop.

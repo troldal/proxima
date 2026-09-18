@@ -7,6 +7,7 @@
 #include <cctype>
 #include <charconv>
 #include <cmath>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -124,7 +125,7 @@ bool is_string_literal(std::string_view text) {
 
 void render(const Expr &expr, std::string &out);
 
-void render_application(std::string_view head, const std::vector<Expr> &args,
+void render_application(std::string_view head, std::span<const Expr> args,
                        std::string &out) {
     out += "((";
     out += head;
@@ -133,6 +134,19 @@ void render_application(std::string_view head, const std::vector<Expr> &args,
         out.push_back(' ');
         render(arg, out);
     }
+    out.push_back(')');
+}
+
+/// The same for the two-operand kinds, which match hands over as a pair of
+/// references rather than a span.
+void render_pair(std::string_view head, const Expr &first, const Expr &second,
+                 std::string &out) {
+    out += "((";
+    out += head;
+    out += ") ";
+    render(first, out);
+    out.push_back(' ');
+    render(second, out);
     out.push_back(')');
 }
 
@@ -154,73 +168,50 @@ std::string_view function_head(const std::string &name, std::string &storage) {
 }
 
 void render(const Expr &expr, std::string &out) {
-    switch (expr.kind()) {
-    case Kind::Integer:
-        out += expr.integer_value().to_string();
-        return;
-
-    case Kind::Rational:
-        // MQUOTIENT rather than RAT: RAT is what the simplifier *produces*,
-        // and handing it an unsimplified one is asking for trouble. A quotient
-        // is what Maxima's own parser emits for `1/3`, and it simplifies to
-        // the RAT form on arrival.
-        out += "((MQUOTIENT) " + expr.numerator().to_string() + " "
-               + expr.denominator().to_string() + ")";
-        return;
-
-    case Kind::Real:
-        out += encode_real(expr.real_value());
-        return;
-
-    case Kind::Symbol: {
-        const std::string &name = expr.name();
-        // Maxima's booleans are the Lisp ones, as from_maxima already knows.
-        if (name == "true") {
-            out += 'T';
-        } else if (name == "false") {
-            out += "NIL";
-        } else {
-            out += encode_maxima_name(name);
-        }
-        return;
-    }
-
-    case Kind::Add:
-        render_application("MPLUS", expr.args(), out);
-        return;
-    case Kind::Mul:
-        render_application("MTIMES", expr.args(), out);
-        return;
-    case Kind::Pow:
-        render_application("MEXPT", expr.args(), out);
-        return;
-
-    case Kind::Function: {
-        std::string storage;
-        render_application(function_head(expr.name(), storage), expr.args(), out);
-        return;
-    }
-
-    case Kind::Relation:
-        render_application(relation_head(expr.relation_op()), expr.args(), out);
-        return;
-
-    case Kind::Opaque: {
-        const std::string &text = expr.opaque_text();
-        // A string is a string: from_maxima wraps Maxima strings as quoted
-        // Opaque text, and this sends them back as Lisp strings, which use
-        // the same escapes. Anything else is Maxima source this library never
-        // interpreted, so Maxima parses it — inside errcatch, where a read
-        // error is an ordinary failure rather than a silence.
-        if (is_string_literal(text)) {
-            out += text;
-        } else {
-            out += "(($EVAL_STRING) " + string_literal(text) + ")";
-        }
-        return;
-    }
-    }
-    throw Error("cannot render expression for Maxima");
+    // A match rather than a switch on kind(): the compiler checks every kind
+    // is written, and the views read the node in place, where the accessors
+    // copied each Integer out of it.
+    expr.match(
+        [&](const node::Integer &n) { out += n.value.to_string(); },
+        [&](const node::Rational &q) {
+            // MQUOTIENT rather than RAT: RAT is what the simplifier *produces*,
+            // and handing it an unsimplified one is asking for trouble. A
+            // quotient is what Maxima's own parser emits for `1/3`, and it
+            // simplifies to the RAT form on arrival.
+            out += "((MQUOTIENT) " + q.numerator.to_string() + " "
+                   + q.denominator.to_string() + ")";
+        },
+        [&](const node::Real &r) { out += encode_real(r.value); },
+        [&](const node::Symbol &s) {
+            // Maxima's booleans are the Lisp ones, as from_maxima already knows.
+            if (s.name == "true") {
+                out += 'T';
+            } else if (s.name == "false") {
+                out += "NIL";
+            } else {
+                out += encode_maxima_name(s.name);
+            }
+        },
+        [&](const node::Sum &s) { render_application("MPLUS", s.terms, out); },
+        [&](const node::Product &p) { render_application("MTIMES", p.factors, out); },
+        [&](const node::Power &p) { render_pair("MEXPT", p.base, p.exponent, out); },
+        [&](const node::Call &c) {
+            std::string storage;
+            render_application(function_head(c.head, storage), c.args, out);
+        },
+        [&](const node::Relation &r) { render_pair(relation_head(r.op), r.lhs, r.rhs, out); },
+        [&](const node::Opaque &o) {
+            // A string is a string: from_maxima wraps Maxima strings as quoted
+            // Opaque text, and this sends them back as Lisp strings, which use
+            // the same escapes. Anything else is Maxima source this library
+            // never interpreted, so Maxima parses it — inside errcatch, where a
+            // read error is an ordinary failure rather than a silence.
+            if (is_string_literal(o.text)) {
+                out += o.text;
+            } else {
+                out += "(($EVAL_STRING) " + string_literal(o.text) + ")";
+            }
+        });
 }
 
 } // namespace
