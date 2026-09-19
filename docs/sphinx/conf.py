@@ -36,7 +36,7 @@ def _project_version() -> str:
 # -- Project ------------------------------------------------------------------
 
 project = "Proxima"
-author = "Kenneth Balslev"
+author = "Kenneth Troldal Balslev"
 copyright = f"2026, {author}"
 release = _project_version()
 version = release

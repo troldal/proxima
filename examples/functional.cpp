@@ -230,10 +230,8 @@ void combining() {
     // sin(x)/x at 0, as the limit of the ratio of the derivatives.
     const auto lhopital
         = fxt::zip(proxima::diff(proxima::sin(x), x), proxima::diff(Expr(x), x))
-          | fxt::mapply(
-              [](const Expr &top, const Expr &bottom) { return top / bottom; })
-          | fxt::and_then(
-              [](const Expr &ratio) { return proxima::limit(ratio, x, 0); });
+          | fxt::mapply([](const Expr &top, const Expr &bottom) { return top / bottom; })
+          | fxt::and_then([](const Expr &ratio) { return proxima::limit(ratio, x, 0); });
     show("limit of sin(x)/x at 0, by L'Hopital", describe(lhopital));
 }
 
