@@ -16,6 +16,9 @@
 
 namespace proxima {
 
+/// @addtogroup numeric
+/// @{
+
 /// Values for the symbols in an expression.
 ///
 /// A symbol can be named either way — by the Symbol an expression was built
@@ -216,5 +219,7 @@ result<Compiled> compile(const Expr &expr, const Symbol &variable,
 /// same preparation as a result.
 Compiled as_function(const Expr &expr, const Symbol &variable,
                      const Bindings &fixed = {});
+
+/// @}
 
 } // namespace proxima

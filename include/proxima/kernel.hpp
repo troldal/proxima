@@ -16,6 +16,9 @@
 
 namespace proxima {
 
+/// @addtogroup kernel
+/// @{
+
 class Kernel;
 class Query;
 
@@ -226,5 +229,7 @@ private:
     Kernel *kernel_ = nullptr;
     Assumptions assumptions_;
 };
+
+/// @}
 
 } // namespace proxima

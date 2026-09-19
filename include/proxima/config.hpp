@@ -7,9 +7,12 @@
 
 namespace proxima {
 
+/// @addtogroup kernel
+/// @{
+
 /// Settings for a Kernel.
 struct Config {
-    /// Root of the Maxima installation, e.g. C:\maxima-5.50.0
+    /// Root of the Maxima installation, e.g. `C:\maxima-5.50.0`.
     ///
     /// Empty means "discover it": Config::maxima_root, then $MAXIMA_ROOT, then
     /// $MAXIMA_PREFIX, then the parent of any $PATH entry named "bin", then the
@@ -110,5 +113,7 @@ struct Config {
     /// you would not let run code as you.
     std::filesystem::path user_dir;
 };
+
+/// @}
 
 } // namespace proxima

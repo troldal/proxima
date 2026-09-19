@@ -24,13 +24,16 @@
 
 namespace proxima {
 
+/// @addtogroup expressions
+/// @{
+
 class Expr;
 class Symbol;
 
 /// An Expr, or a Symbol, which converts to one.
 ///
 /// What proxima::pow insists on for at least one argument, and the builders in
-/// <proxima/functions.hpp> for theirs. They share names with <cmath>, and an
+/// `<proxima/functions.hpp>` for theirs. They share names with `<cmath>`, and an
 /// argument of plain `const Expr &` would accept a plain number too, through
 /// Expr's implicit constructor — so under `using namespace proxima`, `pow(2, 3)` or
 /// `abs(-3)` would find a Proxima candidate: losing overload resolution today, and
@@ -575,6 +578,8 @@ enum class Notation { Infix, TeX, MathML };
 std::string notate(const Expr &expr, Notation notation);
 
 } // namespace detail
+
+/// @}
 
 } // namespace proxima
 

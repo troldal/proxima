@@ -15,6 +15,9 @@
 
 namespace proxima {
 
+/// @addtogroup rendering
+/// @{
+
 /// How tightly a rendered construct binds, and how tightly a child must bind
 /// to avoid being grouped. Ordinary precedence, with two extra rungs: `Atom`
 /// for anything that carries its own delimiters, and `PowerBase` for the left
@@ -42,8 +45,8 @@ enum class Construct {
     Power,
     Root,
     Call,
-    /// `x!` and `x!!`: factorial and double factorial, for a renderer with a
-    /// postfix notation. One without is handed them as calls.
+    /// Factorial and double factorial, for a renderer with a postfix notation.
+    /// One without is handed them as calls.
     Postfix,
     List,
     Relation,
@@ -174,7 +177,7 @@ concept RendersApplications
 template <typename R, typename T>
 concept RendersGrouping = requires(R &r, const T &a) {
     /// How to parenthesise. The library decides *when*; a 2-D renderer draws
-    /// brackets that stretch, TeX writes \left( \right).
+    /// brackets that stretch, TeX writes `\left( \right)`.
     { r.group(a) } -> std::same_as<T>;
 };
 
@@ -204,8 +207,9 @@ concept RendersNegation = requires(R &r, const T &a) {
     { r.negate(a) } -> std::same_as<T>;
 };
 
-/// `x!` and `x!!`, given the rendered operand and the operator. A renderer
-/// without it has factorials rendered as the calls they are, `factorial(x)`.
+/// Renders a factorial or double factorial in postfix notation, given the
+/// rendered operand and the operator. A renderer without it has factorials
+/// rendered as the calls they are, `factorial(x)`.
 template <typename R, typename T>
 concept RendersPostfix = requires(R &r, const T &a) {
     { r.postfix(a, std::string_view{}) } -> std::same_as<T>;
@@ -755,5 +759,7 @@ template <typename T>
 T render(const Expr &expr, Renderer<T> &renderer) {
     return renderer.render(expr);
 }
+
+/// @}
 
 } // namespace proxima

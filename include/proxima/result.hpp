@@ -40,6 +40,9 @@
 
 namespace proxima {
 
+/// @addtogroup results
+/// @{
+
 /// What went wrong, in terms a program can branch on.
 enum class Cause {
     /// A failure made without a cause — by other code, or by fxt::attempt.
@@ -131,5 +134,7 @@ T unwrap(result<T> value) {
         throw MaximaError(failure.message());
     }
 }
+
+/// @}
 
 } // namespace proxima

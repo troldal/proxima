@@ -6,6 +6,9 @@
 
 namespace proxima {
 
+/// @addtogroup rendering
+/// @{
+
 /// Renders an expression as LaTeX, for a maths environment: `\frac{1+x}{x-1}`,
 /// `x^{2}`, `\sqrt{x}`, `\sin\left(x\right)`.
 ///
@@ -24,5 +27,7 @@ namespace proxima {
 /// nothing — so src/render/tex.cpp doubles as a worked example of supplying your
 /// own renderer.
 std::string to_tex(const Expr &expr);
+
+/// @}
 
 } // namespace proxima

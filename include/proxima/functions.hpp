@@ -7,6 +7,9 @@
 
 namespace proxima {
 
+/// @addtogroup expressions
+/// @{
+
 /// Builders for the functions common enough that spelling them
 /// `Expr::function("sin", {x})` every time would be noise.
 ///
@@ -91,7 +94,7 @@ template <ExprArgument T>
 Expr floor(const T &x) {
     return detail::apply_named("floor", x);
 }
-/// Maxima's name, where <cmath> says ceil.
+/// Maxima's name, where `<cmath>` says ceil.
 template <ExprArgument T>
 Expr ceiling(const T &x) {
     return detail::apply_named("ceiling", x);
@@ -149,5 +152,7 @@ inline Expr minf() {
 inline Expr minus_inf() {
     return minf();
 }
+
+/// @}
 
 } // namespace proxima

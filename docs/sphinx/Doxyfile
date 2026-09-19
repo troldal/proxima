@@ -1,0 +1,46 @@
+# Doxygen reads the public headers into XML for Breathe; it produces no pages
+# of its own. conf.py runs it before Sphinx builds, setting the two variables
+# below, so it is not meant to be run by hand:
+#
+#   PROXIMA_ROOT          the repository root
+#   PROXIMA_DOXYGEN_OUT   where the XML goes, beside Sphinx's output
+
+PROJECT_NAME           = Proxima
+OUTPUT_DIRECTORY       = $(PROXIMA_DOXYGEN_OUT)
+# The public headers, and the groups the reference is arranged in.
+INPUT                  = $(PROXIMA_ROOT)/include/proxima \
+                         $(PROXIMA_ROOT)/docs/sphinx/groups.dox
+FILE_PATTERNS          = *.hpp
+RECURSIVE              = NO
+
+# Show `#include <proxima/expr.hpp>`, not a path on the machine that built.
+STRIP_FROM_PATH        = $(PROXIMA_ROOT)/include
+STRIP_FROM_INC_PATH    = $(PROXIMA_ROOT)/include
+FULL_PATH_NAMES        = YES
+
+# Every public declaration, documented or not; nothing internal. The headers
+# keep their implementation types in namespace detail.
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+EXCLUDE_SYMBOLS        = detail proxima::detail *::detail::*
+
+# The comments are `///` blocks whose first sentence is the summary, with
+# Markdown in them: `code`, *emphasis*, lists.
+JAVADOC_AUTOBRIEF      = YES
+MULTILINE_CPP_IS_BRIEF = NO
+MARKDOWN_SUPPORT       = YES
+BUILTIN_STL_SUPPORT    = YES
+
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = NO
+
+GENERATE_XML           = YES
+XML_PROGRAMLISTING     = NO
+GENERATE_HTML          = NO
+GENERATE_LATEX         = NO
+
+QUIET                  = YES
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = YES

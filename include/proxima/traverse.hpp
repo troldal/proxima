@@ -16,6 +16,9 @@
 
 namespace proxima {
 
+/// @addtogroup traversal
+/// @{
+
 // Local operations on the expression tree: no kernel, no round trip, no
 // state: every function here is pure.
 //
@@ -290,5 +293,7 @@ bool contains(const Expr &expr, const Symbol &symbol);
 /// `symbol` throws proxima::Error rather than leave the symbol silently behind;
 /// proxima::subst handles those.
 Expr replace(const Expr &expr, const Symbol &symbol, const Expr &value);
+
+/// @}
 
 } // namespace proxima

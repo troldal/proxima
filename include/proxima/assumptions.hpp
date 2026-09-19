@@ -12,6 +12,9 @@
 
 namespace proxima {
 
+/// @addtogroup assumptions
+/// @{
+
 /// A property a symbol can be declared to have.
 ///
 /// Maxima's `declare`. Distinct from an assumption: an assumption is a relation
@@ -132,6 +135,8 @@ Assumptions assuming(std::initializer_list<Expr> facts);
 /// Assumptions declaring `symbol` to have `feature`: `declaring(n,
 /// Feature::Integer)`.
 Assumptions declaring(const Symbol &symbol, Feature feature);
+
+/// @}
 
 } // namespace proxima
 

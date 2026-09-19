@@ -14,6 +14,9 @@
 
 namespace proxima {
 
+/// @addtogroup operations
+/// @{
+
 // Every operation here returns a proxima::result: the answer, or a Failure
 // saying why there is none, with a proxima::Cause a program can branch on.
 // Nothing is thrown for an ordinary outcome — not by diff, which fails only
@@ -230,5 +233,7 @@ result<std::vector<Expr>> realroots(const Expr &polynomial, const Env &env = {})
 /// because some other symbol is in it.
 result<double> find_root(const Expr &expr, const Symbol &wrt, double low,
                          double high, const Env &env = {});
+
+/// @}
 
 } // namespace proxima

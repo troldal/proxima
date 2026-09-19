@@ -322,3 +322,27 @@ option(PROXIMA_BUILD_FUZZERS "Build fuzz targets for Proxima's parsers" OFF)
 if (PROXIMA_BUILD_FUZZERS)
     add_subdirectory(fuzz)
 endif ()
+
+# --- Documentation --------------------------------------------------------
+
+# docs/sphinx: Doxygen reads the public headers, and Sphinx, with Breathe and
+# the Furo theme, builds the pages into <build>/docs/html. Not part of `all`:
+#
+#     pip install -r docs/sphinx/requirements.txt
+#     cmake --build <build> --target docs
+#
+# Warnings are errors, so a broken link or a comment Doxygen cannot read fails
+# the build rather than a page.
+if (PROJECT_IS_TOP_LEVEL)
+    find_package(Doxygen QUIET)
+    find_package(Python3 QUIET COMPONENTS Interpreter)
+    if (DOXYGEN_FOUND AND Python3_Interpreter_FOUND)
+        add_custom_target(docs
+                COMMAND ${CMAKE_COMMAND} -E env "DOXYGEN=${DOXYGEN_EXECUTABLE}"
+                        ${Python3_EXECUTABLE} -m sphinx -b html -W --keep-going -q
+                        ${CMAKE_CURRENT_SOURCE_DIR}/docs/sphinx
+                        ${CMAKE_CURRENT_BINARY_DIR}/docs/html
+                COMMENT "Building the documentation into ${CMAKE_CURRENT_BINARY_DIR}/docs/html"
+                VERBATIM)
+    endif ()
+endif ()

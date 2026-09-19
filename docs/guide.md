@@ -169,7 +169,7 @@ text renderer returns boxes with a width, height and baseline, so a fraction can
 stack and an exponent can actually be raised. An interface fixed to
 `std::string` would rule that out.
 
-There is one in [`examples/text2d.hpp`](examples/text2d.hpp), and the demo uses
+There is one in [`examples/text2d.hpp`](../examples/text2d.hpp), and the demo uses
 it. It is deliberately **not** part of the library — a plain struct of about
 300 lines, written the way you would write your own, and a good place to start
 if you do. It stacks fractions, raises exponents, draws radicals and brackets as

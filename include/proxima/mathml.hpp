@@ -6,6 +6,9 @@
 
 namespace proxima {
 
+/// @addtogroup rendering
+/// @{
+
 /// Renders an expression as Presentation MathML: a complete
 /// `<math xmlns="http://www.w3.org/1998/Math/MathML">` element, ready to
 /// embed in HTML, where every current browser typesets it natively.
@@ -25,5 +28,7 @@ namespace proxima {
 /// Written as an ordinary user of proxima/render.hpp, like to_tex(); see
 /// src/render/mathml.cpp.
 std::string to_mathml(const Expr &expr);
+
+/// @}
 
 } // namespace proxima

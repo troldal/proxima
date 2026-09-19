@@ -9,6 +9,9 @@
 
 namespace proxima {
 
+/// @addtogroup expressions
+/// @{
+
 /// A named unknown.
 ///
 /// A distinct type rather than just an Expr of Kind::Symbol, because the
@@ -48,6 +51,8 @@ inline Symbol operator""_sym(const char *name, std::size_t length) {
 }
 
 } // namespace literals
+
+/// @}
 
 } // namespace proxima
 

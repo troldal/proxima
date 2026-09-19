@@ -4,6 +4,9 @@
 
 namespace proxima {
 
+/// @addtogroup results
+/// @{
+
 /// Base of every exception thrown by this library.
 class Error : public std::runtime_error {
 public:
@@ -74,5 +77,7 @@ class OverflowError : public Error {
 public:
     using Error::Error;
 };
+
+/// @}
 
 } // namespace proxima

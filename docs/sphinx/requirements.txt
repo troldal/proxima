@@ -1,0 +1,7 @@
+# What docs/sphinx needs, besides Doxygen itself:
+#
+#     pip install -r docs/sphinx/requirements.txt
+sphinx>=8
+breathe>=4.36
+furo>=2024.8.6
+myst-parser>=4

@@ -1,0 +1,16 @@
+/// @file
+/// The groups the API reference is arranged in, one page each. Each public
+/// header adds its declarations to one of these, and docs/sphinx/api renders
+/// a group with Breathe's doxygengroup directive, which shows its members
+/// without the enclosing namespace. Rendering headers one by one
+/// instead declared `namespace proxima` once per header, and Sphinx rejects
+/// the duplicates.
+
+/// @defgroup expressions Expressions
+/// @defgroup results Results and errors
+/// @defgroup assumptions Assumptions
+/// @defgroup operations Operations
+/// @defgroup kernel The kernel
+/// @defgroup rendering Rendering
+/// @defgroup numeric Numeric evaluation
+/// @defgroup traversal Traversal

@@ -15,6 +15,9 @@
 
 namespace proxima {
 
+/// @addtogroup expressions
+/// @{
+
 /// The character types. Integral to C++, but not numbers to anyone reading an
 /// expression: `'a'` in a formula is a mistake, not the value 97.
 template <typename T>
@@ -203,7 +206,7 @@ private:
 
 /// The absolute value. Takes an Integer and nothing else: a plain
 /// `const Integer &` would make this a candidate for abs(-3) through the
-/// implicit constructor, which is <cstdlib>'s call to answer. See
+/// implicit constructor, which is `<cstdlib>`'s call to answer. See
 /// proxima::ExprArgument for why that matters.
 template <std::same_as<Integer> T>
 Integer abs(const T &value) {
@@ -237,6 +240,8 @@ Integer gcd(const A &a, const B &b) {
 
 /// Writes the decimal digits, as to_string() does.
 std::ostream &operator<<(std::ostream &out, const Integer &value);
+
+/// @}
 
 } // namespace proxima
 

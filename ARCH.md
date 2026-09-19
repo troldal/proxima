@@ -236,6 +236,8 @@ makes hashing and comparison cheap.
  src/util/          UTF-8 conversions, used wherever paths or the
                     environment cross into the operating system
  tests/             doctest; the `maxima` label marks what needs a kernel
+ docs/              the guide and the design history; docs/sphinx builds the
+                    documentation site, with the API reference
  fuzz/              libFuzzer targets for the two hand-written parsers
  examples/          demo.cpp, and tour.cpp: every public feature, runnable
 ```
