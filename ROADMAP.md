@@ -90,8 +90,11 @@ presents as central.
   there. CI covers MSVC only.
   *Done:* the `mingw` job, with MSYS2's UCRT64 GCC, builds everything,
   examples included, and runs the Maxima-free suite.
-- [ ] **Run the test suite under AddressSanitizer and UndefinedBehavior
+- [x] **Run the test suite under AddressSanitizer and UndefinedBehavior
   Sanitizer.** Only the fuzzers run instrumented today.
+  *Done:* the `sanitize` job runs the whole suite, Maxima included, under
+  both. The `linux-sanitize` and `wsl-sanitize` presets do the same locally.
+  The first run found nothing.
 - [ ] **A release process.** `CHANGELOG.md`, git tags, a release checklist, and
   the version kept in one place (`project()` in `CMakeLists.txt`, which the
   docs already read).

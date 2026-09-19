@@ -5,6 +5,8 @@
 #   maxima    the whole suite against a real Maxima: openSUSE Tumbleweed, in a
 #             container, because it packages Maxima on SBCL, which Proxima
 #             launches (Debian's and Ubuntu's Maxima is built on GCL).
+#   sanitize  the maxima job under AddressSanitizer and UndefinedBehavior
+#             Sanitizer, in the same container.
 #   windows   MSVC, the Maxima-free suite, warnings as errors.
 #   mingw     MinGW GCC from MSYS2 (UCRT64), the same, examples included.
 #   consumers tests/consumer, a project using Proxima from outside: against
@@ -88,6 +90,38 @@ jobs:
       # transcripts were recorded with.
       - name: Test
         run: ctest --preset linux --output-on-failure
+
+  # The maxima job's build and suite again, under AddressSanitizer and
+  # UndefinedBehaviorSanitizer: the transport's pipes, threads and child
+  # processes are what most need watching, and only a real Maxima exercises
+  # them. Any report fails the test that triggered it.
+  sanitize:
+    runs-on: ubuntu-24.04
+    container: opensuse/tumbleweed
+    steps:
+      - name: Install Maxima, the toolchain, the sanitizer runtimes and Ninja
+        run: |
+          zypper --non-interactive refresh
+          zypper --non-interactive install --no-recommends \
+            maxima maxima-exec-sbcl gcc-c++ libasan8 libubsan1 cmake ninja \
+            git tar gzip zstd
+
+      - uses: actions/checkout@v4
+
+      - name: Cache CPM sources
+        uses: actions/cache@v4
+        with:
+          path: .cpm-cache
+          key: cpm-tumbleweed-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'cmake/CPM.cmake') }}
+
+      - name: Configure
+        run: cmake --preset linux-sanitize -DPROXIMA_WARNINGS_AS_ERRORS=ON
+
+      - name: Build
+        run: cmake --build --preset linux-sanitize -j 4
+
+      - name: Test
+        run: ctest --preset linux-sanitize
 
   windows:
     runs-on: windows-latest

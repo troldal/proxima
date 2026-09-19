@@ -114,6 +114,8 @@ ctest --preset linux
 ```
 
 `ctest -LE maxima` runs the two thirds of the suite that need no Maxima at all.
+The `linux-sanitize` preset (`wsl-sanitize` on WSL) builds and tests the same
+under AddressSanitizer and UndefinedBehaviorSanitizer, as CI does.
 
 Three example programs are built alongside the library:
 - `demo` is a one-screen showcase.

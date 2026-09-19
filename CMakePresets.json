@@ -44,6 +44,23 @@
       "displayName": "Linux (WSL)",
       "description": "Same build as `linux`, but with the build tree kept on the Linux filesystem. Building into a directory under /mnt/c is markedly slower, since every file operation crosses the 9P filesystem bridge to Windows.",
       "binaryDir": "/tmp/proxima-build/${presetName}"
+    },
+    {
+      "name": "linux-sanitize",
+      "inherits": "linux",
+      "displayName": "Linux, under AddressSanitizer and UndefinedBehaviorSanitizer",
+      "description": "The linux build with ASan and UBSan, GCC or Clang. Any report fails the test that triggered it.",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+      }
+    },
+    {
+      "name": "wsl-sanitize",
+      "inherits": "linux-sanitize",
+      "displayName": "Linux (WSL), under AddressSanitizer and UndefinedBehaviorSanitizer",
+      "description": "linux-sanitize with the build tree on the Linux filesystem, as for wsl.",
+      "binaryDir": "/tmp/proxima-build/${presetName}"
     }
   ],
   "buildPresets": [
@@ -58,6 +75,14 @@
     {
       "name": "wsl",
       "configurePreset": "wsl"
+    },
+    {
+      "name": "linux-sanitize",
+      "configurePreset": "linux-sanitize"
+    },
+    {
+      "name": "wsl-sanitize",
+      "configurePreset": "wsl-sanitize"
     }
   ],
   "testPresets": [
@@ -104,6 +129,16 @@
           "label": "maxima"
         }
       }
+    },
+    {
+      "name": "linux-sanitize",
+      "inherits": "base",
+      "configurePreset": "linux-sanitize"
+    },
+    {
+      "name": "wsl-sanitize",
+      "inherits": "base",
+      "configurePreset": "wsl-sanitize"
     }
   ]
 }
