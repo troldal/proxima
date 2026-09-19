@@ -173,6 +173,12 @@ All pure, needing no kernel.
 - [ ] **A way to watch the traffic.** A hook, off by default, that sees each
   question and answer as they pass to and from Maxima, for when an answer
   looks wrong.
+- [ ] **Capture what Maxima prints.** A question answers with its value, and
+  anything Maxima prints on the way is discarded: `(print("hello"), 42)` is
+  just `42`. So whatever works by printing gives nothing back — `describe`,
+  `display`, Maxima's own `tex()`, and the code generators `f90`, `gentran`
+  and `pytranslate`. Offer the printed text beside the value, for the
+  questions that ask for it.
 
 ### Instructions given as text
 
@@ -211,13 +217,31 @@ causes, tests against Maxima, and a page in the docs.
 - [ ] **More differential equations:** systems of ODEs, and numeric solutions.
 - [ ] **Series that keep their order.** `taylor` returns an ordinary expression,
   so the order it was truncated at is lost.
-- [ ] **Arbitrary precision.** Numbers stop at `double`, and a Maxima bigfloat
-  is mapped to an exact rational on the way in; offer Maxima's bigfloats as a
-  value that keeps its precision.
+- [ ] **Arbitrary precision.** Numbers stop at `double`. A Maxima bigfloat at
+  the default precision comes back as the exact rational it equals, but as
+  Maxima text in an `Opaque` rather than a `Rational`; one of high precision
+  (`fpprec: 30`, say) comes back as an untyped `bigfloat(mantissa, exponent)`
+  call that does not read back as a bigfloat. Offer bigfloats as a value that
+  keeps its precision, and evaluates.
+- [ ] **Typed values for Maxima's other kinds of answer.** Everything comes back
+  as an `Expr`, but only numbers, symbols, sums, products, powers and
+  relations have typed nodes. The rest arrive generically: a matrix is a call
+  to `matrix` holding lists of rows, a set a call to `set`, a string raw text
+  in an `Opaque`, a truth value the symbol `true` or `false`. Give sets,
+  strings and truth values types of their own, as the matrix item above does
+  for matrices, so that a caller can ask for one rather than take one apart.
 
 Anything not wrapped stays reachable through `Kernel::ask` — see the
 [how-to](docs/sphinx/how-to/call-unwrapped-maxima.md) — so this list is about
-convenience and typed results, not about what is possible.
+convenience and typed results, not about what is possible. Checked across the
+manual's chapters against Maxima 5.50: flags, polynomials, special and
+elliptic functions, `algsys`, QUADPACK, matrices, series, number theory, sets,
+Laplace transforms, program flow, user-defined functions, and the packages
+`distrib`, `fourier_elim`, `to_poly_solve` and `stringproc` all answer through
+`ask`, with packages loaded by `tell`. Out of reach are only plotting, which
+needs a window or a file, the interactive chapters (help, debugging, the
+command line), and output Maxima prints rather than returns — the item in
+0.4.
 
 And two kinds of output:
 
