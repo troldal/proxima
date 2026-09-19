@@ -1,7 +1,7 @@
 # The checks that were run by hand after every change, run on every push.
 #
-#   linux     GCC 13 — the oldest compiler supported — the Maxima-free suite,
-#             warnings as errors.
+#   linux     GCC 14, the Maxima-free suite, warnings as errors. Not Ubuntu
+#             24.04's default GCC 13, which lacks parts of C++23.
 #   maxima    the whole suite against a real Maxima: openSUSE Tumbleweed, in a
 #             container, because it packages Maxima on SBCL, which Proxima
 #             launches (Debian's and Ubuntu's Maxima is built on GCL).
@@ -39,13 +39,13 @@ jobs:
           path: .cpm-cache
           key: cpm-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'cmake/CPM.cmake') }}
 
-      - name: Install GCC 13 and Ninja
+      - name: Install GCC 14 and Ninja
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends g++-13 ninja-build
+          sudo apt-get install -y --no-install-recommends g++-14 ninja-build
 
       - name: Configure
-        run: cmake --preset linux -DCMAKE_CXX_COMPILER=g++-13 -DPROXIMA_WARNINGS_AS_ERRORS=ON
+        run: cmake --preset linux -DCMAKE_CXX_COMPILER=g++-14 -DPROXIMA_WARNINGS_AS_ERRORS=ON
 
       - name: Build
         run: cmake --build --preset linux -j 4
@@ -119,16 +119,16 @@ jobs:
           path: .cpm-cache
           key: cpm-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'cmake/CPM.cmake') }}
 
-      - name: Install clang-tidy and Ninja
+      - name: Install clang-tidy, GCC 14 and Ninja
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang-tidy-19 ninja-build
+          sudo apt-get install -y --no-install-recommends clang-tidy-19 g++-14 ninja-build
 
       # Configured and built, so that the generated headers and the fetched
       # dependencies exist for clang-tidy to read.
       - name: Configure and build
         run: |
-          cmake --preset linux
+          cmake --preset linux -DCMAKE_CXX_COMPILER=g++-14
           cmake --build --preset linux -j 4
 
       # The pattern is anchored to the checkout: plain 'src/' also matched the

@@ -16,11 +16,6 @@
 // Part one needs no Maxima: the offline parser and numeric evaluation return
 // results too. Part two asks Maxima, through the shared kernel.
 //
-// traverse, zip, mapply, curry and match use std::forward_like and deducing
-// this, and GCC 13, the oldest compiler Proxima supports, has neither. Built
-// with GCC 13, those sections say so instead of running (curry is written
-// out by hand instead). GCC 14, Clang 19 and MSVC run everything.
-//
 //     cmake --build --preset windows        (or linux, or wsl)
 //     ./build/<preset>/functional
 
@@ -38,22 +33,18 @@
 #include <fxt/monads/AndThen.hpp>
 #include <fxt/monads/Attempt.hpp>
 #include <fxt/monads/Ensure.hpp>
+#include <fxt/monads/Match.hpp>
 #include <fxt/monads/OrElse.hpp>
+#include <fxt/monads/Sequence.hpp>
 #include <fxt/monads/Tap.hpp>
 #include <fxt/monads/Transform.hpp>
 #include <fxt/monads/Value.hpp>
 #include <fxt/monads/ValueOr.hpp>
 #include <fxt/monads/With.hpp>
-#include <fxt/utils/Lift.hpp>
-
-#if defined(__cpp_lib_forward_like) && defined(__cpp_explicit_this_parameter)
-#define DEMO_FULL_FXT 1
-#include <fxt/monads/Match.hpp>
-#include <fxt/monads/Sequence.hpp>
 #include <fxt/monads/Zip.hpp>
 #include <fxt/tuples/Apply.hpp>
 #include <fxt/utils/Curry.hpp>
-#endif
+#include <fxt/utils/Lift.hpp>
 
 #include <iostream>
 #include <string>
@@ -96,12 +87,6 @@ std::string describe(const result<double> &r) {
 
 void show(std::string_view label, const std::string &text) {
     std::cout << "  " << label << "\n      " << text << "\n";
-}
-
-[[maybe_unused]] void needs_newer_compiler(std::string_view what) {
-    std::cout << "  (skipped: this uses " << what
-              << ", which needs std::forward_like and deducing this:"
-              << " GCC 14, Clang 19 or MSVC)\n";
 }
 
 const Symbol x("x");
@@ -195,7 +180,7 @@ void recovery() {
 
 void all_or_nothing() {
     section("traverse: many operations, all or nothing");
-#if defined(DEMO_FULL_FXT)
+
     // traverse applies an operation to every element and gathers the values,
     // or stops at the first failure: result<std::vector<Expr>>.
     const auto integrate_all = [](const std::vector<Expr> &integrands) {
@@ -218,9 +203,6 @@ void all_or_nothing() {
     // x^n fails, as in the section before. One failure fails the whole list.
     const std::vector<Expr> one_bad = {proxima::sin(x), pow(x, n), 1 / x};
     show("integrals of sin(x), x^n, 1/x", show_all(integrate_all(one_bad)));
-#else
-    needs_newer_compiler("fxt::traverse");
-#endif
 }
 
 void combining() {
@@ -231,16 +213,9 @@ void combining() {
     // it each result with `with`. The first failure wins.
     const Expr f = pow(x, 3) - 2 * x;
     const Expr a = 1;
-#if defined(DEMO_FULL_FXT)
     const auto combine = fxt::curry([&](const Expr &value, const Expr &slope) {
         return value + slope * (x - a);
     });
-#else
-    // What fxt::curry builds, written out: `with` itself needs nothing newer.
-    const auto combine = [&](const Expr &value) {
-        return [&, value](const Expr &slope) { return value + slope * (x - a); };
-    };
-#endif
     const auto tangent
         = combine | fxt::with(result<Expr>{proxima::replace(f, x, a)})
           | fxt::with(proxima::diff(f, x) | fxt::transform([&](const Expr &d) {
@@ -249,7 +224,6 @@ void combining() {
           | fxt::and_then(FXT_LIFT(proxima::expand));
     show("tangent to x^3 - 2x at x = 1", describe(tangent));
 
-#if defined(DEMO_FULL_FXT)
     // zip gathers several results into one result holding a tuple, and
     // mapply spreads the tuple over a function: L'Hopital's rule for
     // sin(x)/x at 0, as the limit of the ratio of the derivatives.
@@ -260,14 +234,11 @@ void combining() {
           | fxt::and_then(
               [](const Expr &ratio) { return proxima::limit(ratio, x, 0); });
     show("limit of sin(x)/x at 0, by L'Hopital", describe(lhopital));
-#else
-    needs_newer_compiler("fxt::zip and fxt::mapply");
-#endif
 }
 
 void consuming() {
     section("match: one handler for each outcome");
-#if defined(DEMO_FULL_FXT)
+
     const auto report = [](const result<std::vector<Expr>> &roots) {
         return roots
                | fxt::match(
@@ -279,10 +250,6 @@ void consuming() {
                    });
     };
     show("x^2 - 5x + 6 = 0", report(proxima::solve(pow(x, 2) - 5 * x + 6, x)));
-#else
-    needs_newer_compiler("fxt::match");
-    std::cout << "  (describe() above does the same with or_else)\n";
-#endif
 }
 
 } // namespace

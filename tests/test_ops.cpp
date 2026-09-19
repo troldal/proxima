@@ -537,13 +537,10 @@ TEST_CASE("results compose with FXT's adaptors, as the README shows") {
           | fxt::value_or(std::string("no answer"));
     CHECK(answer == "6 x");
 
-#ifdef __cpp_lib_bind_back
-    // std::bind_back binds the variable without a lambda, where the standard
-    // library has it (libstdc++ 14, MSVC's STL).
+    // std::bind_back binds the variable without a lambda.
     const auto bound = proxima::diff(f, x)
                        | fxt::and_then(std::bind_back(FXT_LIFT(proxima::diff), x));
     CHECK(bound == 6 * Expr(x));
-#endif
 
     // A chain stops at the first failure, and the failure that stopped it is
     // the one that comes out.

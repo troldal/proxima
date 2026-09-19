@@ -349,20 +349,16 @@ const std::string answer
 
 `FXT_LIFT` is variadic, so the defaulted `order` and `kernel` parameters
 need no mention; a lambda binds the extra argument anywhere, and
-`std::bind_back` does where the standard library has it (libstdc++ 14,
-MSVC's STL). A chain starts from an operation's result or from
+`std::bind_back` binds it last. A chain starts from an operation's result or from
 `proxima::result<Expr>{f}`; `fxt::match`, `fxt::with`, `fxt::sequence` and
-the rest work on the same values. Only the headers used need including —
-`<fxt.hpp>` brings in `fxt::match`, which needs deducing-this (GCC 14,
-Clang 18, MSVC 19.34).
+the rest work on the same values. Include only the headers you use, or
+`<fxt.hpp>` for all of them.
 
 [`examples/functional.cpp`](../examples/functional.cpp) runs through the
 adaptors one at a time: validating with `ensure`, bringing throwing code in
 with `attempt`, recovering from a particular `Cause` with `or_else`,
 all-or-nothing work with `traverse`, and combining independent results with
-`with` and `zip`. `traverse`, `zip`, `curry` and `match` need
-`std::forward_like` and deducing this, so GCC 13 builds the demo without
-them.
+`with` and `zip`, and consuming one with `match`.
 
 `*diff(f, x)` reads a result on the spot — `diff` fails only for a malformed
 argument — and `proxima::unwrap(r)` throws a failure as the exception its

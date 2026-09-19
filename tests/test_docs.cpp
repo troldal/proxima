@@ -144,7 +144,6 @@ TEST_CASE("guide: composing with FXT") {
     proxima::Kernel kernel;
     const proxima::Symbol x("x");
     const proxima::Expr f = pow(x, 4);
-#ifdef __cpp_lib_bind_back
     const std::string answer
         = proxima::diff(f, x) | fxt::and_then(FXT_LIFT(proxima::factor))
           | fxt::and_then(
@@ -153,18 +152,6 @@ TEST_CASE("guide: composing with FXT") {
               std::bind_back(FXT_LIFT(proxima::expand), proxima::Env(kernel)))
           | fxt::transform(proxima::to_tex)
           | fxt::value_or(std::string("no answer"));
-#else
-    const std::string answer = proxima::diff(f, x)
-                               | fxt::and_then(FXT_LIFT(proxima::factor))
-                               | fxt::and_then([&](const proxima::Expr &e) {
-                                     return proxima::diff(e, x);
-                                 })
-                               | fxt::and_then([&](const proxima::Expr &e) {
-                                     return proxima::expand(e, kernel);
-                                 })
-                               | fxt::transform(proxima::to_tex)
-                               | fxt::value_or(std::string("no answer"));
-#endif
     CHECK(answer == "12 x^{2}");
 }
 
