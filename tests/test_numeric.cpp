@@ -254,8 +254,13 @@ TEST_CASE("as_function binds one variable for repeated use") {
 }
 
 TEST_CASE("the version header reports the project version") {
-    CHECK(std::string(proxima::version) == "0.1.0");
-    CHECK(proxima::version_major == 0);
+    // Against project() in CMakeLists.txt, the one place the version is
+    // written, rather than a copy of it here to update at every release.
+    CHECK(std::string(proxima::version) == PROXIMA_PROJECT_VERSION);
+    CHECK(std::string(proxima::version)
+          == std::to_string(proxima::version_major) + "."
+                 + std::to_string(proxima::version_minor) + "."
+                 + std::to_string(proxima::version_patch));
 }
 
 // --- the compiled form ----------------------------------------------------

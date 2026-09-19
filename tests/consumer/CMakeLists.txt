@@ -31,7 +31,7 @@ if (CONSUMER_FETCH)
         endif ()
     endforeach ()
 else ()
-    find_package(proxima 0.1 REQUIRED)
+    find_package(proxima REQUIRED)
 endif ()
 
 add_executable(consumer main.cpp)

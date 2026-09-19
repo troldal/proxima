@@ -111,7 +111,7 @@ cmake --install build/linux --prefix /usr/local
 ```
 
 ```cmake
-find_package(proxima 0.1 REQUIRED)
+find_package(proxima REQUIRED)
 target_link_libraries(my_app PRIVATE proxima::proxima)
 ```
 

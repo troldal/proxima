@@ -269,9 +269,17 @@ configure_package_config_file(
         "${CMAKE_CURRENT_BINARY_DIR}/proximaConfig.cmake"
         INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/proxima
 )
+# Semantic versioning: before 1.0 a minor release may break the API, so
+# find_package(proxima 0.2) accepts any 0.2.x and nothing else; from 1.0, any
+# later release with the same major version.
+if (PROJECT_VERSION_MAJOR EQUAL 0)
+    set(PROXIMA_COMPATIBILITY SameMinorVersion)
+else ()
+    set(PROXIMA_COMPATIBILITY SameMajorVersion)
+endif ()
 write_basic_package_version_file(
         "${CMAKE_CURRENT_BINARY_DIR}/proximaConfigVersion.cmake"
-        COMPATIBILITY SameMajorVersion
+        COMPATIBILITY ${PROXIMA_COMPATIBILITY}
 )
 install(FILES
         "${CMAKE_CURRENT_BINARY_DIR}/proximaConfig.cmake"

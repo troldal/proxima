@@ -52,9 +52,12 @@ target_compile_options(proxima_tests PRIVATE ${PROXIMA_MSVC_UTF8} ${PROXIMA_WARN
 # exactly what the Maxima-free tests exercise.
 target_include_directories(proxima_tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
-# The recorded Maxima replies the reader and mapping layers are tested against.
+# The recorded Maxima replies the reader and mapping layers are tested against;
+# and the version in project(), for the test that the generated
+# <proxima/version.hpp> agrees with it.
 target_compile_definitions(proxima_tests PRIVATE
-        PROXIMA_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden")
+        PROXIMA_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"
+        PROXIMA_PROJECT_VERSION="${PROJECT_VERSION}")
 
 # Two CTest entries over one binary, split by doctest test suite. Tests that
 # need a working Maxima installation are labelled so they can be excluded:

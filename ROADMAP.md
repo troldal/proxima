@@ -95,9 +95,15 @@ presents as central.
   *Done:* the `sanitize` job runs the whole suite, Maxima included, under
   both. The `linux-sanitize` and `wsl-sanitize` presets do the same locally.
   The first run found nothing.
-- [ ] **A release process.** `CHANGELOG.md`, git tags, a release checklist, and
+- [x] **A release process.** `CHANGELOG.md`, git tags, a release checklist, and
   the version kept in one place (`project()` in `CMakeLists.txt`, which the
   docs already read).
+  *Done:*
+  - `CHANGELOG.md` and the checklist in `RELEASING.md`;
+  - a workflow that publishes a GitHub release for a pushed `vX.Y.Z` tag,
+    refusing one that does not match `project()`;
+  - the last copies of the version gone from the tests and the docs;
+  - before 1.0, `find_package` accepts only the same minor version.
 - [ ] **Publish the documentation** at `docs.kinetiq.dev/proxima`: set
   `html_baseurl`, and deploy from CI or from CLion.
 - [x] **Fix the fuzzing build's examples.** In a build configured for fuzzing,

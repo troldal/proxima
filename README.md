@@ -137,9 +137,14 @@ cmake --install build/linux --prefix /usr/local
 ```
 
 ```cmake
-find_package(proxima 0.1 REQUIRED)
+find_package(proxima REQUIRED)
 target_link_libraries(my_app PRIVATE proxima::proxima)
 ```
+
+To require a version, write it: `find_package(proxima 0.2 REQUIRED)`. Proxima
+follows [semantic versioning](https://semver.org), so before 1.0 each minor
+release may change the API, and that accepts any 0.2.x but not 0.3. What
+changed between releases is in the [changelog](CHANGELOG.md).
 
 Or build it from source as part of your project:
 

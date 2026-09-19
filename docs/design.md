@@ -765,7 +765,7 @@ source this library never interpreted and so has nothing that could evaluate it.
 **Packaging.** `install`/`export` with a generated `proximaConfig.cmake`, so
 
 ```cmake
-find_package(proxima 0.1 REQUIRED)
+find_package(proxima REQUIRED)
 target_link_libraries(my_app PRIVATE proxima::proxima)
 ```
 

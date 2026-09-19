@@ -36,7 +36,7 @@ project(hello_proxima LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(proxima 0.1 REQUIRED)
+find_package(proxima REQUIRED)
 
 add_executable(hello main.cpp)
 target_link_libraries(hello PRIVATE proxima::proxima)
