@@ -52,7 +52,7 @@ The library works; this milestone makes it easy and safe to *use from another
 project*, and closes the one gap that breaks a workflow the documentation
 presents as central.
 
-- [ ] **Evaluate what Maxima answers.** "Solve or integrate with Maxima, then
+- [x] **Evaluate what Maxima answers.** "Solve or integrate with Maxima, then
   evaluate in C++" breaks on everyday answers, because `eval_numeric` and
   `Compiled` know a fixed set of functions. Checked against Maxima 5.50:
   `integrate(tan(x), x)` is `log(sec(x))`, and `sec` cannot be evaluated;
@@ -62,10 +62,16 @@ presents as central.
   `factorial` and `double_factorial`; a complex evaluation mode with
   `std::complex`; and, for a function still unknown, a way to fall back on
   Maxima's `to_float` rather than fail.
-- [ ] **Builders for every function numeric evaluation knows,** and the
+  *Done:* those six, the reciprocal hyperbolics and every inverse, `erfc`,
+  and `realpart` and its kin; `eval_complex`, on Maxima's side of every
+  branch cut; and `to_double`/`to_complex`, which ask Maxima only for what
+  cannot be evaluated locally. A test checks every function against
+  Maxima's `float`, at real and complex points.
+- [x] **Builders for every function numeric evaluation knows,** and the
   reverse. `atan2`, `min`, `max` and `mod` can be evaluated but have no
   builders in `<proxima/functions.hpp>`; `sec`, `csc`, `cot`, `gamma` and
   `factorial` have neither. One list, checked by a test.
+  *Done:* `numeric_functions()` is the list.
 
 - [ ] **Build the examples only as the top-level project.** `demo`, `tour` and
   `functional` are added unconditionally today, so a project that pulls

@@ -24,6 +24,25 @@ if (const auto roots = px::solve(eq(pow(x, 2), 2), x)) {
 `eval_numeric` needs no Maxima, and the roots have no free symbols left, so it
 needs no bindings either.
 
+## Complex roots
+
+A root with `%i` in it is a complex number, and `eval_numeric` refuses it.
+Evaluate it with `eval_complex`:
+
+```cpp
+#include <complex>
+
+if (const auto roots = px::solve(eq(pow(x, 2), -1), x)) {    // -%i, %i
+    for (const px::Expr &root : *roots) {
+        const std::complex<double> z = *px::eval_complex(root); // (0,-1), (0,1)
+    }
+}
+```
+
+`%i` can appear even when every root is real. The three real roots of
+`x^3 - 3*x + 1` come back from Maxima in terms of `%i`. `eval_complex` gives
+them with an imaginary part of rounding error, so take `.real()`.
+
 ## A system of equations
 
 Give the equations and the unknowns; each solution holds a value per unknown,

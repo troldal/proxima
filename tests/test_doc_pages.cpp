@@ -23,9 +23,11 @@
 
 #include <algorithm>
 #include <array>
+#include <complex>
 #include <filesystem>
 #include <format>
 #include <functional>
+#include <numbers>
 #include <numeric>
 #include <optional>
 #include <ranges>
@@ -239,6 +241,43 @@ TEST_CASE("how-to/solve-and-evaluate") {
     const auto root = px::find_root(quintic, x, 1.0, 2.0);
     REQUIRE(root.has_value());
     CHECK(*root == doctest::Approx(1.1673).epsilon(1e-4));
+}
+
+TEST_CASE("how-to/solve-and-evaluate: complex roots") {
+    const px::Symbol x("x");
+
+    const auto roots = px::solve(eq(pow(x, 2), -1), x);
+    REQUIRE(roots.has_value());
+    REQUIRE(roots->size() == 2);
+    CHECK((*roots)[0] == -px::i());
+    CHECK(*px::eval_complex((*roots)[0]) == std::complex<double>(0, -1));
+    CHECK(*px::eval_complex((*roots)[1]) == std::complex<double>(0, 1));
+    CHECK_FALSE(px::eval_numeric((*roots)[0]).has_value());
+
+    // Three real roots, written with %i.
+    const px::Expr cubic = pow(x, 3) - 3 * x + 1;
+    const auto real_roots = px::solve(eq(cubic, 0), x);
+    REQUIRE(real_roots.has_value());
+    REQUIRE(real_roots->size() == 3);
+    for (const px::Expr &r : *real_roots) {
+        CAPTURE(r.str());
+        CHECK(px::contains(r, px::Symbol("%i")));
+        const std::complex<double> z = *px::eval_complex(r);
+        CHECK(std::abs(z.imag()) < 1e-12);
+        CHECK(*px::eval_numeric(cubic, {{x, z.real()}})
+              == doctest::Approx(0.0).epsilon(1e-9));
+    }
+}
+
+TEST_CASE("guide/numeric: complex numbers and Maxima's help") {
+    const px::Symbol x("x");
+    CHECK(*px::eval_complex(px::log(px::Expr(-1)))
+          == std::complex<double>(0, std::numbers::pi));
+
+    const px::Expr j0 = px::Expr::function("bessel_j", {px::Expr(0), x});
+    CHECK(*px::to_double(j0, {{x, 1.0}}) == doctest::Approx(0.765198).epsilon(1e-6));
+    CHECK(*px::to_double(px::sin(x), {{x, 1.0}})
+          == doctest::Approx(0.841471).epsilon(1e-6));
 }
 
 TEST_CASE("how-to/evaluate-many-points: from an integral") {

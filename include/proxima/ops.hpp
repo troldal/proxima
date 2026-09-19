@@ -2,10 +2,12 @@
 
 #include <proxima/expr.hpp>
 #include <proxima/kernel.hpp>
+#include <proxima/numeric.hpp>
 #include <proxima/result.hpp>
 #include <proxima/symbol.hpp>
 #include <proxima/traverse.hpp> // contains and replace, which need no kernel.
 
+#include <complex>
 #include <cstddef>
 #include <span>
 #include <string>
@@ -97,6 +99,28 @@ result<Expr> partfrac(const Expr &expr, const Symbol &wrt, const Env &env = {});
 /// evaluation with no kernel, see proxima::eval_numeric. (Not `float`, which C++
 /// reserves.)
 result<Expr> to_float(const Expr &expr, const Env &env = {});
+
+/// The value of `expr` at `bindings`, as eval_numeric gives it, or from Maxima
+/// where eval_numeric cannot give it.
+///
+/// An expression eval_numeric can evaluate is evaluated locally, with no round
+/// trip. One it cannot — a function it does not know, such as
+/// `bessel_j(0, x)`, or Maxima text in an Opaque node — goes to Maxima, which
+/// substitutes the bindings and applies `float`; its answer is then evaluated
+/// as eval_numeric would. Cached, like any question, so the second time costs
+/// a lookup rather than a round trip; still, for many points, it is better to
+/// find a closed form Compiled can take.
+///
+/// A Failure, with Cause::Eval, when Maxima's answer is no number either: a
+/// symbol still without a value, a complex number (see to_complex), a function
+/// Maxima cannot evaluate numerically. A failure of Maxima's own, such as an
+/// error for gamma at a pole, comes back as it does from any question.
+result<double> to_double(const Expr &expr, const Bindings &bindings = {},
+                         const Env &env = {});
+
+/// to_double over the complex numbers: eval_complex, falling back on Maxima.
+result<std::complex<double>>
+to_complex(const Expr &expr, const Bindings &bindings = {}, const Env &env = {});
 
 /// The coefficient of `term^power` in `expr`. The expression is taken as it
 /// stands, not expanded first — as Maxima's coeff does — so the coefficient

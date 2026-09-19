@@ -11,14 +11,19 @@
 #include <proxima/symbol.hpp>
 #include <proxima/version.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <complex>
 #include <concepts>
 #include <functional>
 #include <limits>
 #include <numbers>
+#include <optional>
+#include <set>
 #include <span>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -584,3 +589,321 @@ TEST_CASE("with() adds a binding to a copy, and leaves the original alone") {
     CHECK(here.find("g")->second == 10.0);
     CHECK(*proxima::eval_numeric(Expr::symbol("g") * h, here) == 20.0);
 }
+
+// --- the functions Maxima writes into its answers, and complex evaluation ---
+
+namespace {
+
+/// One builder per function numeric evaluation knows, with the name it has
+/// there: the list the test below holds both sides to.
+struct Built {
+    std::string_view name;
+    Expr expr;
+};
+
+std::vector<Built> every_builder(const Symbol &x, const Symbol &y) {
+    namespace px = proxima;
+    return {
+        {"sin", px::sin(x)},
+        {"cos", px::cos(x)},
+        {"tan", px::tan(x)},
+        {"sec", px::sec(x)},
+        {"csc", px::csc(x)},
+        {"cot", px::cot(x)},
+        {"asin", px::asin(x)},
+        {"acos", px::acos(x)},
+        {"atan", px::atan(x)},
+        {"asec", px::asec(x)},
+        {"acsc", px::acsc(x)},
+        {"acot", px::acot(x)},
+        {"atan2", px::atan2(y, x)},
+        {"sinh", px::sinh(x)},
+        {"cosh", px::cosh(x)},
+        {"tanh", px::tanh(x)},
+        {"sech", px::sech(x)},
+        {"csch", px::csch(x)},
+        {"coth", px::coth(x)},
+        {"asinh", px::asinh(x)},
+        {"acosh", px::acosh(x)},
+        {"atanh", px::atanh(x)},
+        {"asech", px::asech(x)},
+        {"acsch", px::acsch(x)},
+        {"acoth", px::acoth(x)},
+        {"exp", px::exp(x)},
+        {"log", px::log(x)},
+        {"sqrt", px::sqrt(x)},
+        {"gamma", px::gamma(x)},
+        {"factorial", px::factorial(x)},
+        {"double_factorial", px::double_factorial(x)},
+        {"erf", px::erf(x)},
+        {"erfc", px::erfc(x)},
+        {"abs", px::abs(x)},
+        {"signum", px::signum(x)},
+        {"floor", px::floor(x)},
+        {"ceiling", px::ceiling(x)},
+        {"round", px::round(x)},
+        {"mod", px::mod(x, y)},
+        {"max", px::max(x, y, 1)},
+        {"min", px::min(x, y, 1)},
+        {"realpart", px::realpart(x)},
+        {"imagpart", px::imagpart(x)},
+        {"conjugate", px::conjugate(x)},
+        {"cabs", px::cabs(x)},
+        {"carg", px::carg(x)},
+    };
+}
+
+} // namespace
+
+TEST_CASE("every function numeric evaluation knows has a builder, and the reverse") {
+    const Symbol x("x");
+    const Symbol y("y");
+
+    std::set<std::string_view> built;
+    for (const Built &builder : every_builder(x, y)) {
+        CAPTURE(builder.name);
+        CHECK(built.insert(builder.name).second); // Listed once.
+        // exp and sqrt build %e^x and x^(1/2), Maxima having no node for
+        // either; everything else is a call to the function of that name.
+        if (builder.name != "exp" && builder.name != "sqrt") {
+            REQUIRE(builder.expr.is(proxima::Kind::Function));
+            CHECK(builder.expr.name() == builder.name);
+        }
+        CHECK(proxima::is_evaluable(builder.expr, {{x, 0.5}, {y, 2.0}}));
+    }
+
+    const std::span<const std::string_view> known = proxima::numeric_functions();
+    const std::set<std::string_view> evaluable(known.begin(), known.end());
+    CHECK(evaluable.size() == known.size()); // Named once.
+    CHECK(built == evaluable);
+}
+
+TEST_CASE("the reciprocal functions, as Maxima defines them") {
+    const auto at = [](const Expr &expr) { return *proxima::eval_numeric(expr); };
+    constexpr double pi = std::numbers::pi;
+
+    CHECK(at(proxima::sec(Expr(0))) == 1.0);
+    CHECK(at(proxima::csc(Expr(pi / 2))) == 1.0);
+    CHECK(at(proxima::cot(Expr(pi / 4))) == doctest::Approx(1.0));
+    CHECK(at(proxima::sech(Expr(0))) == 1.0);
+    CHECK(at(proxima::coth(Expr(1000))) == 1.0); // Not inf/inf.
+    CHECK(at(proxima::asec(Expr(2))) == doctest::Approx(pi / 3));
+    CHECK(at(proxima::acsc(Expr(2))) == doctest::Approx(pi / 6));
+    // atan(1/x), so negative for a negative argument: -pi/4, not 3pi/4.
+    CHECK(at(proxima::acot(Expr(-1))) == doctest::Approx(-pi / 4));
+    CHECK(at(proxima::acot(Expr(0))) == doctest::Approx(pi / 2));
+    CHECK(at(proxima::acoth(Expr(2))) == doctest::Approx(0.5493061443340549));
+
+    // What made them necessary: Maxima's integral of tan(x).
+    const Symbol x("x");
+    CHECK(*proxima::eval_numeric(proxima::log(proxima::sec(x)), {{x, 1.0}})
+          == doctest::Approx(-std::log(std::cos(1.0))));
+}
+
+TEST_CASE("gamma and the factorials") {
+    const auto at = [](const Expr &expr) { return *proxima::eval_numeric(expr); };
+
+    SUBCASE("exact where the answer is an integer a double holds") {
+        CHECK(at(proxima::gamma(Expr(5))) == 24.0);
+        CHECK(at(proxima::factorial(Expr(0))) == 1.0);
+        CHECK(at(proxima::factorial(Expr(5))) == 120.0);
+        CHECK(at(proxima::factorial(Expr(22))) == 1124000727777607680000.0);
+        CHECK(at(proxima::double_factorial(Expr(7))) == 105.0);
+        CHECK(at(proxima::double_factorial(Expr(8))) == 384.0);
+        CHECK(at(proxima::double_factorial(Expr(0))) == 1.0);
+        CHECK(at(proxima::double_factorial(Expr(-1))) == 1.0);
+    }
+    SUBCASE("continued past the integers, as Maxima continues them") {
+        CHECK(at(proxima::gamma(Expr(0.5))) == doctest::Approx(1.772453850905516));
+        CHECK(at(proxima::factorial(Expr(2.5)))
+              == doctest::Approx(3.3233509704478426));
+        CHECK(at(proxima::double_factorial(Expr(2.5)))
+              == doctest::Approx(2.4070694561160435));
+        CHECK(at(proxima::double_factorial(Expr(0.5)))
+              == doctest::Approx(0.9628277824464171));
+    }
+    SUBCASE("overflowing to infinity") {
+        CHECK(std::isinf(at(proxima::factorial(Expr(171)))));
+        CHECK(std::isfinite(at(proxima::double_factorial(Expr(300)))));
+        CHECK(std::isinf(at(proxima::double_factorial(Expr(301)))));
+        CHECK(std::isinf(at(proxima::double_factorial(Expr(1000)))));
+    }
+    SUBCASE("5! and 7!! as Expr::parse reads them") {
+        CHECK(at(*Expr::parse("5!")) == 120.0);
+        CHECK(at(*Expr::parse("7!!")) == 105.0);
+        CHECK(at(*Expr::parse("3!!!")) == 6.0); // (3!!)!, which is 3!.
+    }
+    CHECK(at(proxima::erfc(Expr(0.5))) == doctest::Approx(0.4795001221869535));
+}
+
+TEST_CASE("the compiled form knows the same functions") {
+    const Symbol x("x");
+    const Expr f = proxima::log(proxima::sec(x)) + proxima::gamma(x)
+                   + proxima::double_factorial(x) + proxima::acot(x);
+    const proxima::Compiled compiled(f, x);
+    // At 2.5 and 4, sec(x) is negative and its log NaN, in both.
+    for (const double value : {0.3, 1.0, 2.5, 4.0}) {
+        CHECK(same_number(compiled(value), *proxima::eval_numeric(f, {{x, value}})));
+    }
+}
+
+TEST_CASE("complex evaluation") {
+    using Complex = std::complex<double>;
+    const Symbol x("x");
+    const Expr i = proxima::i();
+    const auto at = [](const Expr &expr) { return *proxima::eval_complex(expr); };
+
+    SUBCASE("%i is the imaginary unit") {
+        CHECK(at(i) == Complex(0, 1));
+        CHECK(at(-i) == Complex(0, -1));
+        CHECK(at(2 + 3 * i) == Complex(2, 3));
+        // Exactly: by multiplication, not by std::pow.
+        CHECK(at(pow(i, 2)) == Complex(-1, 0));
+        CHECK(at(pow(1 + i, -1)) == Complex(0.5, -0.5));
+    }
+    SUBCASE("functions take their principal values") {
+        CHECK(at(proxima::sqrt(Expr(-4))) == Complex(0, 2));
+        const Complex log_minus_one = at(proxima::log(Expr(-1)));
+        CHECK(log_minus_one.real() == 0.0);
+        CHECK(log_minus_one.imag() == doctest::Approx(std::numbers::pi));
+        CHECK(at(proxima::exp(i * proxima::pi())).real() == doctest::Approx(-1.0));
+        CHECK(at(proxima::cabs(3 + 4 * i)) == Complex(5, 0));
+        CHECK(at(proxima::realpart(3 + 4 * i)) == Complex(3, 0));
+        CHECK(at(proxima::imagpart(3 + 4 * i)) == Complex(4, 0));
+        CHECK(at(proxima::conjugate(3 + 4 * i)) == Complex(3, -4));
+    }
+    SUBCASE("on a branch cut, the side Maxima takes") {
+        // The upper side, except for asin, acos and atanh above 1.
+        CHECK(at(proxima::asin(Expr(2))).imag() < 0);
+        CHECK(at(proxima::asin(Expr(-2))).imag() > 0);
+        CHECK(at(proxima::acos(Expr(2))).imag() > 0);
+        CHECK(at(proxima::atanh(Expr(2))).imag() < 0);
+        CHECK(at(proxima::acosh(Expr(0.5))).imag() > 0);
+        CHECK(at(proxima::log(Expr(-2))).imag() > 0);
+        // And 1/x taken for a real x is real, not a side of the cut chosen by
+        // the sign of a zero: acsc(1/2) is asin(2).
+        CHECK(at(proxima::acsc(Expr(0.5))) == at(proxima::asin(Expr(2))));
+        CHECK(at(proxima::asec(Expr(-0.5))) == at(proxima::acos(Expr(-2))));
+    }
+    SUBCASE("a real expression gives exactly the real evaluator's number") {
+        const Expr f = pow(x, 3) - proxima::sin(x) / x + proxima::gamma(x)
+                       + proxima::atan2(x, Expr(-1)) + pow(x, Expr::rational(1, 3));
+        for (const double value : {0.25, 1.0, 3.5}) {
+            const Complex complex = *proxima::eval_complex(f, {{x, value}});
+            CHECK(complex.real() == *proxima::eval_numeric(f, {{x, value}}));
+            CHECK(complex.imag() == 0.0);
+        }
+    }
+    SUBCASE("a function with no complex meaning takes real arguments only") {
+        CHECK(at(proxima::floor(Expr(2.5))) == Complex(2, 0));
+        const auto refused = proxima::eval_complex(proxima::floor(i));
+        REQUIRE_FALSE(refused.has_value());
+        CHECK(proxima::cause_of(refused.error()) == proxima::Cause::Eval);
+        CHECK(refused.error().message().find("floor") != std::string::npos);
+    }
+    SUBCASE("the real evaluators say where to go instead") {
+        const auto real = proxima::eval_numeric(-i);
+        REQUIRE_FALSE(real.has_value());
+        CHECK(real.error().message().find("eval_complex") != std::string::npos);
+        CHECK_THROWS_AS(proxima::Compiled(i * x, x), proxima::EvalError);
+    }
+}
+
+TEST_SUITE("maxima") {
+
+TEST_CASE("every function evaluates as Maxima evaluates it") {
+    // Checked against Maxima's float, over the complex numbers, so that where
+    // a function leaves its real domain the branch taken is Maxima's too —
+    // and not against numbers written here by whoever wrote the functions.
+    using Complex = std::complex<double>;
+    proxima::Kernel kernel;
+    const Symbol x("x");
+    const Symbol y("y");
+
+    const auto close = [](Complex local, Complex maxima) {
+        return std::abs(local - maxima) <= 1e-10 * std::max(1.0, std::abs(maxima));
+    };
+    // Maxima's number for `expr`, which must be one: a function left in the
+    // answer would be evaluated here, and the check would check nothing.
+    const auto maxima = [&kernel](const Expr &expr) -> std::optional<Complex> {
+        const auto answer = proxima::to_float(expr, kernel);
+        if (!answer) {
+            return std::nullopt; // A pole, or a domain Maxima refuses.
+        }
+        CAPTURE(answer->str());
+        REQUIRE_FALSE(proxima::any_of(
+            *answer, [](const Expr &e) { return e.is(proxima::Kind::Function); }));
+        return *proxima::eval_complex(*answer);
+    };
+
+    const double reals[] = {-2.5, -0.7, 0.3, 0.5, 2.0, 3.5};
+    const Complex complexes[] = {{0.3, 0.5}, {-1.5, -0.25}};
+
+    for (const Built &builder : every_builder(x, y)) {
+        CAPTURE(builder.name);
+        const auto at = [&](const Expr &value) {
+            return proxima::replace(proxima::replace(builder.expr, x, value), y,
+                                    Expr(2));
+        };
+        for (const double value : reals) {
+            CAPTURE(value);
+            const Expr point = at(Expr(value));
+            const auto expected = maxima(point);
+            if (!expected) {
+                continue;
+            }
+            const Complex local = *proxima::eval_complex(point);
+            CAPTURE(local);
+            CAPTURE(*expected);
+            CHECK(close(local, *expected));
+            if (expected->imag() == 0.0) {
+                CHECK(close(*proxima::eval_numeric(point), *expected));
+            }
+        }
+        // A complex argument, for the functions with a complex meaning.
+        for (const Complex z : complexes) {
+            CAPTURE(z);
+            const Expr point = at(Expr(z.real()) + Expr(z.imag()) * proxima::i());
+            const auto local = proxima::eval_complex(point);
+            if (!local) {
+                continue; // floor and the rest, refused as they should be.
+            }
+            const auto expected = maxima(point);
+            REQUIRE(expected.has_value());
+            CAPTURE(*local);
+            CAPTURE(*expected);
+            CHECK(close(*local, *expected));
+        }
+    }
+}
+
+TEST_CASE("to_double asks Maxima for what it cannot evaluate itself") {
+    proxima::Kernel kernel;
+    const Symbol x("x");
+    const Expr bessel = Expr::function("bessel_j", {Expr(0), x});
+
+    REQUIRE_FALSE(proxima::eval_numeric(bessel, {{x, 1.0}}).has_value());
+    CHECK(*proxima::to_double(bessel, {{x, 1.0}}, kernel)
+          == doctest::Approx(0.7651976865579666));
+    // The bindings reach inside an Opaque node, which only Maxima can read.
+    CHECK(*proxima::to_double(Expr::opaque("x!") + 1, {{x, 5.0}}, kernel)
+          == doctest::Approx(121.0));
+
+    SUBCASE("what Maxima cannot make a number of is still refused") {
+        const auto unbound = proxima::to_double(bessel + x, {}, kernel);
+        REQUIRE_FALSE(unbound.has_value());
+        CHECK(proxima::cause_of(unbound.error()) == proxima::Cause::Eval);
+        CHECK(unbound.error().message().find("no value for the symbol x")
+              != std::string::npos);
+    }
+    SUBCASE("a complex answer is no double, but it is a complex number") {
+        const Expr root = proxima::sqrt(bessel);
+        CHECK_FALSE(proxima::to_double(root, {{x, 3.0}}, kernel).has_value());
+        const auto complex = proxima::to_complex(root, {{x, 3.0}}, kernel);
+        REQUIRE(complex.has_value());
+        CHECK(complex->real() == doctest::Approx(0.0));
+        CHECK(complex->imag() == doctest::Approx(std::sqrt(0.26005195490193345)));
+    }
+}
+
+} // TEST_SUITE("maxima")

@@ -35,3 +35,69 @@ instead of throwing.
 
 `%pi` and friends are recognised; an explicit binding overrides them. An
 unknown function is an error rather than a guess.
+
+## Which functions
+
+The functions Maxima writes into its answers, under Maxima's names and with
+Maxima's meanings:
+
+- **Trigonometric and hyperbolic:** `sin` … `tanh`, their reciprocals
+  `sec`, `csc`, `cot`, `sech`, `csch`, `coth`, and all the inverses.
+  `integrate(tan(x), x)` is `log(sec(x))`, and evaluates.
+- **The rest:**
+  - `exp`, `log`, `sqrt`;
+  - `gamma`, `factorial`, `double_factorial`, `erf`, `erfc`;
+  - `abs`, `signum`, `floor`, `ceiling`, `round`, `mod`, `max`, `min`, `atan2`;
+  - `realpart`, `imagpart`, `conjugate`, `cabs`, `carg`.
+
+`proxima::numeric_functions()` lists them. Each has a builder in
+`<proxima/functions.hpp>` — `proxima::sec(x)`, `proxima::mod(x, 3)` — so
+anything built there can be evaluated. Where a `<cmath>` function of the same
+name means something else, Maxima's meaning wins:
+
+- `mod(-7, 3)` is 2;
+- `round(2.5)` is 2;
+- `acot(-1)` is `-%pi/4`.
+
+Each is checked against Maxima itself in the tests.
+
+Outside a function's real domain the answer is NaN or an infinity, as from
+`<cmath>`: `log(-1)` is NaN.
+
+## Complex numbers
+
+Maxima's answers are sometimes complex, even when their value is real: the
+roots of `x^2 = -1` are `%i` and `-%i`, and the roots of a cubic often carry
+an `%i` that cancels. `eval_complex` evaluates over the complex numbers, with
+`%i` the imaginary unit:
+
+```cpp
+*proxima::eval_complex(roots[0]);                       // (0,-1)
+*proxima::eval_complex(proxima::log(proxima::Expr(-1)));  // (0,3.14159)
+```
+
+Each function takes its principal value, on the same side of each branch cut
+as Maxima, so `asin(2.0)` is `1.5708 - 1.317 %i`, as it is in Maxima.
+
+A real expression gives exactly the number `eval_numeric` gives, with a zero
+imaginary part. A function with no complex meaning — `floor`, `mod`, `gamma`
+and the like — evaluates only when its arguments are real. `Compiled` has no
+complex counterpart.
+
+## When Maxima knows more
+
+For a function evaluation does not know — `bessel_j`, say — or for Maxima
+text held in an `Opaque` node, `to_double` asks Maxima:
+
+```cpp
+const px::Expr j0 = px::Expr::function("bessel_j", {px::Expr(0), x});
+*px::to_double(j0, {{x, 1.0}});                         // 0.765198, from Maxima
+*px::to_double(px::sin(x), {{x, 1.0}});                 // 0.841471, no round trip
+```
+
+It evaluates locally whenever it can. Otherwise it has Maxima substitute the
+bindings and apply `float`, then evaluates Maxima's answer. `to_complex` is
+the same over the complex numbers.
+
+It needs a kernel, and is one question per new point. For many points, first
+look for a closed form in functions `Compiled` knows.

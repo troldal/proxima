@@ -5,7 +5,10 @@
 #include <proxima/errors.hpp>
 
 #include <algorithm>
+#include <cmath>
+#include <complex>
 #include <format>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -348,6 +351,70 @@ result<Expr> partfrac(const Expr &expr, const Symbol &wrt, const Env &env) {
 
 result<Expr> to_float(const Expr &expr, const Env &env) {
     return evaluate(env, call("float", {expr}));
+}
+
+namespace {
+
+/// `float(subst([x = 1.0, ...], expr))`: the question to_double asks Maxima.
+/// Substituted there rather than here with replace(), which cannot see into
+/// an Opaque node — and Maxima text in one is a reason to be asking at all.
+/// None when a value is NaN, which Maxima has no way to write.
+std::optional<Expr> float_question(const Expr &expr, const Bindings &bindings) {
+    std::vector<Expr> equations;
+    equations.reserve(bindings.size());
+    for (const auto &[name, value] : bindings) {
+        if (std::isnan(value)) {
+            return std::nullopt;
+        }
+        equations.push_back(eq(Expr::symbol(name), Expr(value)));
+    }
+    if (equations.empty()) {
+        return call("float", {expr});
+    }
+    return call("float",
+                {call("subst", {call("list", std::move(equations)), expr})});
+}
+
+/// `local`, which is eval_numeric or eval_complex, and failing that the same
+/// applied to what Maxima makes of the expression.
+template <typename Number, typename Local>
+result<Number> with_fallback(const Expr &expr, const Bindings &bindings,
+                             const Env &env, Local local) {
+    result<Number> here = local(expr, bindings);
+    if (here) {
+        return here;
+    }
+    const std::optional<Expr> question = float_question(expr, bindings);
+    if (!question) {
+        return here;
+    }
+    const result<Expr> answer = evaluate(env, *question);
+    if (!answer) {
+        return fxt::unexpected(answer.error());
+    }
+    result<Number> there = local(*answer, Bindings{});
+    if (!there) {
+        return refuse(Cause::Eval,
+                      "Maxima evaluates " + expr.str() + " to " + answer->str()
+                          + ", which is not a number: " + there.error().message());
+    }
+    return there;
+}
+
+} // namespace
+
+result<double> to_double(const Expr &expr, const Bindings &bindings,
+                         const Env &env) {
+    return with_fallback<double>(
+        expr, bindings, env,
+        [](const Expr &e, const Bindings &b) { return eval_numeric(e, b); });
+}
+
+result<std::complex<double>> to_complex(const Expr &expr, const Bindings &bindings,
+                                        const Env &env) {
+    return with_fallback<std::complex<double>>(
+        expr, bindings, env,
+        [](const Expr &e, const Bindings &b) { return eval_complex(e, b); });
 }
 
 result<Expr> coeff(const Expr &expr, const Expr &term, int power, const Env &env) {

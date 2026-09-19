@@ -4,6 +4,7 @@
 #include <proxima/result.hpp>
 #include <proxima/symbol.hpp>
 
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -110,16 +111,48 @@ private:
 /// `minf`. An explicit binding wins over them, so a symbol called `%e` can be
 /// given a different value if that is genuinely what is wanted.
 ///
+/// The functions are those numeric_functions() lists, under Maxima's names and
+/// with Maxima's meanings: `mod` and `round` are Maxima's rather than
+/// `<cmath>`'s, `acot(x)` is `atan(1/x)`, and `double_factorial` is Maxima's
+/// continuation of it to non-integers. Outside a function's real domain the
+/// answer is what `<cmath>` gives, NaN or an infinity — `log(-1)` is NaN, where
+/// eval_complex gives `%pi*%i`.
+///
 /// A Failure, with Cause::Eval, for anything it cannot turn into a number: an
-/// unbound symbol, a function it does not know, a relation, or an Opaque
+/// unbound symbol, `%i`, a function it does not know, a relation, or an Opaque
 /// node — the last being Maxima source text this library never interpreted,
-/// which is precisely why it cannot be evaluated here.
+/// which is precisely why it cannot be evaluated here. For a function it does
+/// not know, proxima::to_double asks Maxima instead.
 result<double> eval_numeric(const Expr &expr, const Bindings &bindings = {});
 
 /// True when eval_numeric could succeed: every symbol bound and every function
 /// known. Cheaper than evaluating, when the caller wants to ask before
 /// committing, and builds no message.
 bool is_evaluable(const Expr &expr, const Bindings &bindings = {});
+
+/// Evaluates an expression to a complex number, once: eval_numeric over the
+/// complex numbers, with `%i` the imaginary unit.
+///
+/// For the answers Maxima gives in complex numbers — the roots of `x^2 = -1`
+/// are `%i` and `-%i`, and those of a cubic are often written with `%i` even
+/// when they are real. Each function takes its principal value, as Maxima's
+/// `rectform(float(...))` does: `log(-1)` is `%pi*%i` and `sqrt(-4)` is
+/// `2*%i`. A function with no complex meaning here (`floor`, `mod`, `gamma`, …)
+/// is evaluated as it is by eval_numeric when its arguments are real, and
+/// refused when they are not.
+///
+/// A real expression evaluates to exactly the number eval_numeric gives, with
+/// a zero imaginary part; arithmetic is done in real numbers wherever the
+/// answer is real. The bindings are real numbers, as for eval_numeric.
+///
+/// Compiled has no complex counterpart; this walks the expression every time.
+result<std::complex<double>> eval_complex(const Expr &expr,
+                                          const Bindings &bindings = {});
+
+/// The functions eval_numeric, eval_complex and Compiled can evaluate, by the
+/// names Maxima gives them, in no particular order. `<proxima/functions.hpp>`
+/// has a builder for every one.
+std::span<const std::string_view> numeric_functions();
 
 namespace detail {
 
