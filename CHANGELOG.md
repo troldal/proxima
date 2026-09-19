@@ -37,7 +37,8 @@ Toward 0.2.0, *ready to depend on*.
     FetchContent;
   - MinGW GCC;
   - the whole suite under the sanitizers;
-  - a release workflow.
+  - a release workflow;
+  - publishing the documentation at https://docs.kinetiq.dev/proxima/.
 
 ### Changed
 

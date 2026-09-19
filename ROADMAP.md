@@ -104,8 +104,11 @@ presents as central.
     refusing one that does not match `project()`;
   - the last copies of the version gone from the tests and the docs;
   - before 1.0, `find_package` accepts only the same minor version.
-- [ ] **Publish the documentation** at `docs.kinetiq.dev/proxima`: set
+- [x] **Publish the documentation** at `docs.kinetiq.dev/proxima`: set
   `html_baseurl`, and deploy from CI or from CLion.
+  *Done:* `docs/sphinx/deploy.sh`, run by CI's `deploy-docs` job for a
+  release tag or a run started by hand, and by the `docs-deploy` target.
+  First published 2026-09-19.
 - [x] **Fix the fuzzing build's examples.** In a build configured for fuzzing,
   the examples fail to link, because the library is instrumented and the
   examples are not linked with the sanitizer. Resolved by the first item, or
