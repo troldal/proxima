@@ -99,7 +99,8 @@ presents as central.
   by giving them the same flags.
   *Done:* by the flags. The instrumented library passes the sanitizer
   runtime on to whatever links it, so the examples and the tests link and run
-  in a fuzzing build. The CI fuzz job now builds everything, to keep it so.
+  in a fuzzing build. The CI fuzz job builds `demo` and `tour` with the
+  fuzzers, to keep it so.
 
 ## 0.3 — Maxima, wherever it is
 

@@ -185,8 +185,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends clang-19 libclang-rt-19-dev ninja-build
 
-      # Everything, not only the fuzzers: the examples link the instrumented
-      # library too, which takes linking its sanitizer runtime.
+      # Two examples as well as the fuzzers: they link the instrumented library
+      # too, which takes linking its sanitizer runtime. Not functional, which
+      # Clang 19 cannot compile against GCC 14's std::forward_like ("function
+      # with deduced return type cannot be used before it is defined"); later
+      # Clangs, GCC, MSVC and clang-cl all can.
       - name: Build the fuzzers
         env:
           CC: clang-19
@@ -194,7 +197,7 @@ jobs:
         run: |
           cmake -S . -B build/fuzz -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
                 -DPROXIMA_BUILD_FUZZERS=ON -DPROXIMA_BUILD_TESTS=OFF
-          cmake --build build/fuzz -j 4
+          cmake --build build/fuzz -j 4 --target fuzz_parser fuzz_sexpr demo tour
 
       # New inputs go to a scratch directory, not the committed corpus.
       - name: Fuzz each parser for a minute
