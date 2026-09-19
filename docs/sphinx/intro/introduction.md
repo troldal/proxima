@@ -97,6 +97,11 @@ ctest --preset linux
 
 `ctest -LE maxima` runs the two thirds of the suite that need no Maxima.
 
+The example programs in `examples/` and the tests are built only when Proxima
+is the top-level project. `-DPROXIMA_BUILD_EXAMPLES=OFF` and
+`-DPROXIMA_BUILD_TESTS=OFF` leave them out there too, and `=ON` builds them
+when Proxima is a subproject.
+
 ### Installing, and using it from your project
 
 ```sh

@@ -113,11 +113,18 @@ ctest --preset linux
 
 `ctest -LE maxima` runs the two thirds of the suite that need no Maxima at all.
 
-Two example programs are built alongside the library. `demo` is a one-screen
-showcase. `tour` is the long version and doubles as a quick-start guide: a walk
-through every public feature in numbered sections, commented throughout, whose
-first part needs no Maxima at all. Read
-[`examples/tour.cpp`](examples/tour.cpp) with its output beside it.
+Three example programs are built alongside the library:
+- `demo` is a one-screen showcase.
+- `tour` is the long version and doubles as a quick-start guide. It walks
+  through every public feature in numbered sections, commented throughout, and
+  its first part needs no Maxima at all. Read
+  [`examples/tour.cpp`](examples/tour.cpp) with its output beside it.
+- `functional` composes Proxima's results with FXT's adaptors.
+
+The examples and the tests are built only when Proxima is the top-level
+project, so a project that pulls it in with `add_subdirectory`, FetchContent
+or CPM builds the library alone. `-DPROXIMA_BUILD_EXAMPLES=ON|OFF` and
+`-DPROXIMA_BUILD_TESTS=ON|OFF` override that either way.
 
 ## Installing and consuming
 

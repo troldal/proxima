@@ -185,6 +185,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends clang-19 libclang-rt-19-dev ninja-build
 
+      # Everything, not only the fuzzers: the examples link the instrumented
+      # library too, which takes linking its sanitizer runtime.
       - name: Build the fuzzers
         env:
           CC: clang-19
@@ -192,7 +194,7 @@ jobs:
         run: |
           cmake -S . -B build/fuzz -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
                 -DPROXIMA_BUILD_FUZZERS=ON -DPROXIMA_BUILD_TESTS=OFF
-          cmake --build build/fuzz -j 4 --target fuzz_parser fuzz_sexpr
+          cmake --build build/fuzz -j 4
 
       # New inputs go to a scratch directory, not the committed corpus.
       - name: Fuzz each parser for a minute

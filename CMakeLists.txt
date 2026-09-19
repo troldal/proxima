@@ -233,30 +233,6 @@ endif ()
 
 target_compile_options(proxima PRIVATE ${PROXIMA_MSVC_UTF8} ${PROXIMA_WARNINGS})
 
-add_executable(demo examples/demo.cpp)
-target_link_libraries(demo PRIVATE proxima::proxima)
-target_compile_options(demo PRIVATE ${PROXIMA_MSVC_UTF8} ${PROXIMA_WARNINGS})
-
-# A longer, heavily commented walk through every public feature.
-add_executable(tour examples/tour.cpp)
-target_link_libraries(tour PRIVATE proxima::proxima)
-target_compile_options(tour PRIVATE ${PROXIMA_MSVC_UTF8} ${PROXIMA_WARNINGS})
-
-# Proxima in a functional style: its results composed with FXT's adaptors.
-add_executable(functional examples/functional.cpp)
-target_link_libraries(functional PRIVATE proxima::proxima)
-target_compile_options(functional PRIVATE ${PROXIMA_MSVC_UTF8} ${PROXIMA_WARNINGS})
-
-# The examples print with std::print. MinGW's libstdc++ keeps the part of it
-# that writes to a console in a separate library, libstdc++exp, which GCC on
-# Windows must be told to link (GCC 16 included). libc++ and the MSVC STL
-# need nothing.
-if (MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    foreach (example demo tour functional)
-        target_link_libraries(${example} PRIVATE stdc++exp)
-    endforeach ()
-endif ()
-
 # --- Installation ---------------------------------------------------------
 
 include(GNUInstallDirs)
@@ -302,6 +278,18 @@ install(FILES
         "${CMAKE_CURRENT_BINARY_DIR}/proximaConfigVersion.cmake"
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/proxima
 )
+
+# --- Examples -------------------------------------------------------------
+
+# demo, tour and functional, in examples/. Off by default where Proxima is not
+# the top-level project, as the tests are: a project that pulls it in with
+# add_subdirectory, FetchContent or CPM builds the library alone.
+option(PROXIMA_BUILD_EXAMPLES "Build the Proxima example programs"
+        ${PROJECT_IS_TOP_LEVEL})
+
+if (PROXIMA_BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif ()
 
 # --- Tests ----------------------------------------------------------------
 

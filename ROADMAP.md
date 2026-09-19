@@ -73,11 +73,13 @@ presents as central.
   `factorial` have neither. One list, checked by a test.
   *Done:* `numeric_functions()` is the list.
 
-- [ ] **Build the examples only as the top-level project.** `demo`, `tour` and
+- [x] **Build the examples only as the top-level project.** `demo`, `tour` and
   `functional` are added unconditionally today, so a project that pulls
   Proxima in with `add_subdirectory`, FetchContent or CPM builds them too.
   Add a `PROXIMA_BUILD_EXAMPLES` option, defaulting to
   `PROJECT_IS_TOP_LEVEL`, like the tests.
+  *Done:* the examples have their own `examples/CMakeLists.txt`, behind
+  the option.
 - [ ] **Test both ways of consuming Proxima in CI.** A small consumer project
   built against the *installed* library (`find_package`), and one that pulls
   in the source (FetchContent or CPM). Today neither runs in CI.
@@ -91,10 +93,13 @@ presents as central.
   docs already read).
 - [ ] **Publish the documentation** at `docs.kinetiq.dev/proxima`: set
   `html_baseurl`, and deploy from CI or from CLion.
-- [ ] **Fix the fuzzing build's examples.** In a build configured for fuzzing,
+- [x] **Fix the fuzzing build's examples.** In a build configured for fuzzing,
   the examples fail to link, because the library is instrumented and the
   examples are not linked with the sanitizer. Resolved by the first item, or
   by giving them the same flags.
+  *Done:* by the flags. The instrumented library passes the sanitizer
+  runtime on to whatever links it, so the examples and the tests link and run
+  in a fuzzing build. The CI fuzz job now builds everything, to keep it so.
 
 ## 0.3 — Maxima, wherever it is
 

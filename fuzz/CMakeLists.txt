@@ -29,6 +29,12 @@ if (PROXIMA_HAVE_LIBFUZZER)
     # The library too: coverage from inside the parsers is what guides the
     # fuzzer, and the sanitizer is what turns a quiet overflow into a report.
     target_compile_options(proxima PRIVATE -fsanitize=fuzzer-no-link,address)
+    # And whatever links the instrumented library — the tests, the examples —
+    # must link the runtime its instrumentation calls into, or it fails with
+    # thousands of undefined __asan_ and __sanitizer_cov_ symbols. Only in
+    # this build tree: a fuzzing build is never one to install.
+    target_link_options(proxima INTERFACE
+            $<BUILD_INTERFACE:-fsanitize=fuzzer-no-link,address>)
 endif ()
 
 foreach (target IN ITEMS fuzz_sexpr fuzz_parser)
