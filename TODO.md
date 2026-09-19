@@ -1712,6 +1712,14 @@ to the kernel. That is where the work is.
   than a `std::generator`, which GCC 13's library and libc++ lack; see §9.6
   item 7.
 
+  *Revisited* once C++23 was required outright, dropping GCC 13: still not
+  a `std::generator`. libstdc++ 14+ and the MSVC STL have `<generator>`, but
+  libc++ does not, as of LLVM 22 — checked, and it is the library the LLVM 22
+  toolchain here builds with, so switching would break a build in use. And
+  the hand-written range costs nothing a generator would save: it is one
+  class, allocation-free, where a generator allocates a coroutine frame per
+  walk. Revisit when libc++ ships `<generator>`.
+
 - [x] ~~**`std::ranges::to` and views (C++23)**~~ where the code loops by hand to
   build a vector: `map_arguments` is `form.items() | views::drop(1) |
   views::transform(from_maxima) | ranges::to<std::vector>()`; `solve`'s
@@ -1725,11 +1733,18 @@ to the kernel. That is where the work is.
   this was for. Revisit when the floor is GCC 14. Views without `to` are in
   use where they help: `Expr::add(range)` and `nodes(e)`.
 
-- [x] ~~**`std::print` / `std::println` (C++23)**~~ in the examples and the tour
+- [x] **`std::print` / `std::println` (C++23)** in the examples and the tour
   in place of iostream; the library already formats with `std::format`.
 
-  *Outcome:* struck for the same reason: `<print>` arrives in GCC 14. The
-  examples keep iostream until the floor moves.
+  *Outcome:* struck at first, since `<print>` arrives in GCC 14; done once
+  C++23 was required outright. `demo`, `tour` and `functional` print with
+  `std::println`, `Expr` going through its `std::formatter`; none includes
+  `<iostream>`. Every library in use has `<print>`, libc++ 22 included. One
+  catch, on MinGW: libstdc++ keeps the half of `<print>` that writes to a
+  console in `libstdc++exp`, which GCC on Windows must link explicitly —
+  GCC 16 included — so CMakeLists.txt links it for the examples there. The
+  library itself prints nothing, and `operator<<` for `Expr` stays: it is
+  part of the API.
 
 - [x] ~~**`std::flat_map` (C++23)**~~ for `Bindings`, as above.
 
@@ -2176,7 +2191,8 @@ they are ordered so that each is useful without the next.
   makes `any_of` a `std::ranges::any_of`. All pure, all in the core.
 
   *Outcome:* done in `a7f1f16`, with two departures. `nodes(e)` is not a
-  `std::generator`: GCC 13's library and libc++ do not have it. It is a
+  `std::generator`: GCC 13's library and libc++ do not have it (still true
+  of libc++ 22; see §9.4). It is a
   hand-written input range, an explicit stack of operand spans, which is
   portable and allocates no coroutine frame; it keeps its own copy of the
   root, so a temporary is safe to walk and an iterator safe to move.

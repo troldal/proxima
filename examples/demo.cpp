@@ -19,8 +19,9 @@
 #include "text2d.hpp"
 
 #include <cstddef>
+#include <cstdio>
 #include <exception>
-#include <iostream>
+#include <print>
 #include <string>
 #include <vector>
 
@@ -42,13 +43,11 @@ std::string indented(const std::string &block, std::size_t by) {
 
 /// One expression, in each of the four renderers.
 void show_rendered(const char *label, const proxima::Expr &expr) {
-    std::cout << '\n'
-              << label << '\n'
-              << "  str()      " << expr.str() << '\n'
-              << "  to_tex()    " << proxima::to_tex(expr) << '\n'
-              << "  to_mathml() " << proxima::to_mathml(expr) << '\n'
-              << "  text2d\n"
-              << indented(text2d::draw(expr), 4) << '\n';
+    std::println("\n{}", label);
+    std::println("  str()      {}", expr);
+    std::println("  to_tex()    {}", proxima::to_tex(expr));
+    std::println("  to_mathml() {}", proxima::to_mathml(expr));
+    std::println("  text2d\n{}", indented(text2d::draw(expr), 4));
 }
 
 } // namespace
@@ -62,51 +61,45 @@ int main() {
         const proxima::Expr f = pow(x, 2) + 3 * x + 2;
         const proxima::Expr from_text = *proxima::Expr::parse("x^2 + 3*x + 2");
 
-        std::cout << "f                = " << f.str() << '\n';
-        std::cout << "  from text      = " << from_text.str() << "   "
-                  << (from_text == f ? "(the same expression)"
-                                     : "(a different one!)")
-                  << '\n';
-        std::cout << "f'               = " << proxima::diff(f, x)->str() << '\n';
-        std::cout << "f(5)             = "
-                  << proxima::subst(f, x, proxima::Expr(5))->str() << '\n';
-        std::cout << "expand((x+1)^3)  = " << proxima::expand(pow(x + 1, 3))->str()
-                  << '\n';
-        std::cout << "factor(x^2-1)    = " << proxima::factor(pow(x, 2) - 1)->str()
-                  << '\n';
+        std::println("f                = {}", f);
+        std::println("  from text      = {}   {}", from_text,
+                     from_text == f ? "(the same expression)"
+                                    : "(a different one!)");
+        std::println("f'               = {}", *proxima::diff(f, x));
+        std::println("f(5)             = {}",
+                     *proxima::subst(f, x, proxima::Expr(5)));
+        std::println("expand((x+1)^3)  = {}", *proxima::expand(pow(x + 1, 3)));
+        std::println("factor(x^2-1)    = {}", *proxima::factor(pow(x, 2) - 1));
 
         // Exact arithmetic: not 0.7333...
-        std::cout << "1/3 + 2/5        = "
-                  << (proxima::Expr(1) / proxima::Expr(3)
-                      + proxima::Expr(2) / proxima::Expr(5))
-                         .str()
-                  << '\n';
+        std::println("1/3 + 2/5        = {}",
+                     proxima::Expr(1) / proxima::Expr(3)
+                         + proxima::Expr(2) / proxima::Expr(5));
 
         // An integral, and the derivative of the result to check it.
         const proxima::Expr integrand = pow(x, 2) * proxima::sin(x);
         if (const auto integral = proxima::integrate(integrand, x)) {
-            std::cout << "int x^2 sin(x)   = " << integral->str() << '\n';
-            std::cout << "  differentiated = "
-                      << proxima::ratsimp(*proxima::diff(*integral, x))->str()
-                      << '\n';
+            std::println("int x^2 sin(x)   = {}", *integral);
+            std::println("  differentiated = {}",
+                         *proxima::ratsimp(*proxima::diff(*integral, x)));
         }
 
         if (const auto area
             = proxima::integrate(x * x, x, proxima::Expr(0), proxima::Expr(1))) {
-            std::cout << "int_0^1 x^2      = " << area->str() << '\n';
+            std::println("int_0^1 x^2      = {}", *area);
         }
 
         if (const auto l
             = proxima::limit(proxima::sin(x) / x, x, proxima::Expr(0))) {
-            std::cout << "lim sin(x)/x     = " << l->str() << '\n';
+            std::println("lim sin(x)/x     = {}", *l);
         }
 
         if (const auto roots = proxima::solve(eq(pow(x, 2), proxima::Expr(1)), x)) {
-            std::cout << "solve x^2 = 1    = ";
+            std::print("solve x^2 = 1    = ");
             for (const proxima::Expr &root : *roots) {
-                std::cout << root.str() << ' ';
+                std::print("{} ", root);
             }
-            std::cout << '\n';
+            std::println();
         }
 
         // A system. Values come back in the order the unknowns were asked for.
@@ -116,8 +109,8 @@ int main() {
         const std::vector<proxima::Symbol> unknowns{x, y};
         if (const auto found = proxima::solve(system, unknowns)) {
             for (const proxima::Solution &solution : *found) {
-                std::cout << "x+y=3, x-y=1     = x = " << solution[0].str()
-                          << ", y = " << solution[1].str() << '\n';
+                std::println("x+y=3, x-y=1     = x = {}, y = {}", solution[0],
+                             solution[1]);
             }
         }
 
@@ -135,25 +128,26 @@ int main() {
             show_rendered("a root of a*x^2 + b*x + c = 0:", quadratic->back());
         }
         show_rendered("d/dx sin(x)/x:", *proxima::diff(proxima::sin(x) / x, x));
-        std::cout << '\n';
+        std::println();
 
         // The other parser hands the text to Maxima itself, which accepts
         // everything its own syntax allows — but evaluates as it reads, so the
         // two answer differently.
-        std::cout << "Expr::parse(5!)   = " << proxima::Expr::parse("5!")->str()
-                  << "   (parsed, not evaluated)\n";
+        std::println("Expr::parse(5!)   = {}   (parsed, not evaluated)",
+                     *proxima::Expr::parse("5!"));
         if (const auto via_maxima = proxima::parse("5!")) {
-            std::cout << "proxima::parse(5!)    = " << via_maxima->str()
-                      << "            (Maxima evaluates as it parses)\n";
+            std::println(
+                "proxima::parse(5!)    = {}            (Maxima evaluates as "
+                "it parses)",
+                *via_maxima);
         }
 
         // Failure is an ordinary outcome, reported rather than thrown: Maxima
         // has no closed form for this one.
         const auto hopeless = proxima::integrate(proxima::exp(proxima::sin(x)), x);
-        std::cout << "int e^sin(x)     = "
-                  << (hopeless ? hopeless->str()
-                               : "no result: " + hopeless.error().message())
-                  << '\n';
+        std::println("int e^sin(x)     = {}",
+                     hopeless ? hopeless->str()
+                              : "no result: " + hopeless.error().message());
 
         // Some results depend on facts Maxima has not been told. Rather than
         // asking — impossible over a pipe — it says which fact is missing.
@@ -161,25 +155,24 @@ int main() {
         const proxima::Expr power = pow(x, n);
 
         const auto unknown = proxima::integrate(power, x);
-        std::cout << "int x^n          = "
-                  << (unknown ? unknown->str()
-                              : "no result: " + unknown.error().message())
-                  << '\n';
+        std::println("int x^n          = {}",
+                     unknown ? unknown->str()
+                             : "no result: " + unknown.error().message());
 
         // Supplying it with the question.
         if (const auto known
             = proxima::integrate(power, x, proxima::assuming(gt(n, 0)))) {
-            std::cout << "  assuming n > 0 = " << known->str() << '\n';
+            std::println("  assuming n > 0 = {}", *known);
         }
 
         // Once a closed form exists, turning it into numbers is ordinary
         // arithmetic. No further round trips, so this is usable in a loop.
         if (const auto antiderivative = proxima::integrate(integrand, x)) {
             const auto F = proxima::as_function(*antiderivative, x);
-            std::cout << "F(1) - F(0)      = " << F(1.0) - F(0.0) << '\n';
+            std::println("F(1) - F(0)      = {:.6g}", F(1.0) - F(0.0));
         }
     } catch (const std::exception &e) {
-        std::cerr << "Maxima call failed: " << e.what() << std::endl;
+        std::println(stderr, "Maxima call failed: {}", e.what());
         return 1;
     }
 

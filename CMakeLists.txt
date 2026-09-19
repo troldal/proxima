@@ -247,6 +247,16 @@ add_executable(functional examples/functional.cpp)
 target_link_libraries(functional PRIVATE proxima::proxima)
 target_compile_options(functional PRIVATE ${PROXIMA_MSVC_UTF8} ${PROXIMA_WARNINGS})
 
+# The examples print with std::print. MinGW's libstdc++ keeps the part of it
+# that writes to a console in a separate library, libstdc++exp, which GCC on
+# Windows must be told to link (GCC 16 included). libc++ and the MSVC STL
+# need nothing.
+if (MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    foreach (example demo tour functional)
+        target_link_libraries(${example} PRIVATE stdc++exp)
+    endforeach ()
+endif ()
+
 # --- Installation ---------------------------------------------------------
 
 include(GNUInstallDirs)

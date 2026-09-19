@@ -37,10 +37,10 @@
 #include <fxt/monads/ValueOr.hpp>
 
 #include <chrono>
+#include <cstdio>
 #include <filesystem>
 #include <functional>
-#include <iomanip>
-#include <iostream>
+#include <print>
 #include <span>
 #include <string>
 #include <string_view>
@@ -53,12 +53,12 @@ namespace {
 // --- a little presentation ------------------------------------------------
 
 void section(std::string_view title) {
-    std::cout << "\n" << title << "\n" << std::string(title.size(), '-') << "\n";
+    std::println("\n{}\n{}", title, std::string(title.size(), '-'));
 }
 
 /// Prints `label` and a value, aligned, so the output reads as a table.
 void show(std::string_view label, std::string_view value) {
-    std::cout << "  " << std::left << std::setw(36) << label << value << "\n";
+    std::println("  {:<36}{}", label, value);
 }
 
 void show(std::string_view label, const proxima::Expr &value) {
@@ -775,7 +775,7 @@ void the_kernel() {
 // ===========================================================================
 
 int main() {
-    std::cout << "Proxima " << proxima::version << ": a tour\n";
+    std::println("Proxima {}: a tour", proxima::version);
 
     // Part one is plain C++. Any proxima::Error here would be a bug in the tour.
     try {
@@ -786,7 +786,7 @@ int main() {
         rendering();
         numeric_evaluation();
     } catch (const proxima::Error &error) {
-        std::cerr << "\nunexpected error in part one: " << error.what() << "\n";
+        std::println(stderr, "\nunexpected error in part one: {}", error.what());
         return 1;
     }
 
@@ -809,16 +809,17 @@ int main() {
         assumptions();
         the_kernel();
     } catch (const proxima::KernelError &error) {
-        std::cerr << "\nPart two needs Maxima, which could not be used:\n  "
-                  << error.what()
-                  << "\nPart one above ran without it. See 'Requirements' in "
-                     "README.md for installing Maxima.\n";
+        std::println(stderr,
+                     "\nPart two needs Maxima, which could not be used:\n  {}\n"
+                     "Part one above ran without it. See 'Requirements' in "
+                     "README.md for installing Maxima.",
+                     error.what());
         return 1;
     } catch (const proxima::Error &error) {
-        std::cerr << "\nunexpected error in part two: " << error.what() << "\n";
+        std::println(stderr, "\nunexpected error in part two: {}", error.what());
         return 1;
     }
 
-    std::cout << "\nEnd of the tour.\n";
+    std::println("\nEnd of the tour.");
     return 0;
 }

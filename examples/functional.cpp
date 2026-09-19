@@ -46,7 +46,8 @@
 #include <fxt/utils/Curry.hpp>
 #include <fxt/utils/Lift.hpp>
 
-#include <iostream>
+#include <cstdio>
+#include <print>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -60,7 +61,7 @@ using proxima::result;
 using proxima::Symbol;
 
 void section(std::string_view title) {
-    std::cout << "\n" << title << "\n" << std::string(title.size(), '-') << "\n";
+    std::println("\n{}\n{}", title, std::string(title.size(), '-'));
 }
 
 /// A result as one line of text. Written as a pipeline itself: a value is
@@ -86,7 +87,7 @@ std::string describe(const result<double> &r) {
 }
 
 void show(std::string_view label, const std::string &text) {
-    std::cout << "  " << label << "\n      " << text << "\n";
+    std::println("  {}\n      {}", label, text);
 }
 
 const Symbol x("x");
@@ -165,7 +166,7 @@ void recovery() {
     // cause, retrying with the fact supplied. Any other failure passes on.
     const auto antiderivative = [](const Expr &f) {
         return proxima::integrate(f, x) | fxt::tap_error([](const Failure &failure) {
-                   std::cout << "  (first attempt: " << failure.message() << ")\n";
+                   std::println("  (first attempt: {})", failure.message());
                })
                | fxt::or_else([&](const Failure &failure) -> result<Expr> {
                      if (proxima::cause_of(failure) != Cause::NeedsAssumption) {
@@ -255,14 +256,14 @@ void consuming() {
 } // namespace
 
 int main() {
-    std::cout << "Proxima in a functional style, with FXT\n";
+    std::println("Proxima in a functional style, with FXT");
 
-    std::cout << "\n=== Part one: no Maxima ===\n";
+    std::println("\n=== Part one: no Maxima ===");
     local_chain();
     validation();
     exceptions_into_values();
 
-    std::cout << "\n=== Part two: with Maxima ===\n";
+    std::println("\n=== Part two: with Maxima ===");
     try {
         kernel_chain();
         recovery();
@@ -272,8 +273,9 @@ int main() {
     } catch (const proxima::KernelError &error) {
         // Failures of the mathematics arrive as values. A kernel that cannot
         // run at all is an exception, since no chain could go on without it.
-        std::cerr << "\nPart two needs Maxima, which could not be used:\n  "
-                  << error.what() << "\n";
+        std::println(stderr,
+                     "\nPart two needs Maxima, which could not be used:\n  {}",
+                     error.what());
         return 1;
     }
     return 0;

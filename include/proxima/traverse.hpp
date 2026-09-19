@@ -41,7 +41,7 @@ Expr with_operands(const Expr &expr, std::vector<Expr> operands);
 ///     }); std::ranges::distance(nodes(e));                 // the size of the tree
 ///
 /// Holds its own copy of `expr`, so a temporary is safe to walk. Not
-/// std::generator, which GCC 13's library and libc++ do not have: an explicit
+/// std::generator, which libc++ does not have (as of LLVM 22): an explicit
 /// stack of operand spans, with no coroutine frame to allocate.
 class Nodes {
 public:
