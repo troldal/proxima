@@ -4,9 +4,10 @@ Proxima is at **0.1.0**. This is the plan for getting from here to **1.0.0**:
 what is left to do, in what order, and what 1.0 will promise.
 
 It is a plan, not a contract. The order of the milestones reflects what
-blocks what, and items move as work shows what matters. Each item links to
-where it comes from — [TODO.md](TODO.md), the [design history](docs/design.md),
-or what building the library has turned up.
+blocks what, and items move as work shows what matters. Each item comes from
+[TODO.md](TODO.md), the [design history](docs/design.md), what building the
+library has turned up, or a review of its API against what comparable
+libraries — SymPy, SymEngine, GiNaC — offer.
 
 ## Where 0.1 stands
 
@@ -48,7 +49,23 @@ compiler.
 ## 0.2 — Ready to depend on
 
 The library works; this milestone makes it easy and safe to *use from another
-project*.
+project*, and closes the one gap that breaks a workflow the documentation
+presents as central.
+
+- [ ] **Evaluate what Maxima answers.** "Solve or integrate with Maxima, then
+  evaluate in C++" breaks on everyday answers, because `eval_numeric` and
+  `Compiled` know a fixed set of functions. Checked against Maxima 5.50:
+  `integrate(tan(x), x)` is `log(sec(x))`, and `sec` cannot be evaluated;
+  `∫₀^∞ xⁿe⁻ˣ dx` is `gamma(1 + n)`, and `gamma` cannot either; nor can
+  `factorial`, so `5!` cannot; and `solve(x^2 = -1)` gives `-%i`, with no
+  complex evaluation at all. Add `sec`, `csc`, `cot`, `gamma` (`std::tgamma`),
+  `factorial` and `double_factorial`; a complex evaluation mode with
+  `std::complex`; and, for a function still unknown, a way to fall back on
+  Maxima's `to_float` rather than fail.
+- [ ] **Builders for every function numeric evaluation knows,** and the
+  reverse. `atan2`, `min`, `max` and `mod` can be evaluated but have no
+  builders in `<proxima/functions.hpp>`; `sec`, `csc`, `cot`, `gamma` and
+  `factorial` have neither. One list, checked by a test.
 
 - [ ] **Build the examples only as the top-level project.** `demo`, `tour` and
   `functional` are added unconditionally today, so a project that pulls
@@ -125,6 +142,38 @@ Decisions that change the public API, made before it is frozen.
   undocumented members in the docs build, so the reference cannot fall
   behind.
 
+### Local tools users of SymPy or GiNaC will look for
+
+All pure, needing no kernel.
+
+- [ ] **The symbols in an expression.** Only `contains(e, x)` exists; listing
+  the free symbols is what lets an expression be compiled without naming its
+  variables by hand.
+- [ ] **Substituting several symbols at once.** `replace` and `subst` take one
+  symbol each, so a simultaneous substitution — swapping `x` and `y` — cannot
+  be written correctly.
+- [ ] **Numerator and denominator** of an expression, not only of a rational
+  number.
+- [ ] **Logical connectives:** `and`, `or` and `not`, for predicates asked with
+  `is` and for assumptions that are not a plain conjunction.
+
+### The kernel's API
+
+- [ ] **Load Maxima packages without losing the disk cache.** A package needs
+  `tell(Statement::text("load(...)"))`, and a `tell` stops persistence for the
+  kernel. A `Config` list of packages loaded at startup would be known before
+  any question, so it can go into the cache key and persistence can stay on.
+- [ ] **A timeout per call, and cancellation.** Only the kernel-wide
+  `set_timeout` exists. A GUI's cancel button needs a way, callable from
+  another thread, to stop the current question — which for Maxima means ending
+  the process and starting another, as a timeout already does.
+- [ ] **Asynchronous questions.** Operations returning a `std::future`, or a pool
+  of kernels, instead of each user writing the threads the
+  [threads how-to](docs/sphinx/how-to/use-threads.md) shows.
+- [ ] **A way to watch the traffic.** A hook, off by default, that sees each
+  question and answer as they pass to and from Maxima, for when an answer
+  looks wrong.
+
 ## 0.5 — Coverage
 
 The operations a user of a computer algebra system will look for. A proposal,
@@ -139,10 +188,27 @@ causes, tests against Maxima, and a page in the docs.
   `ratsimp`-free coefficient access.
 - [ ] **Numeric integration** through Maxima's QUADPACK (`quad_qags` and
   friends), for integrals with no closed form.
+- [ ] **Complex numbers:** real and imaginary parts, conjugate, and rectangular
+  and polar forms.
+- [ ] **Inequalities:** solving them, which `solve` does not.
+- [ ] **More differential equations:** systems of ODEs, and numeric solutions.
+- [ ] **Series that keep their order.** `taylor` returns an ordinary expression,
+  so the order it was truncated at is lost.
+- [ ] **Arbitrary precision.** Numbers stop at `double`, and a Maxima bigfloat
+  is mapped to an exact rational on the way in; offer Maxima's bigfloats as a
+  value that keeps its precision.
 
 Anything not wrapped stays reachable through `Kernel::ask` — see the
 [how-to](docs/sphinx/how-to/call-unwrapped-maxima.md) — so this list is about
 convenience and typed results, not about what is possible.
+
+And two kinds of output:
+
+- [ ] **A Unicode pretty-printer in the library,** drawing fractions, powers and
+  roots in two dimensions. One exists as the example
+  [`examples/text2d.hpp`](examples/text2d.hpp), not as part of Proxima.
+- [ ] **Code generation:** an expression as C++ source, to compile into another
+  program, where `Compiled` evaluates at run time.
 
 ## 1.0.0
 
