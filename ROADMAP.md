@@ -80,9 +80,11 @@ presents as central.
   `PROJECT_IS_TOP_LEVEL`, like the tests.
   *Done:* the examples have their own `examples/CMakeLists.txt`, behind
   the option.
-- [ ] **Test both ways of consuming Proxima in CI.** A small consumer project
+- [x] **Test both ways of consuming Proxima in CI.** A small consumer project
   built against the *installed* library (`find_package`), and one that pulls
   in the source (FetchContent or CPM). Today neither runs in CI.
+  *Done:* `tests/consumer`, built both ways by the `consumers` job, with GCC
+  14 on Linux and MSVC on Windows.
 - [ ] **Test with MinGW GCC in CI.** It is the main Windows toolchain in use,
   and the one with a quirk of its own: `std::print` needs `libstdc++exp`
   there. CI covers MSVC only.

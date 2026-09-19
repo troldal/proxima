@@ -6,6 +6,9 @@
 #             container, because it packages Maxima on SBCL, which Proxima
 #             launches (Debian's and Ubuntu's Maxima is built on GCL).
 #   windows   MSVC, the Maxima-free suite, warnings as errors.
+#   consumers tests/consumer, a project using Proxima from outside: against
+#             the installed library (find_package) and against the source
+#             (FetchContent), with GCC 14 on Linux and MSVC on Windows.
 #   tidy      clang-tidy over the library, as .clang-tidy configures it.
 #   format    every C++ file as .clang-format has it, with the version the
 #             tree was formatted with; and the layering ARCH.md describes.
@@ -109,6 +112,64 @@ jobs:
       # No Maxima on the runner: the suite that needs none.
       - name: Test without Maxima
         run: ctest --preset windows -LE maxima
+
+  consumers:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache CPM sources
+        uses: actions/cache@v4
+        with:
+          path: .cpm-cache
+          key: cpm-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'cmake/CPM.cmake') }}
+
+      - name: Install GCC 14 and Ninja
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++-14 ninja-build
+          echo "CXX=g++-14" >> "$GITHUB_ENV"
+
+      - name: Set up MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # cl named explicitly: the runner also has MinGW's gcc on its path.
+      - name: Choose MSVC
+        if: runner.os == 'Windows'
+        run: |
+          echo "CC=cl" >> "$GITHUB_ENV"
+          echo "CXX=cl" >> "$GITHUB_ENV"
+
+      - name: Build and install Proxima
+        run: |
+          cmake -S . -B build/library -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                -DPROXIMA_BUILD_TESTS=OFF -DPROXIMA_BUILD_EXAMPLES=OFF
+          cmake --build build/library -j 4
+          cmake --install build/library --prefix "$RUNNER_TEMP/proxima"
+
+      - name: Use the installed package, with find_package
+        run: |
+          cmake -S tests/consumer -B build/package -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/proxima"
+          cmake --build build/package
+          ctest --test-dir build/package --output-on-failure
+
+      # FetchContent as a consumer would write it, pointed at this commit.
+      - name: Use the source, with FetchContent
+        run: |
+          cmake -S tests/consumer -B build/fetch -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                -DCONSUMER_FETCH=ON -DFETCHCONTENT_SOURCE_DIR_PROXIMA="$GITHUB_WORKSPACE"
+          cmake --build build/fetch -j 4
+          ctest --test-dir build/fetch --output-on-failure
 
   tidy:
     runs-on: ubuntu-24.04

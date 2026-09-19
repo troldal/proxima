@@ -115,6 +115,20 @@ find_package(proxima 0.1 REQUIRED)
 target_link_libraries(my_app PRIVATE proxima::proxima)
 ```
 
+Or build it from source as part of your project, with FetchContent (or CPM,
+which works the same way):
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(proxima
+        GIT_REPOSITORY https://github.com/troldal/proxima.git
+        GIT_TAG master)
+FetchContent_MakeAvailable(proxima)
+target_link_libraries(my_app PRIVATE proxima::proxima)
+```
+
+As a subproject it builds the library alone, without its tests and examples.
+
 The installed tree carries FXT's headers and the Boost.Process library
 Proxima was built with, so a consumer needs nothing else. [Getting
 started](getting-started.md) walks through a first project.
