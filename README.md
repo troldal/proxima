@@ -150,6 +150,8 @@ target_link_libraries(my_app PRIVATE proxima::proxima)
   `and_then` to `traverse`, `zip` and `match`.
 - [`docs/design.md`](docs/design.md) — how the library came to be as it is,
   and why: the architecture and every decision that shaped it.
+- [`ROADMAP.md`](ROADMAP.md) — the plan from 0.1 to 1.0, and what 1.0 will
+  promise.
 - [`TODO.md`](TODO.md) — the reviews of the code, what they found, and what
   was done about it.
 
