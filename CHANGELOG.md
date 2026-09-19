@@ -8,7 +8,11 @@ change the API. [RELEASING.md](RELEASING.md) says how a release is made, and
 
 ## [Unreleased]
 
-Toward 0.2.0, *ready to depend on*.
+## [0.2.0] — 2026-09-19
+
+*Ready to depend on:*
+- easy and safe to use from another project;
+- evaluates the answers Maxima gives.
 
 ### Added
 
@@ -84,5 +88,6 @@ Tagged `v0.1.0` afterwards.
 - **CMake packaging,** and a documentation site built with Sphinx, Doxygen and
   Breathe.
 
-[Unreleased]: https://github.com/troldal/proxima/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/troldal/proxima/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/troldal/proxima/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/troldal/proxima/releases/tag/v0.1.0

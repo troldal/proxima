@@ -1,6 +1,6 @@
 # Roadmap to 1.0
 
-Proxima is at **0.1.0**. This is the plan for getting from here to **1.0.0**:
+Proxima is at **0.2.0**. This is the plan for getting from here to **1.0.0**:
 what is left to do, in what order, and what 1.0 will promise.
 
 It is a plan, not a contract. The order of the milestones reflects what
@@ -47,6 +47,8 @@ compiler.
 ---
 
 ## 0.2 — Ready to depend on
+
+*Released as 0.2.0 on 2026-09-19.*
 
 The library works; this milestone makes it easy and safe to *use from another
 project*, and closes the one gap that breaks a workflow the documentation
