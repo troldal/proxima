@@ -58,7 +58,9 @@ turn.
 
 ## Requirements
 
-- A C++23 compiler.
+- A C++23 compiler. GCC 14 or later, or Clang 20 or later; with Clang 19,
+  code using FXT's adaptors, as `examples/functional.cpp` does, fails to
+  compile against GCC's standard library. MSVC and clang-cl work too.
 - Maxima built on SBCL, found at runtime.
   - Windows: the official installer. `C:\maxima-5.50.0` or wherever you put it.
     A path with non-ASCII characters works, with one caveat that comes from

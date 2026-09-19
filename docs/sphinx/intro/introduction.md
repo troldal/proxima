@@ -72,7 +72,9 @@ pipeline adaptors apply to them directly.
 
 ### Requirements
 
-- A C++23 compiler and CMake 3.22 or later.
+- A C++23 compiler, and CMake 3.22 or later. The compiler can be GCC 14 or
+  later, Clang 20 or later, MSVC, or clang-cl. Clang 19 cannot compile code
+  that uses FXT's adaptors against GCC's standard library.
 - Maxima built on SBCL, found when a kernel first starts. Building needs no
   Maxima at all.
   - Windows: the official installer, which includes SBCL.
