@@ -223,7 +223,7 @@ void parsing_offline() {
 
     // It parses; it does not evaluate. 5! stays 5!, a factorial not yet taken,
     // and prints as it was written. proxima::parse, in
-    // part two, hands text to Maxima's own parser instead, which evaluates
+    // part two, hands text to Maxima's own parser instead, which simplifies
     // as it reads and accepts everything Maxima does.
     show("Expr::parse(\"5!\")", *proxima::Expr::parse("5!"));
 
@@ -518,7 +518,9 @@ void calculus_and_algebra() {
     }
 
     // proxima::parse hands text to Maxima's own parser, so it accepts all of
-    // Maxima's syntax — and evaluates as it reads, unlike Expr::parse.
+    // Maxima's syntax — and simplifies as it reads, unlike Expr::parse. It
+    // does not evaluate: diff(x^2, x) stays a call. kernel.ask(Query::text(...))
+    // carries text out.
     if (const auto parsed = proxima::parse("5!")) {
         show("proxima::parse(\"5!\")", *parsed);
     }

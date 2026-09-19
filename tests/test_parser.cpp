@@ -468,11 +468,11 @@ TEST_CASE("the offline parser agrees with Maxima's own") {
     // disagree, the offline one is wrong by definition — Maxima's parser is the
     // specification for the syntax it accepts.
     //
-    // Meaning, not structure. proxima::parse evaluates as it parses — it answers
-    // x^2^3 with x^8 and 5! with 120 — whereas Expr::parse only builds and
-    // normalises. Comparing the two directly would be comparing a parse against
-    // an evaluation. So both sides are put through Maxima: its reading of the
-    // original text, against its reading of what the offline parser printed.
+    // Meaning, not structure. proxima::parse simplifies as it parses — it
+    // answers x^2^3 with x^8 and 5! with 120 — whereas Expr::parse only builds
+    // and normalises. Comparing the two directly would be comparing a parse
+    // against a simplification. So both sides are put through Maxima: its reading of
+    // the original text, against its reading of what the offline parser printed.
     for (const char *source : {
              "x + 1",       "2*x*sin(x)", "x^2 - 3*x + 2", "1/3 + 2/5",
              "(x + 1)^2",   "x^2^3",      "-x^2",          "-3^2",

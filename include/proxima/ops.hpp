@@ -38,6 +38,11 @@ namespace proxima {
 /// the backend's — but it does need a running kernel. A free function rather
 /// than Expr::parse, because Expr belongs to a layer that knows nothing about
 /// the kernel. A Failure, with Cause::MaximaError, for text Maxima cannot read.
+///
+/// Maxima's `parse_string`: it reads the text and simplifies it, so `5!` is
+/// 120 and `x^2^3` is x^8, but it does not evaluate it — `diff(x^2, x)` comes
+/// back as that call. To have Maxima carry out text, ask the kernel:
+/// `kernel.ask(Query::text("diff(x^2, x)"))` is 2*x.
 result<Expr> parse(std::string_view source, const Env &env = {});
 
 // --- Calculus and algebra ------------------------------------------------

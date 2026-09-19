@@ -174,6 +174,23 @@ All pure, needing no kernel.
   question and answer as they pass to and from Maxima, for when an answer
   looks wrong.
 
+### Instructions given as text
+
+`kernel.ask(Query::text(...))` is how Maxima carries out an instruction
+written as text. Three things about it are easy to get wrong:
+
+- [ ] **Only the first statement counts.** `"a: 2$ a + 1"` answers `2`: Maxima's
+  `eval_string` stops after one statement, and the rest is dropped without a
+  word. Refuse text with more than one statement, or evaluate them all and
+  answer with the last.
+- [ ] **A query that changes Maxima goes unnoticed.** That same query really
+  does assign `a`, but a query is taken to be a question, whose answer is
+  cached and kept on disk. Recognise text that assigns, defines or loads, and
+  refuse it or treat it as a `tell` — or at least say so in the failure.
+- [ ] **Syntax errors say nothing useful.** Text Maxima cannot read fails with
+  "An error was caught by errcatch" and no position. Pass on what Maxima's
+  parser said.
+
 ## 0.5 — Coverage
 
 The operations a user of a computer algebra system will look for. A proposal,

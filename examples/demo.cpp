@@ -131,15 +131,14 @@ int main() {
         std::println();
 
         // The other parser hands the text to Maxima itself, which accepts
-        // everything its own syntax allows — but evaluates as it reads, so the
-        // two answer differently.
+        // everything its own syntax allows — and simplifies what it reads, so
+        // the two answer differently.
         std::println("Expr::parse(5!)   = {}   (parsed, not evaluated)",
                      *proxima::Expr::parse("5!"));
         if (const auto via_maxima = proxima::parse("5!")) {
-            std::println(
-                "proxima::parse(5!)    = {}            (Maxima evaluates as "
-                "it parses)",
-                *via_maxima);
+            std::println("proxima::parse(5!)    = {}            (Maxima simplifies "
+                         "as it reads)",
+                         *via_maxima);
         }
 
         // Failure is an ordinary outcome, reported rather than thrown: Maxima

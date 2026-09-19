@@ -195,8 +195,9 @@ public:
     ///
     /// **This parses; it does not evaluate.** `Expr::parse("5!")` is
     /// `factorial(5)` and `Expr::parse("2^3")` is `2^3`, normalised but not
-    /// computed. proxima::parse differs here as well as in grammar: it hands the
-    /// text to Maxima, which evaluates as it reads, and answers 120 and 8.
+    /// computed. proxima::parse differs here as well as in grammar: Maxima
+    /// simplifies what it reads, and answers 120 and 8. Neither evaluates a
+    /// call such as `diff(x^2, x)`; Kernel::ask with Query::text does.
     ///
     /// A Failure with Cause::Parse, naming the offset, for anything malformed,
     /// and with Cause::Overflow for numbers whose fold leaves a double's range.

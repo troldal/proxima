@@ -333,6 +333,26 @@ TEST_CASE("how-to/cache-between-runs") {
     std::filesystem::remove_all(directory);
 }
 
+TEST_CASE("guide/parsing: proxima::parse simplifies, ask evaluates") {
+    const px::Symbol x("x");
+    CHECK(px::parse("5!") == px::Expr(120));
+    CHECK(px::parse("diff(x^2, x)")->str() == "diff(x^2, x)");
+    CHECK(px::shared_kernel().ask(px::Query::text("diff(x^2, x)"))
+          == 2 * px::Expr(x));
+}
+
+TEST_CASE("how-to/call-unwrapped-maxima: what to watch for in text") {
+    px::Kernel kernel;
+    CHECK(kernel.ask(px::Query::text("diff(x^2, x, 1)"))
+          == 2 * px::Expr(px::Symbol("x")));
+    CHECK(kernel.ask(px::Query::text("block([a: 2], a + 1)")) == px::Expr(3));
+    // Only the first statement counts; the roadmap has this as a hole.
+    CHECK(kernel.ask(px::Query::text("b: 2$ b + 1")) == px::Expr(2));
+    const auto broken = kernel.ask(px::Query::text("diff(x^2,x,"));
+    REQUIRE_FALSE(broken.has_value());
+    CHECK(px::cause_of(broken.error()) == px::Cause::MaximaError);
+}
+
 TEST_CASE("how-to/call-unwrapped-maxima") {
     px::Kernel kernel;
     CHECK(kernel.ask(px::Query::text("gcd(12, 18)")) == px::Expr(6));
