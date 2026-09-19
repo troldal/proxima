@@ -81,6 +81,8 @@ breathe_show_include = True
 
 html_theme = "furo"
 html_title = f"Proxima {release}"
+# Where deploy.sh publishes the site, for the canonical link on every page.
+html_baseurl = "https://docs.kinetiq.dev/proxima/"
 html_theme_options = {
     "source_repository": "https://github.com/troldal/proxima",
     "source_branch": "master",

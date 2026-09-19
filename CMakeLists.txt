@@ -340,5 +340,30 @@ if (PROJECT_IS_TOP_LEVEL)
                         ${CMAKE_CURRENT_BINARY_DIR}/docs/html
                 COMMENT "Building the documentation into ${CMAKE_CURRENT_BINARY_DIR}/docs/html"
                 VERBATIM)
+
+        # Builds the site and publishes it at docs.kinetiq.dev/proxima, with
+        # docs/sphinx/deploy.sh, over SSH with your own key. A bash script: on
+        # Windows the one that comes with Git, since bash.exe on the path is
+        # usually WSL's, which would neither see this build tree's paths nor
+        # use your Windows SSH key.
+        if (WIN32)
+            find_package(Git QUIET)
+            if (GIT_FOUND)
+                get_filename_component(_proxima_git_root "${GIT_EXECUTABLE}" DIRECTORY)
+                get_filename_component(_proxima_git_root "${_proxima_git_root}" DIRECTORY)
+                find_program(PROXIMA_BASH bash
+                        PATHS "${_proxima_git_root}/bin" NO_DEFAULT_PATH)
+            endif ()
+        else ()
+            find_program(PROXIMA_BASH bash)
+        endif ()
+        if (PROXIMA_BASH)
+            add_custom_target(docs-deploy
+                    COMMAND ${PROXIMA_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/docs/sphinx/deploy.sh
+                            ${CMAKE_CURRENT_BINARY_DIR}/docs/html
+                    COMMENT "Publishing the documentation at https://docs.kinetiq.dev/proxima/"
+                    VERBATIM USES_TERMINAL)
+            add_dependencies(docs-deploy docs)
+        endif ()
     endif ()
 endif ()

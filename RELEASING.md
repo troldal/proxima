@@ -48,3 +48,47 @@ A minor release completes a milestone in [ROADMAP.md](ROADMAP.md).
    - The tag must match `project()`.
    - `CHANGELOG.md` must have a section for the version.
 8. **Check the release** on GitHub: the notes, and the source archives.
+9. **Check the documentation** at https://docs.kinetiq.dev/proxima/. CI
+   publishes it once every job has passed on the tag; the title shows the
+   version.
+
+## The documentation site
+
+The site is published at https://docs.kinetiq.dev/proxima/ by
+[`docs/sphinx/deploy.sh`](docs/sphinx/deploy.sh). The script copies the built
+HTML over SSH to `kinetiq.dev@ssh.simply.com`, into
+`/var/www/kinetiq.dev/docs/proxima`, and replaces whatever is there. The new
+copy is unpacked beside the old one and then swapped in.
+
+**From CI.** The `deploy-docs` job publishes after every other job has
+passed. It runs for a release tag, or when CI is started by hand: Actions →
+CI → Run workflow, on `master`. It logs in with a key used for nothing else.
+The key is set up once:
+
+1. Make the key, with no passphrase, since CI cannot type one:
+
+   ```sh
+   ssh-keygen -t ed25519 -f proxima-deploy -C "proxima docs deploy"
+   ```
+
+2. Add `proxima-deploy.pub` to the SSH keys of the kinetiq.dev web hosting in
+   simply.com's control panel.
+3. Put the private key, the file `proxima-deploy`, in the repository's
+   secrets as `DOCS_DEPLOY_KEY`: Settings → Secrets and variables → Actions.
+   Then delete the file, or keep it somewhere safe.
+
+To revoke CI's access, remove that key at simply.com; your own key is not
+affected.
+
+The job accepts only the server keys pinned in `.github/workflows/ci.yml`. If
+simply.com changes its keys, the job fails until the pinned ones are updated
+with `ssh-keyscan ssh.simply.com`.
+
+**From your machine or CLion.** Build the `docs-deploy` target. It builds the
+site, then runs `deploy.sh` with your own SSH key, the one `ssh
+kinetiq.dev@ssh.simply.com` logs in with. On Windows it uses the bash that
+comes with Git. From a shell:
+
+```sh
+cmake --build <build> --target docs-deploy
+```

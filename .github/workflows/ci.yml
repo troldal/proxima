@@ -18,6 +18,9 @@
 #   fuzz      the two hand-written parsers under libFuzzer, briefly.
 #   docs      the documentation site, docs/sphinx, with warnings as errors;
 #             the HTML is kept as an artifact.
+#   deploy-docs  that HTML published at https://docs.kinetiq.dev/proxima/,
+#             for a release tag or a run started by hand, once every other
+#             job has passed.
 #
 # Clang is 19 rather than Ubuntu 24.04's default 18: clang 18 cannot use
 # libstdc++ 13's <expected>, which it hides behind a __cpp_concepts value only
@@ -31,6 +34,8 @@ name: CI
 on:
   push:
   pull_request:
+  # Run by hand from the Actions tab: the whole of CI, then deploy-docs.
+  workflow_dispatch:
 
 env:
   CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm-cache
@@ -377,3 +382,46 @@ jobs:
         with:
           name: proxima-docs
           path: build/docs/html
+
+  # With docs/sphinx/deploy.sh, over SSH, with the DOCS_DEPLOY_KEY secret: a
+  # key used for nothing else, so that it can be revoked alone. RELEASING.md
+  # says how to set it up.
+  deploy-docs:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    needs: [linux, maxima, sanitize, windows, mingw, consumers, tidy, format, fuzz, docs]
+    runs-on: ubuntu-24.04
+    concurrency: deploy-docs
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: proxima-docs
+          path: build/docs/html
+
+      # The server's keys are pinned here, as ssh-keyscan found them on
+      # 2026-09-19, rather than trusted on first sight: a server that
+      # presents any other key is refused. If simply.com changes them, this
+      # step fails until they are updated.
+      - name: Set up the deploy key and the server's keys
+        env:
+          DEPLOY_KEY: ${{ secrets.DOCS_DEPLOY_KEY }}
+        run: |
+          if [ -z "$DEPLOY_KEY" ]; then
+            echo "::error::the DOCS_DEPLOY_KEY secret is not set; RELEASING.md says how"
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/docs_deploy
+          chmod 600 ~/.ssh/docs_deploy
+          cat > ~/.ssh/known_hosts <<'EOF'
+          ssh.simply.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC2JSPTW6lwD9Lk+zU+NQStN8LXVyTj006JLJCxQe0M9c/6UEKq4Ogbr98bnBnJuRXgad6CCQ4RBaAOG8stD8msTm5M5xFwrk1W4EMB7IE31EypJJLbj8uVP03QJddOLi+btXiVbF5VYOQhcm2tQ3W7MfvLFHWnYv3PhUpNGwZifldxEfqRMdOMwNdxu8qU6i9dX/it3eN4RYo5s+mAghAp+zqQV6GnSMmB76nQfSQqKHg1kxDfHy26aSi7heb095W+z7bIEqbiiXtDWgwoAOMgWfDBZ4opTUtoroEVeCOiX2EnCGv9uRzRaWaN7ZGxsyfATNL8a+U5Vvd9u7+ElvhtGX42wzyADzY4Sx4ikZ0ZME7UN5iPmwK1bGFQgqRIQG2BppYsAu7mHr/0XUXVJxvH7CNACjZRWWJaxeZmZS62UCuzBWfPawxQpOrO7yq6Lh39MuWmBe25gxhb2exRpFzXkwzY/X2jGezyBRQRezZlh/Jxd0yJoKGtxFFX3ZYowJs=
+          ssh.simply.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL+KKhR0mqR/sZARR7te3Wu4l2GyllgEvV2ag/gR2ApJ
+          ssh.simply.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBCU17IWM2PNpV7LI92cAu3Yyc7gcOBk8ok1/5BaYLKowlW2LKGEiy2KQg9KZN8qynBvqBz2kEJygN2uqpOnJEB0=
+          EOF
+
+      - name: Publish
+        run: |
+          export PROXIMA_DOCS_SSH="-i $HOME/.ssh/docs_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o BatchMode=yes"
+          docs/sphinx/deploy.sh build/docs/html
