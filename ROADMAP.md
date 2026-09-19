@@ -85,9 +85,11 @@ presents as central.
   in the source (FetchContent or CPM). Today neither runs in CI.
   *Done:* `tests/consumer`, built both ways by the `consumers` job, with GCC
   14 on Linux and MSVC on Windows.
-- [ ] **Test with MinGW GCC in CI.** It is the main Windows toolchain in use,
+- [x] **Test with MinGW GCC in CI.** It is the main Windows toolchain in use,
   and the one with a quirk of its own: `std::print` needs `libstdc++exp`
   there. CI covers MSVC only.
+  *Done:* the `mingw` job, with MSYS2's UCRT64 GCC, builds everything,
+  examples included, and runs the Maxima-free suite.
 - [ ] **Run the test suite under AddressSanitizer and UndefinedBehavior
   Sanitizer.** Only the fuzzers run instrumented today.
 - [ ] **A release process.** `CHANGELOG.md`, git tags, a release checklist, and

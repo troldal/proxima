@@ -6,6 +6,7 @@
 #             container, because it packages Maxima on SBCL, which Proxima
 #             launches (Debian's and Ubuntu's Maxima is built on GCL).
 #   windows   MSVC, the Maxima-free suite, warnings as errors.
+#   mingw     MinGW GCC from MSYS2 (UCRT64), the same, examples included.
 #   consumers tests/consumer, a project using Proxima from outside: against
 #             the installed library (find_package) and against the source
 #             (FetchContent), with GCC 14 on Linux and MSVC on Windows.
@@ -110,6 +111,45 @@ jobs:
         run: cmake --build --preset windows -j 4
 
       # No Maxima on the runner: the suite that needs none.
+      - name: Test without Maxima
+        run: ctest --preset windows -LE maxima
+
+  mingw:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache CPM sources
+        uses: actions/cache@v4
+        with:
+          path: .cpm-cache
+          key: cpm-mingw-${{ hashFiles('CMakeLists.txt', 'tests/CMakeLists.txt', 'cmake/CPM.cmake') }}
+
+      # MSYS2's GCC, current, rather than the older MinGW the runner carries.
+      - name: Install MinGW GCC, CMake and Ninja
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+
+      - name: Configure
+        run: |
+          g++ --version
+          cmake --preset windows -DCMAKE_CXX_COMPILER=g++ -DPROXIMA_WARNINGS_AS_ERRORS=ON
+
+      # The examples too: std::print needs libstdc++exp linked here, and
+      # nowhere else.
+      - name: Build
+        run: cmake --build --preset windows -j 4
+
       - name: Test without Maxima
         run: ctest --preset windows -LE maxima
 
