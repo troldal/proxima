@@ -26,7 +26,7 @@ A `Symbol` is an expression wherever one is wanted, so `pow(x, 2)`,
 `x * x + 3 * x + 2` and `gt(x, 0)` need no conversion spelled out. The
 operations return a `proxima::result` — the answer, or why there is none —
 which is what the `if` and the `*` above are reading; see
-[Failure is an outcome](docs/guide.md#failure-is-an-outcome-not-an-exception).
+[Results and failures](docs/sphinx/guide/results.md).
 
 ## What it does
 
@@ -53,7 +53,8 @@ which is what the `if` and the `*` above are reading; see
 - **Composes with [FXT](https://github.com/troldal/FXT)**: its results are
   FXT's, so `f | fxt::and_then(...)` pipelines work directly.
 
-The [guide](docs/guide.md) covers each of these in turn.
+The [user guide](docs/sphinx/guide/expressions.md) covers each of these in
+turn.
 
 ## Requirements
 
@@ -65,7 +66,8 @@ The [guide](docs/guide.md) covers each of these in turn.
     so the library passes their 8.3 short names, and those exist only on
     volumes with short-name generation enabled — normally the system drive.
   - openSUSE: `zypper install maxima maxima-exec-sbcl`
-  - Debian/Ubuntu: `apt install maxima maxima-sbcl`
+  - Debian and Ubuntu package Maxima built on GCL, which Proxima cannot use;
+    Ubuntu 24.04 has no SBCL build. Use the upstream sources built with SBCL.
 
 Nothing else needs installing. The library depends on
 [FXT](https://github.com/troldal/FXT), whose `fxt::failure` and
@@ -130,11 +132,13 @@ target_link_libraries(my_app PRIVATE proxima::proxima)
 
 ## Documentation
 
-- [`docs/guide.md`](docs/guide.md) — every part of the library, with examples.
-- [`docs/sphinx`](docs/sphinx) — the documentation site: the guide and the
-  design notes, and an API reference generated from the headers by Doxygen
-  and Breathe, in the Furo theme. `pip install -r docs/sphinx/requirements.txt`
-  and Doxygen, then `cmake --build <build> --target docs`.
+- [`docs/sphinx`](docs/sphinx) — the documentation:
+  [introduction](docs/sphinx/intro/introduction.md),
+  [getting started](docs/sphinx/intro/getting-started.md), a user guide, how-to
+  guides, and an API reference generated from the headers by Doxygen and
+  Breathe, in the Furo theme. The pages are Markdown, readable here; to build
+  the site, install Doxygen and `pip install -r docs/sphinx/requirements.txt`,
+  then `cmake --build <build> --target docs`.
 - [`ARCH.md`](ARCH.md) — the architecture on one page: the layers, and how a
   question travels from your code to Maxima and back.
 - [`DESIGN.md`](DESIGN.md) — the main types and how they relate: who owns,

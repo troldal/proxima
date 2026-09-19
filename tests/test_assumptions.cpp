@@ -244,6 +244,20 @@ TEST_CASE("supplying the assumption lets the computation through") {
     CHECK(*proxima::simplify(*proxima::diff(*integral, x)) == pow(x, Expr(n)));
 }
 
+TEST_CASE("a fact that two things differ can be assumed") {
+    // ne() used to reach assume as `n # -1`, which Maxima refuses; it wants
+    // notequal(n, -1). Found writing the how-to guides.
+    const Symbol x("x");
+    const Symbol n("notequal_probe_n");
+
+    const auto integral
+        = proxima::integrate(pow(x, Expr(n)), x, proxima::assuming(ne(n, -1)));
+    REQUIRE(integral.has_value());
+    CHECK(*proxima::simplify(*proxima::diff(*integral, x)) == pow(x, Expr(n)));
+
+    CHECK(proxima::is(ne(n, -1), proxima::assuming(ne(n, -1))) == Truth::True);
+}
+
 // --- surviving a kernel that dies ------------------------------------------------
 
 TEST_CASE(

@@ -88,38 +88,44 @@ html_theme_options = {
 }
 
 
-# -- The Markdown documents outside docs/sphinx --------------------------------
+# -- Markdown pages, and their links -----------------------------------------
 
-# Each is shown on a page of its own, read in as that page's source. Their
-# links are written for GitHub, relative to where each file lives, so as each
-# is read: a link to another of these becomes a link to its page, and a link
-# to anything else in the repository goes to it on GitHub.
-_MARKDOWN_PAGES = {
-    "guide": ROOT / "docs" / "guide.md",
-    "architecture": ROOT / "ARCH.md",
-    "design": ROOT / "DESIGN.md",
+# Two documents live outside docs/sphinx, at the repository root, and are
+# shown as pages of the User guide: read in as those pages' source.
+_INCLUDED_PAGES = {
+    "guide/architecture": ROOT / "ARCH.md",
+    "guide/design": ROOT / "DESIGN.md",
 }
 _REPOSITORY = "https://github.com/troldal/proxima/blob/master/"
 _LOCAL_LINK = re.compile(r"\]\((?!https?:|mailto:|#)([^)\s]+)\)")
 
 
-def _resolve_link(target: str, source: pathlib.Path) -> str:
+def _resolve_link(target: str, source: pathlib.Path, docname: str) -> str:
+    """A link from `source`, shown as page `docname`, as the site needs it.
+
+    Links are written to work on GitHub, relative to the file they are in. On
+    the site: a link to an included document goes to its page; one to a file
+    inside docs/sphinx stays relative, but to the page it appears on; and one
+    to anything else in the repository goes to that file on GitHub.
+    """
     path_part, hash_, anchor = target.partition("#")
     suffix = hash_ + anchor
     path = (source.parent / path_part).resolve()
     if not path.exists():
         # Broken on GitHub too; the -W build turns this into a failure.
         _logger.warning("%s links to %s, which does not exist", source.name, target)
-    for page, document in _MARKDOWN_PAGES.items():
+    here = (HERE / docname).parent
+    for page, document in _INCLUDED_PAGES.items():
         if path == document.resolve():
-            return f"{page}.md{suffix}"
-    try:
+            return os.path.relpath(HERE / f"{page}.md", here).replace(os.sep, "/") + suffix
+    if path.is_relative_to(HERE):
+        return os.path.relpath(path, here).replace(os.sep, "/") + suffix
+    if path.is_relative_to(ROOT):
         return _REPOSITORY + path.relative_to(ROOT).as_posix() + suffix
-    except ValueError:
-        return target  # Outside the repository: leave it as written.
+    return target  # Outside the repository: leave it as written.
 
 
-def _with_links_resolved(text: str, source: pathlib.Path) -> str:
+def _with_links_resolved(text: str, source: pathlib.Path, docname: str) -> str:
     out = []
     fenced = False
     for line in text.splitlines(keepends=True):
@@ -127,18 +133,23 @@ def _with_links_resolved(text: str, source: pathlib.Path) -> str:
             fenced = not fenced
         if not fenced:
             line = _LOCAL_LINK.sub(
-                lambda m: "](" + _resolve_link(m.group(1), source) + ")", line
+                lambda m: "](" + _resolve_link(m.group(1), source, docname) + ")", line
             )
         out.append(line)
     return "".join(out)
 
 
-def _read_markdown_page(app, docname: str, source: list) -> None:
-    document = _MARKDOWN_PAGES.get(docname)
-    if document is None:
+def _read_markdown(app, docname: str, source: list) -> None:
+    """Resolves the links of every Markdown page, and reads the included
+    documents in as their pages' source."""
+    included = _INCLUDED_PAGES.get(docname)
+    if included is not None:
+        app.env.note_dependency(str(included))
+        source[0] = _with_links_resolved(included.read_text(encoding="utf-8"), included, docname)
         return
-    app.env.note_dependency(str(document))
-    source[0] = _with_links_resolved(document.read_text(encoding="utf-8"), document)
+    path = HERE / f"{docname}.md"
+    if path.exists():
+        source[0] = _with_links_resolved(source[0], path, docname)
 
 
 # -- Doxygen, before the build --------------------------------------------------
@@ -161,4 +172,4 @@ def _run_doxygen(app) -> None:
 
 def setup(app):
     app.connect("builder-inited", _run_doxygen)
-    app.connect("source-read", _read_markdown_page)
+    app.connect("source-read", _read_markdown)

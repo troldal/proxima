@@ -1,4 +1,4 @@
-// The documentation's examples — README.md and docs/guide.md — compiled and
+// The documentation's examples — README.md and docs/sphinx — compiled and
 // checked. Each test mirrors one code block, with the values its comments
 // promise; a change to the documents that breaks an example, or an API change
 // that breaks the documents, fails here. This file exists because both

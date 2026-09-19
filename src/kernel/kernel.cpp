@@ -31,6 +31,17 @@ Expr call(std::string head, std::vector<Expr> args) {
     return Expr::function(std::move(head), std::move(args));
 }
 
+/// A fact as Maxima's `assume` takes it. Maxima writes "not equal" as `#` in
+/// an expression, but `assume` refuses `a # b` and wants `notequal(a, b)`:
+/// passed as it was, every fact built with ne() failed with Maxima's
+/// complaint, whatever it said.
+Expr assumable(const Expr &fact) {
+    if (fact.is(Kind::Relation) && fact.relation_op() == RelOp::NotEqual) {
+        return call("notequal", {fact.arg(0), fact.arg(1)});
+    }
+    return fact;
+}
+
 } // namespace
 
 namespace detail {
@@ -60,7 +71,7 @@ Environment environment_for(const Assumptions &assumptions) {
                                       + std::string(name_of(declaration.feature))});
     }
     for (const Expr &fact : assumptions.facts()) {
-        const Expr statement = call("assume", {fact});
+        const Expr statement = call("assume", {assumable(fact)});
         std::string form = to_maxima(statement);
         environment.key += form;
         environment.key += '\n';
