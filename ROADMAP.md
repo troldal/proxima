@@ -123,24 +123,10 @@ presents as central.
 ## 0.3 — Maxima, wherever it is
 
 Proxima runs a Maxima built on SBCL, found where installers put it. This
-milestone widens that.
+milestone is about *which* Maxima a program gets, and how much say it has in
+that. Widening the set of Maximas — other versions, other Lisps, other
+platforms — is deferred below until there is a reason.
 
-- [ ] **Decide and test the supported Maxima versions.** Everything is tested
-  against 5.50 only, the version the golden transcripts were recorded with.
-  Choose a range, test the oldest and newest in CI, and document it.
-- [ ] **Support Maxima built on ECL.** Proxima's protocol is plain Common Lisp —
-  the helper it loads has nothing SBCL-specific — so this should be a second
-  launcher, beside SBCL's: how to find an ECL Maxima and start it. It would
-  also make Maxima from Ubuntu usable, if its `maxima-sage` package is the
-  ECL build it appears to be (to check). Today Ubuntu has no Maxima Proxima
-  can use at all.
-- [ ] **macOS.** Discovery for Homebrew's and MacPorts' Maxima, and a CI job.
-  Untested today.
-- [ ] **Ship Maxima with an application.** Look for a `maxima/` directory next
-  to the executable before anywhere else, and add a script that assembles the
-  smallest working copy from an installation. Settle what that copy needs —
-  whether `share/maxima/<version>/src` is required is not yet checked. See the
-  [how-to](docs/sphinx/how-to/choose-maxima.md).
 - [x] **Searching as a policy, not a default that cannot be turned off.** A
   `Config` setting — configured only, configured and the environment, or the
   full search — so that an embedder who wants no surprises gets a clear error
@@ -160,6 +146,34 @@ milestone widens that.
 - [ ] **Windows paths with non-ASCII characters** work only through 8.3 short
   names, which exist only on drives with short-name generation on. Find a way
   that does not depend on them, or document the limit where users will see it.
+
+### Deferred
+
+Worth doing, but not now. Each widens where Maxima may come from, and none
+blocks 1.0; they come back when there is a reason — a user on that platform,
+a distribution that ships only that build.
+
+- **Decide and test the supported Maxima versions.** Everything is tested
+  against 5.50 only, the version the golden transcripts were recorded with.
+  Choose a range, test the oldest and newest in CI, and document it.
+- **Support Maxima built on ECL.** Proxima's protocol is plain Common Lisp —
+  the helper it loads has nothing SBCL-specific — so this should be a second
+  launcher, beside SBCL's: how to find an ECL Maxima and start it. It would
+  also make Maxima from Ubuntu usable, if its `maxima-sage` package is the
+  ECL build it appears to be (to check). Today Ubuntu has no Maxima Proxima
+  can use at all.
+- **macOS.** Discovery for Homebrew's and MacPorts' Maxima, and a CI job.
+  Untested today.
+
+### Decided against
+
+- **Assembling and shipping a copy of Maxima.** Proxima is a library, not an
+  application: which Maxima to ship, and how to trim it, belongs to the
+  program that ships one. What the library owes such a program is a way to
+  say where its copy is, and `Config::sbcl_exe` and `Config::maxima_core` are
+  that — they assume no layout at all. The
+  [how-to](docs/sphinx/how-to/choose-maxima.md) shows the use; the library
+  will not go looking beside the executable or build the copy itself.
 
 ## 0.4 — The shape of 1.0
 
