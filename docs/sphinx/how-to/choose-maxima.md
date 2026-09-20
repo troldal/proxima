@@ -47,6 +47,23 @@ left empty, the prefix is the directory above SBCL's.
 This is what an application shipping its own copy of Maxima wants, and an
 installer that knows where it put things.
 
+## Windows, and paths outside the ANSI code page
+
+An installation under a path such as `C:\maxima-探索` works, wherever it is.
+SBCL's runtime reads its command line through the ANSI code page, so it
+cannot open a core named that way; Proxima passes a name the runtime can
+open — the 8.3 short name where the volume has one, and otherwise the core's
+own file name, resolved against the working directory, which Windows takes as
+wide text. Nothing is asked of you either way.
+
+One thing is yours to get right: a `std::filesystem::path` built from a
+narrow string is read in the ANSI code page on Windows, so a path with such
+characters must not come from a `const char *` or a narrow `argv`:
+
+```cpp
+config.maxima_core = u8"C:/maxima-探索/lib/maxima/5.50.0/binary-sbcl/maxima.core";
+```
+
 ## Refuse to look elsewhere
 
 `Config::search` says how far a kernel may go beyond what the `Config` names.

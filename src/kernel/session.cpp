@@ -140,11 +140,17 @@ std::unique_ptr<ITransport> launch_maxima(const Config &config,
     // environment, which SBCL and Maxima read in full Unicode.
     MaximaInstall launchable = install;
     launchable.sbcl_exe = sbcl_readable_path(install.sbcl_exe);
-    launchable.maxima_core = sbcl_readable_path(install.maxima_core);
+    // The core may need the child's working directory to be spelled for it:
+    // see core_spelling. The environment keeps the real paths, which SBCL and
+    // Maxima read in full Unicode.
+    const CoreSpelling spelling = core_spelling(install.maxima_core);
+    launchable.maxima_core = spelling.core;
 
+    // The command gets the spellings SBCL's runtime can read; the environment
+    // gets the real paths, which it and Maxima read in full Unicode.
     return std::make_unique<ChildProcessTransport>(
         MaximaSession::launch_command(launchable),
-        MaximaSession::launch_environment(launchable, config));
+        MaximaSession::launch_environment(install, config), spelling.start_dir);
 }
 
 } // namespace

@@ -62,11 +62,8 @@ turn.
   code using FXT's adaptors, as `examples/functional.cpp` does, fails to
   compile against GCC's standard library. MSVC and clang-cl work too.
 - Maxima built on SBCL, found at runtime.
-  - Windows: the official installer. `C:\maxima-5.50.0` or wherever you put it.
-    A path with non-ASCII characters works, with one caveat that comes from
-    SBCL: its runtime can only open its executable and core by an ASCII name,
-    so the library passes their 8.3 short names, and those exist only on
-    volumes with short-name generation enabled — normally the system drive.
+  - Windows: the official installer. `C:\maxima-5.50.0` or wherever you put it,
+    including a path with non-ASCII characters, on any volume.
   - openSUSE: `zypper install maxima maxima-exec-sbcl`
   - Debian and Ubuntu package Maxima built on GCL, which Proxima cannot use;
     Ubuntu 24.04 has no SBCL build. Use the upstream sources built with SBCL.

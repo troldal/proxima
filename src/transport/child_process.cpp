@@ -13,6 +13,7 @@
 #include <boost/asio/write.hpp>
 #include <boost/process/v2/environment.hpp>
 #include <boost/process/v2/process.hpp>
+#include <boost/process/v2/start_dir.hpp>
 #include <boost/process/v2/stdio.hpp>
 #if defined(_WIN32)
 #include <boost/process/v2/windows/creation_flags.hpp>
@@ -81,7 +82,8 @@ struct ChildProcessTransport::Impl {
 };
 
 ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &argv,
-                                             const std::vector<EnvOverride> &env)
+                                             const std::vector<EnvOverride> &env,
+                                             const std::filesystem::path &start_dir)
     : impl_(std::make_unique<Impl>()) {
     if (argv.empty()) {
         throw KernelError("ChildProcessTransport requires at least an executable");
@@ -153,9 +155,13 @@ ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &arg
                           "is not valid UTF-8");
     }
 
-    try {
+    // An empty start_dir means "wherever this process is", which is what
+    // Boost.Process does without the initializer; only a given one is passed,
+    // so the ordinary launch is unchanged.
+    const auto launch = [&](auto &&...extra) {
         impl_->process.emplace(
             impl_->context.get_executor(), *executable, arguments,
+            std::forward<decltype(extra)>(extra)...,
             // The same write end twice. On Windows it then appears twice,
             // consecutively, in the list of handles the child inherits; the
             // launcher drops adjacent duplicates before CreateProcessW sees the
@@ -169,6 +175,14 @@ ChildProcessTransport::ChildProcessTransport(const std::vector<std::string> &arg
             bp::windows::process_creation_flags<CREATE_NO_WINDOW>()
 #endif
         );
+    };
+
+    try {
+        if (start_dir.empty()) {
+            launch();
+        } else {
+            launch(bp::process_start_dir(start_dir));
+        }
     } catch (const boost::system::system_error &error) {
         // Reported synchronously on both platforms. On POSIX Boost.Process
         // carries a failed exec back to the parent, so a missing executable is

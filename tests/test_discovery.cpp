@@ -826,6 +826,43 @@ TEST_CASE("Automatic is the default") {
     CHECK(proxima::Config{}.search == proxima::Search::Automatic);
 }
 
+// --- naming the core so SBCL's runtime can open it -------------------------
+
+TEST_CASE("an ASCII core is named as it is, and runs where the caller is") {
+    const std::filesystem::path core = abs("maxima-5.50.0") / "lib" / "maxima"
+                                       / "5.50.0" / "binary-sbcl" / "maxima.core";
+    const auto spelling = proxima::detail::core_spelling(core);
+    CHECK(spelling.core == core);
+    CHECK(spelling.start_dir.empty()); // The child inherits this process's.
+}
+
+#ifdef _WIN32
+TEST_CASE("a core SBCL's runtime could not open is named against its directory") {
+    // SBCL reads its command line through the ANSI code page, so a path
+    // outside it cannot be opened by name. Where the volume has short names
+    // one is used; this path does not exist, so there is none to be had —
+    // which is also the case on any volume with short-name generation off.
+    const std::filesystem::path directory = abs("proxima-探索-none");
+    const std::filesystem::path core = directory / "maxima.core";
+
+    const auto spelling = proxima::detail::core_spelling(core);
+    // Named alone, and resolved against its own directory, which reaches the
+    // child as wide text rather than through the ANSI conversion.
+    CHECK(spelling.core == std::filesystem::path("maxima.core"));
+    CHECK(spelling.start_dir == directory);
+}
+
+TEST_CASE("a core whose own name is not ASCII is left as it is") {
+    // Nothing here can spell it for the runtime: the working directory does
+    // not help when the file's own name is the part that cannot convert. The
+    // path comes back unchanged, and SBCL reports what it could not open.
+    const std::filesystem::path core = abs("proxima") / "探索.core";
+    const auto spelling = proxima::detail::core_spelling(core);
+    CHECK(spelling.core == core);
+    CHECK(spelling.start_dir.empty());
+}
+#endif
+
 TEST_SUITE("maxima") {
 
 TEST_CASE("the real installation answers where its core is") {

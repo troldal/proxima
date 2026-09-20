@@ -143,9 +143,16 @@ platforms — is deferred below until there is a reason.
   and `Search::Automatic` (the default). What the automatic search covers is
   unchanged: the scans stay, since on Windows nothing puts Maxima on `PATH`,
   and a program that wants none of them now says so.
-- [ ] **Windows paths with non-ASCII characters** work only through 8.3 short
+- [x] **Windows paths with non-ASCII characters** work only through 8.3 short
   names, which exist only on drives with short-name generation on. Find a way
   that does not depend on them, or document the limit where users will see it.
+  *Done:* the working directory is the way. It reaches the child as wide text
+  through `CreateProcessW`, so a core named on its own and resolved against
+  its own directory never passes through the ANSI conversion. Short names are
+  still used where the volume has them, which leaves the working directory
+  the caller's; the fallback applies only where it is that or nothing.
+  Measured against SBCL 2.6.7 under `C:\proxima-探索-test`: the full path
+  fails, the bare name with that working directory loads.
 
 ### Deferred
 

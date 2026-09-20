@@ -32,6 +32,37 @@ bool is_ascii(const std::wstring &text) {
 } // namespace
 #endif
 
+CoreSpelling core_spelling(const std::filesystem::path &core) {
+    // A short name, where the volume has them, keeps the command line
+    // self-contained and the child's working directory the caller's.
+    const std::filesystem::path readable = sbcl_readable_path(core);
+#ifdef _WIN32
+    if (!is_ascii(readable.native())) {
+        // No short name to be had — short-name generation is off for this
+        // volume, as it is for most volumes that are not the system one. The
+        // runtime reads its command line through the ANSI code page, but the
+        // *working directory* reaches the child as wide text through
+        // CreateProcessW, and a name resolved against it never passes through
+        // that conversion. So run in the core's own directory and name the
+        // file alone: "maxima.core" is ASCII whatever the path above it is.
+        //
+        // Measured against SBCL 2.6.7: with the core under a directory named
+        // "proxima-探索-test", `--core <full path>` fails with "could not open
+        // file ... open: Invalid argument", and `--core maxima.core` with that
+        // directory as the working directory loads it. The executable itself
+        // may sit under such a path either way: it is launched wide.
+        std::filesystem::path name = core.filename();
+        if (is_ascii(name.native())) {
+            return {std::move(name), core.parent_path()};
+        }
+        // The file's own name is not ASCII either. Nothing here can spell it
+        // for the runtime; the caller gets the path as it is, and SBCL will
+        // report what it could not open.
+    }
+#endif
+    return {readable, {}};
+}
+
 std::filesystem::path sbcl_readable_path(const std::filesystem::path &path) {
 #ifdef _WIN32
     // Measured against the SBCL 2.6.7 that ships with Maxima 5.50: launched

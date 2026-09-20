@@ -3,6 +3,7 @@
 #include "transport/itransport.hpp"
 #include "transport/process_env.hpp"
 
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
@@ -39,8 +40,14 @@ public:
     /// including an executable that does not exist. That is reported
     /// synchronously on every platform, rather than surfacing later as a child
     /// that mysteriously exits.
+    /// `start_dir`, when not empty, is the child's working directory. It
+    /// reaches Windows as wide text, so a name resolved against it never
+    /// passes through the ANSI conversion the child's own runtime may do --
+    /// which is how a Maxima core under a path outside the ANSI code page is
+    /// opened at all. Empty inherits this process's directory.
     explicit ChildProcessTransport(const std::vector<std::string> &argv,
-                                   const std::vector<EnvOverride> &env = {});
+                                   const std::vector<EnvOverride> &env = {},
+                                   const std::filesystem::path &start_dir = {});
 
     ~ChildProcessTransport() override;
 

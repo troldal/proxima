@@ -18,6 +18,14 @@ change the API. [RELEASING.md](RELEASING.md) says how a release is made, and
   as `MAXIMA_ROOT` and `PATH`, `Search::Automatic` — the default — on to the
   conventional install locations.
 
+### Fixed
+
+- **Maxima under a Windows path outside the ANSI code page** now works on any
+  volume. SBCL's runtime cannot open such a path by name; where the volume
+  has no 8.3 short name to fall back on — most volumes that are not the
+  system one — the core is now named on its own and resolved against the
+  child's working directory, which Windows takes as wide text.
+
 ### Changed
 
 - **Where the Maxima core lies is asked of the installation** — `maxima -d` —

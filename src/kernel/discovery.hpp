@@ -103,6 +103,25 @@ std::optional<MaximaInstall> inspect_root(const std::filesystem::path &root,
 /// Consults the filesystem on Windows, so the path should exist.
 std::filesystem::path sbcl_readable_path(const std::filesystem::path &path);
 
+/// How to name the core on SBCL's command line, and where to run it.
+struct CoreSpelling {
+    /// What to pass to --core: the path itself, its short form, or its bare
+    /// file name when it is to be resolved against `start_dir`.
+    std::filesystem::path core;
+    /// The child's working directory, or empty to inherit the caller's.
+    std::filesystem::path start_dir;
+};
+
+/// The spelling of `core` that SBCL's runtime can open.
+///
+/// On Windows that runtime reads its command line through the ANSI code page,
+/// so a path outside it cannot be opened by name. A short name is tried first,
+/// leaving the working directory alone; where the volume has none — short-name
+/// generation is off for most volumes that are not the system one — the core
+/// is named on its own and resolved against its own directory, which reaches
+/// the child as wide text. Elsewhere, and for an ASCII path, the path as it is.
+CoreSpelling core_spelling(const std::filesystem::path &core);
+
 /// Returns the first usable installation, or throws KernelError naming every
 /// location tried.
 ///
