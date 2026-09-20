@@ -14,15 +14,18 @@
 //   match                        consume a result, success or failure
 //
 // Part one needs no Maxima: the offline parser and numeric evaluation return
-// results too. Part two asks Maxima, through the shared kernel.
+// results too. Part two asks Maxima, through a kernel of its own, built from
+// the location named at the top of the file.
 //
 //     cmake --build --preset windows        (or linux, or wsl)
 //     ./build/<preset>/functional
 
 #include <proxima/assumptions.hpp>
+#include <proxima/config.hpp>
 #include <proxima/errors.hpp>
 #include <proxima/expr.hpp>
 #include <proxima/functions.hpp>
+#include <proxima/kernel.hpp>
 #include <proxima/numeric.hpp>
 #include <proxima/ops.hpp>
 #include <proxima/result.hpp>
@@ -59,6 +62,27 @@ using proxima::Expr;
 using proxima::Failure;
 using proxima::result;
 using proxima::Symbol;
+
+// Where Maxima is. Fill these in to say, rather than have Proxima look:
+//
+//     kSbclExe    = "C:/maxima-5.50.0/bin/sbcl.exe";
+//     kMaximaCore = "C:/maxima-5.50.0/lib/maxima/5.50.0/binary-sbcl/maxima.core";
+//
+// Naming the SBCL runtime and the Maxima core means nothing is searched for
+// and no layout is assumed. Empty, as here, Proxima discovers the
+// installation; kMaximaRoot names one and leaves the layout to it. Part two
+// builds its kernel from whichever of the three this comes to.
+constexpr const char *kSbclExe = "";
+constexpr const char *kMaximaCore = "";
+constexpr const char *kMaximaRoot = "";
+
+proxima::Config maxima_location() {
+    proxima::Config config;
+    config.sbcl_exe = kSbclExe;
+    config.maxima_core = kMaximaCore;
+    config.maxima_root = kMaximaRoot;
+    return config;
+}
 
 void section(std::string_view title) {
     std::println("\n{}\n{}", title, std::string(title.size(), '-'));
@@ -144,49 +168,56 @@ void exceptions_into_values() {
 
 // --- Part two: Maxima --------------------------------------------------------
 
-void kernel_chain() {
+void kernel_chain(proxima::Kernel &kernel) {
     section("and_then, transform: a chain through the kernel");
 
     // Each operation takes its subject first. One with a single argument
     // lifts as it is; one that also needs the variable takes a lambda.
     const Expr f = pow(x, 3) - 3 * pow(x, 2) + 3 * x - 1;
+    // With a kernel to pass, an operation is wrapped in a lambda rather than
+    // lifted: FXT_LIFT names the function alone.
     const std::string tex
-        = proxima::diff(f, x)                            // result<Expr>
-          | fxt::and_then(FXT_LIFT(proxima::factor))     // result<Expr>
+        = proxima::diff(f, x, 1, kernel) // result<Expr>
+          | fxt::and_then([&](const Expr &d) {
+                return proxima::factor(d, kernel);
+            })                                           // result<Expr>
           | fxt::transform(proxima::to_tex)              // result<std::string>
           | fxt::value_or(std::string("no derivative")); // std::string
     show("d/dx (x^3 - 3x^2 + 3x - 1), factored, as TeX", tex);
 }
 
-void recovery() {
+void recovery(proxima::Kernel &kernel) {
     section("tap_error, or_else: observe a failure, then recover");
 
     // Integrating x^n needs to know whether n is -1, and Maxima cannot ask.
     // The failure's Cause says so, and or_else can act on exactly that
     // cause, retrying with the fact supplied. Any other failure passes on.
-    const auto antiderivative = [](const Expr &f) {
-        return proxima::integrate(f, x) | fxt::tap_error([](const Failure &failure) {
-                   std::println("  (first attempt: {})", failure.message());
-               })
+    const auto antiderivative = [&](const Expr &f) {
+        return proxima::integrate(f, x, kernel)
+               | fxt::tap_error([](const Failure &failure) {
+                     std::println("  (first attempt: {})", failure.message());
+                 })
                | fxt::or_else([&](const Failure &failure) -> result<Expr> {
                      if (proxima::cause_of(failure) != Cause::NeedsAssumption) {
                          return fxt::unexpected<Failure>(failure);
                      }
-                     return proxima::integrate(f, x, proxima::assuming(gt(n, 0)));
+                     return proxima::integrate(
+                         f, x, {proxima::assuming(gt(n, 0)), kernel});
                  });
     };
     show("integral of x^n, assuming n > 0 if asked",
          describe(antiderivative(pow(x, n))));
 }
 
-void all_or_nothing() {
+void all_or_nothing(proxima::Kernel &kernel) {
     section("traverse: many operations, all or nothing");
 
     // traverse applies an operation to every element and gathers the values,
     // or stops at the first failure: result<std::vector<Expr>>.
-    const auto integrate_all = [](const std::vector<Expr> &integrands) {
-        return fxt::traverse(integrands,
-                             [](const Expr &f) { return proxima::integrate(f, x); });
+    const auto integrate_all = [&](const std::vector<Expr> &integrands) {
+        return fxt::traverse(integrands, [&](const Expr &f) {
+            return proxima::integrate(f, x, kernel);
+        });
     };
     const auto show_all = [](const result<std::vector<Expr>> &r) {
         return describe(r, [](const std::vector<Expr> &values) {
@@ -206,7 +237,7 @@ void all_or_nothing() {
     show("integrals of sin(x), x^n, 1/x", show_all(integrate_all(one_bad)));
 }
 
-void combining() {
+void combining(proxima::Kernel &kernel) {
     section("curry + with, zip + mapply: combine independent results");
 
     // The tangent to f at x = 1 needs f(1) and f'(1): two results, either
@@ -219,25 +250,27 @@ void combining() {
     });
     const auto tangent
         = combine | fxt::with(result<Expr>{proxima::replace(f, x, a)})
-          | fxt::with(proxima::diff(f, x) | fxt::transform([&](const Expr &d) {
-                          return proxima::replace(d, x, a);
-                      }))
-          | fxt::and_then(FXT_LIFT(proxima::expand));
+          | fxt::with(proxima::diff(f, x, 1, kernel)
+                      | fxt::transform(
+                          [&](const Expr &d) { return proxima::replace(d, x, a); }))
+          | fxt::and_then([&](const Expr &e) { return proxima::expand(e, kernel); });
     show("tangent to x^3 - 2x at x = 1", describe(tangent));
 
     // zip gathers several results into one result holding a tuple, and
     // mapply spreads the tuple over a function: L'Hopital's rule for
     // sin(x)/x at 0, as the limit of the ratio of the derivatives.
     const auto lhopital
-        = fxt::zip(proxima::diff(proxima::sin(x), x), proxima::diff(Expr(x), x))
+        = fxt::zip(proxima::diff(proxima::sin(x), x, 1, kernel),
+                   proxima::diff(Expr(x), x, 1, kernel))
           | fxt::mapply(
               [](const Expr &top, const Expr &bottom) { return top / bottom; })
-          | fxt::and_then(
-              [](const Expr &ratio) { return proxima::limit(ratio, x, 0); });
+          | fxt::and_then([&](const Expr &ratio) {
+                return proxima::limit(ratio, x, 0, proxima::Side::Both, kernel);
+            });
     show("limit of sin(x)/x at 0, by L'Hopital", describe(lhopital));
 }
 
-void consuming() {
+void consuming(proxima::Kernel &kernel) {
     section("match: one handler for each outcome");
 
     const auto report = [](const result<std::vector<Expr>> &roots) {
@@ -250,7 +283,8 @@ void consuming() {
                        return "unsolved: " + failure.message();
                    });
     };
-    show("x^2 - 5x + 6 = 0", report(proxima::solve(pow(x, 2) - 5 * x + 6, x)));
+    show("x^2 - 5x + 6 = 0",
+         report(proxima::solve(pow(x, 2) - 5 * x + 6, x, kernel)));
 }
 
 } // namespace
@@ -265,11 +299,25 @@ int main() {
 
     std::println("\n=== Part two: with Maxima ===");
     try {
-        kernel_chain();
-        recovery();
-        all_or_nothing();
-        combining();
-        consuming();
+        // One kernel for part two, running the Maxima named at the top of
+        // this file — or the one discovered, when nothing is named.
+        const proxima::Config location = maxima_location();
+        if (!location.sbcl_exe.empty() || !location.maxima_core.empty()) {
+            show("Maxima, named outright", location.sbcl_exe.string() + "\n      "
+                                               + location.maxima_core.string());
+        } else if (!location.maxima_root.empty()) {
+            show("Maxima, under the root", location.maxima_root.string());
+        } else {
+            show("Maxima",
+                 "discovered; fill in kSbclExe and kMaximaCore to name it");
+        }
+        proxima::Kernel kernel(location);
+
+        kernel_chain(kernel);
+        recovery(kernel);
+        all_or_nothing(kernel);
+        combining(kernel);
+        consuming(kernel);
     } catch (const proxima::KernelError &error) {
         // Failures of the mathematics arrive as values. A kernel that cannot
         // run at all is an exception, since no chain could go on without it.
