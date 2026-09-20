@@ -1,6 +1,6 @@
 # Roadmap to 1.0
 
-Proxima is at **0.2.0**. This is the plan for getting from here to **1.0.0**:
+Proxima is at **0.3.0**. This is the plan for getting from here to **1.0.0**:
 what is left to do, in what order, and what 1.0 will promise.
 
 It is a plan, not a contract. The order of the milestones reflects what
@@ -121,6 +121,8 @@ presents as central.
   fuzzers, to keep it so.
 
 ## 0.3 — Maxima, wherever it is
+
+*Released as 0.3.0 on 2026-09-20.*
 
 Proxima runs a Maxima built on SBCL, found where installers put it. This
 milestone is about *which* Maxima a program gets, and how much say it has in

@@ -8,6 +8,10 @@ change the API. [RELEASING.md](RELEASING.md) says how a release is made, and
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-20
+
+*Which Maxima a program gets, and how much say it has in that.*
+
 ### Added
 
 - **`Config::sbcl_exe` and `Config::maxima_core`,** which name the
@@ -18,6 +22,16 @@ change the API. [RELEASING.md](RELEASING.md) says how a release is made, and
   as `MAXIMA_ROOT` and `PATH`, `Search::Automatic` — the default — on to the
   conventional install locations.
 
+### Changed
+
+- **Where the Maxima core lies is asked of the installation** — `maxima -d` —
+  rather than inferred from the directory layout. A copy with no launcher, as
+  one shipped with an application may be, still falls back to the documented
+  layout.
+- **The examples say where Maxima is.** `demo`, `tour` and `functional` each
+  carry the two paths at the top of the file, empty as shipped, and run their
+  Maxima-backed parts on a kernel of their own rather than the shared one.
+
 ### Fixed
 
 - **Maxima under a Windows path outside the ANSI code page** now works on any
@@ -25,13 +39,6 @@ change the API. [RELEASING.md](RELEASING.md) says how a release is made, and
   has no 8.3 short name to fall back on — most volumes that are not the
   system one — the core is now named on its own and resolved against the
   child's working directory, which Windows takes as wide text.
-
-### Changed
-
-- **Where the Maxima core lies is asked of the installation** — `maxima -d` —
-  rather than inferred from the directory layout. A copy with no launcher, as
-  one shipped with an application may be, still falls back to the documented
-  layout.
 
 ## [0.2.0] — 2026-09-19
 
@@ -113,6 +120,7 @@ Tagged `v0.1.0` afterwards.
 - **CMake packaging,** and a documentation site built with Sphinx, Doxygen and
   Breathe.
 
-[Unreleased]: https://github.com/troldal/proxima/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/troldal/proxima/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/troldal/proxima/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/troldal/proxima/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/troldal/proxima/releases/tag/v0.1.0
