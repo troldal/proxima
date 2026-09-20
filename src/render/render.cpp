@@ -21,33 +21,17 @@
 namespace proxima::detail {
 namespace {
 
-DisplayNode leaf(DisplayKind kind) {
-    DisplayNode node;
-    node.kind = kind;
-    return node;
-}
-
 DisplayNode integer_node(Integer value) {
-    DisplayNode node = leaf(DisplayKind::Integer);
-    node.integer = std::move(value);
-    return node;
-}
-
-DisplayNode compound(DisplayKind kind, std::vector<DisplayNode> children) {
-    DisplayNode node = leaf(kind);
-    node.children = std::move(children);
-    return node;
+    return display_node(DisplayInteger{std::move(value)});
 }
 
 /// A display node plus the sign that was pulled out of it.
 ///
 /// Extracting the sign is what lets a sum read `a - b` instead of `a + (-b)`,
 /// and what turns a top-level `-(x+1)` into a negation rather than a product
-/// with a `-1` in it.
-struct Signed {
-    DisplayNode node;
-    bool negated = false;
-};
+/// with a `-1` in it. It is exactly one addend of a sum, which is what
+/// DisplaySum is made of.
+using Signed = DisplayTerm;
 
 Signed signed_display(const Expr &expr);
 
@@ -56,9 +40,7 @@ DisplayNode display(const Expr &expr) {
     if (!value.negated) {
         return std::move(value.node);
     }
-    std::vector<DisplayNode> child;
-    child.push_back(std::move(value.node));
-    return compound(DisplayKind::Negate, std::move(child));
+    return display_node(DisplayNegate(std::move(value.node)));
 }
 
 /// The magnitude of a negative numeric literal, as an Expr.
@@ -93,10 +75,8 @@ DisplayNode from_power(const Expr &base, const Expr &exponent) {
     if (exponent.is(Kind::Rational) && exponent.numerator() == Integer(1)) {
         if (const auto index = exponent.denominator().to_int64();
             index && *index >= 2 && *index <= 64) {
-            DisplayNode node = leaf(DisplayKind::Root);
-            node.index = static_cast<unsigned>(*index);
-            node.children.push_back(display(base));
-            return node;
+            return display_node(
+                DisplayRoot(display(base), static_cast<unsigned>(*index)));
         }
     }
 
@@ -104,16 +84,11 @@ DisplayNode from_power(const Expr &base, const Expr &exponent) {
     // this, `1/x` renders as `x^-1`. Not when the base is a number, though: see
     // from_product.
     if (exponent.is_negative_number() && !base.is_number()) {
-        std::vector<DisplayNode> parts;
-        parts.push_back(integer_node(Integer(1)));
-        parts.push_back(reciprocal_body(base, exponent));
-        return compound(DisplayKind::Fraction, std::move(parts));
+        return display_node(DisplayFraction(integer_node(Integer(1)),
+                                            reciprocal_body(base, exponent)));
     }
 
-    std::vector<DisplayNode> parts;
-    parts.push_back(display(base));
-    parts.push_back(display(exponent));
-    return compound(DisplayKind::Power, std::move(parts));
+    return display_node(DisplayPower(display(base), display(exponent)));
 }
 
 /// Collapses a list of display nodes into one factor, a product, or the
@@ -125,7 +100,7 @@ DisplayNode join_factors(std::vector<DisplayNode> factors) {
     if (factors.size() == 1) {
         return std::move(factors.front());
     }
-    return compound(DisplayKind::Product, std::move(factors));
+    return display_node(DisplayProduct{std::move(factors)});
 }
 
 /// A product, split into the parts that belong above and below the line.
@@ -179,10 +154,8 @@ Signed from_product(const std::vector<Expr> &args) {
         return result;
     }
 
-    std::vector<DisplayNode> parts;
-    parts.push_back(join_factors(std::move(above)));
-    parts.push_back(join_factors(std::move(below)));
-    result.node = compound(DisplayKind::Fraction, std::move(parts));
+    result.node = display_node(DisplayFraction(join_factors(std::move(above)),
+                                               join_factors(std::move(below))));
     return result;
 }
 
@@ -198,15 +171,14 @@ DisplayNode from_sum(const std::vector<Expr> &args) {
         std::rotate(terms.begin(), terms.begin() + 1, terms.end());
     }
 
-    DisplayNode node = leaf(DisplayKind::Sum);
-    node.children.reserve(terms.size());
-    node.negated.reserve(terms.size());
+    // Each addend carries its own sign, so the terms and the signs can no
+    // longer be of different lengths.
+    DisplaySum sum;
+    sum.terms.reserve(terms.size());
     for (const Expr &term : terms) {
-        Signed part = signed_display(term);
-        node.children.push_back(std::move(part.node));
-        node.negated.push_back(part.negated);
+        sum.terms.push_back(signed_display(term));
     }
-    return node;
+    return display_node(std::move(sum));
 }
 
 Signed signed_display(const Expr &expr) {
@@ -225,28 +197,23 @@ Signed signed_display(const Expr &expr) {
         // the bracketing a negative base gets, and (-0.0)^-1 printed as
         // -0.0^(-1), which reads back as -(0.0^-1).
         result.negated = std::signbit(expr.real_value());
-        result.node = leaf(DisplayKind::Real);
-        result.node.real = std::fabs(expr.real_value());
+        result.node = display_node(DisplayReal{std::fabs(expr.real_value())});
         return result;
 
     case Kind::Rational: {
         result.negated = expr.numerator().is_negative();
-        std::vector<DisplayNode> parts;
-        parts.push_back(
-            integer_node(result.negated ? -expr.numerator() : expr.numerator()));
-        parts.push_back(integer_node(expr.denominator()));
-        result.node = compound(DisplayKind::Fraction, std::move(parts));
+        result.node = display_node(DisplayFraction(
+            integer_node(result.negated ? -expr.numerator() : expr.numerator()),
+            integer_node(expr.denominator())));
         return result;
     }
 
     case Kind::Symbol:
-        result.node = leaf(DisplayKind::Symbol);
-        result.node.text = expr.name();
+        result.node = display_node(DisplaySymbol{expr.name()});
         return result;
 
     case Kind::Opaque:
-        result.node = leaf(DisplayKind::Verbatim);
-        result.node.text = expr.opaque_text();
+        result.node = display_node(DisplayVerbatim{expr.opaque_text()});
         return result;
 
     case Kind::Add:
@@ -270,7 +237,7 @@ Signed signed_display(const Expr &expr) {
         // so this head gets its own construct rather than being a call whose
         // name every renderer would have to special-case.
         if (expr.name() == "list") {
-            result.node = compound(DisplayKind::List, std::move(args));
+            result.node = display_node(DisplayList{std::move(args)});
             return result;
         }
         // Written `x!` and `x!!` by a renderer that has the notation, and
@@ -278,26 +245,21 @@ Signed signed_display(const Expr &expr) {
         // prints in the shape it is parsed from.
         if ((expr.name() == "factorial" || expr.name() == "double_factorial")
             && args.size() == 1) {
-            result.node = compound(DisplayKind::Postfix, std::move(args));
-            result.node.text = expr.name();
+            result.node
+                = display_node(DisplayPostfix(expr.name(), std::move(args.front())));
             return result;
         }
-        result.node = compound(DisplayKind::Call, std::move(args));
-        result.node.text = expr.name();
+        result.node = display_node(DisplayCall{expr.name(), std::move(args)});
         return result;
     }
 
-    case Kind::Relation: {
-        std::vector<DisplayNode> sides;
-        sides.push_back(display(expr.arg(0)));
-        sides.push_back(display(expr.arg(1)));
-        result.node = compound(DisplayKind::Relation, std::move(sides));
-        result.node.rel_op = expr.relation_op();
+    case Kind::Relation:
+        result.node = display_node(DisplayRelation(
+            expr.relation_op(), display(expr.arg(0)), display(expr.arg(1))));
         return result;
     }
-    }
 
-    result.node = leaf(DisplayKind::Verbatim);
+    result.node = display_node(DisplayVerbatim{});
     return result;
 }
 

@@ -2,6 +2,8 @@
 
 #include <proxima/expr.hpp>
 
+#include <fxt/utils/Overload.hpp>
+
 #include <concepts>
 #include <cstddef>
 #include <functional>
@@ -11,6 +13,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace proxima {
@@ -276,19 +279,225 @@ enum class DisplayKind {
     Postfix,
 };
 
-struct DisplayNode {
-    DisplayKind kind = DisplayKind::Integer;
-    Integer integer = 0;
-    double real = 0.0;
-    /// Symbol name, Call head, or Verbatim source.
-    std::string text;
-    RelOp rel_op = RelOp::Equal;
-    /// Index of a Root: 2 for a square root.
-    unsigned index = 0;
-    std::vector<DisplayNode> children;
-    /// Parallel to `children`, and only meaningful for a Sum.
-    std::vector<bool> negated;
+struct DisplayNode;
+
+// The alternatives a display node can be, one per DisplayKind, each carrying
+// exactly what that kind needs and nothing else. There used to be one struct
+// with a kind beside `integer`, `real`, `text`, `rel_op`, `index`, `children`
+// and `negated`, all present whatever the kind: a Symbol had an `index`, a
+// Root had a `rel_op`, and which fields meant anything was a rule the walk
+// had to remember.
+//
+// The fixed-arity kinds take their operands through a constructor, so a
+// fraction with three parts or a relation with one cannot be built. They hold
+// them in a vector because DisplayNode is incomplete here, as detail::Power
+// holds its two; the bodies are below the node, where it is complete.
+
+/// One addend of a sum, with its sign already pulled out, so that a renderer
+/// writes `a - b` rather than `a + (-b)`.
+///
+/// The sign travels *with* the term. It used to be a `std::vector<bool>`
+/// parallel to the children, which the walk read with `i < negated.size() &&
+/// negated[i]` — a length check standing in for an invariant no type held.
+struct DisplayTerm;
+
+struct DisplayInteger {
+    Integer value = 0;
 };
+
+struct DisplayReal {
+    double value = 0.0;
+};
+
+struct DisplaySymbol {
+    std::string name;
+};
+
+/// Maxima source this library never interpreted.
+struct DisplayVerbatim {
+    std::string source;
+};
+
+struct DisplaySum {
+    std::vector<DisplayTerm> terms;
+};
+
+struct DisplayProduct {
+    std::vector<DisplayNode> factors;
+};
+
+class DisplayFraction {
+public:
+    DisplayFraction(DisplayNode numerator, DisplayNode denominator);
+    const DisplayNode &numerator() const;
+    const DisplayNode &denominator() const;
+
+private:
+    std::vector<DisplayNode> parts_;
+};
+
+class DisplayPower {
+public:
+    DisplayPower(DisplayNode base, DisplayNode exponent);
+    const DisplayNode &base() const;
+    const DisplayNode &exponent() const;
+
+private:
+    std::vector<DisplayNode> parts_;
+};
+
+/// A root and its index: 2 for a square root.
+class DisplayRoot {
+public:
+    DisplayRoot(DisplayNode radicand, unsigned index);
+    const DisplayNode &radicand() const;
+    unsigned index() const { return index_; }
+
+private:
+    std::vector<DisplayNode> parts_;
+    unsigned index_;
+};
+
+struct DisplayCall {
+    std::string head;
+    std::vector<DisplayNode> args;
+};
+
+struct DisplayList {
+    std::vector<DisplayNode> items;
+};
+
+class DisplayRelation {
+public:
+    DisplayRelation(RelOp op, DisplayNode lhs, DisplayNode rhs);
+    RelOp op() const { return op_; }
+    const DisplayNode &lhs() const;
+    const DisplayNode &rhs() const;
+
+private:
+    RelOp op_;
+    std::vector<DisplayNode> sides_;
+};
+
+class DisplayNegate {
+public:
+    explicit DisplayNegate(DisplayNode operand);
+    const DisplayNode &operand() const;
+
+private:
+    std::vector<DisplayNode> operand_;
+};
+
+/// A factorial or double factorial; `name` is the function's name.
+class DisplayPostfix {
+public:
+    DisplayPostfix(std::string name, DisplayNode operand);
+    const std::string &name() const { return name_; }
+    const DisplayNode &operand() const;
+
+private:
+    std::string name_;
+    std::vector<DisplayNode> operand_;
+};
+
+/// The display node itself: one of the above, and nothing beside it.
+struct DisplayNode {
+    using Payload
+        = std::variant<DisplayInteger, DisplayReal, DisplaySymbol, DisplayVerbatim,
+                       DisplaySum, DisplayProduct, DisplayFraction, DisplayPower,
+                       DisplayRoot, DisplayCall, DisplayList, DisplayRelation,
+                       DisplayNegate, DisplayPostfix>;
+
+    Payload payload;
+
+    /// Which kind this is, read off the alternative held. Each alternative
+    /// sits at the index its DisplayKind names — the assertions below hold
+    /// that true — so this is a cast rather than a table to keep in step.
+    DisplayKind kind() const { return static_cast<DisplayKind>(payload.index()); }
+};
+
+struct DisplayTerm {
+    DisplayNode node;
+    bool negated = false;
+};
+
+/// True when `K`'s alternative is `A`: what makes DisplayNode::kind() a cast.
+template <DisplayKind K, typename A>
+inline constexpr bool kAlternativeIs = std::is_same_v<
+    std::variant_alternative_t<static_cast<std::size_t>(K), DisplayNode::Payload>,
+    A>;
+
+static_assert(std::variant_size_v<DisplayNode::Payload>
+                  == static_cast<std::size_t>(DisplayKind::Postfix) + 1,
+              "one alternative per DisplayKind");
+static_assert(kAlternativeIs<DisplayKind::Integer, DisplayInteger>);
+static_assert(kAlternativeIs<DisplayKind::Real, DisplayReal>);
+static_assert(kAlternativeIs<DisplayKind::Symbol, DisplaySymbol>);
+static_assert(kAlternativeIs<DisplayKind::Verbatim, DisplayVerbatim>);
+static_assert(kAlternativeIs<DisplayKind::Sum, DisplaySum>);
+static_assert(kAlternativeIs<DisplayKind::Product, DisplayProduct>);
+static_assert(kAlternativeIs<DisplayKind::Fraction, DisplayFraction>);
+static_assert(kAlternativeIs<DisplayKind::Power, DisplayPower>);
+static_assert(kAlternativeIs<DisplayKind::Root, DisplayRoot>);
+static_assert(kAlternativeIs<DisplayKind::Call, DisplayCall>);
+static_assert(kAlternativeIs<DisplayKind::List, DisplayList>);
+static_assert(kAlternativeIs<DisplayKind::Relation, DisplayRelation>);
+static_assert(kAlternativeIs<DisplayKind::Negate, DisplayNegate>);
+static_assert(kAlternativeIs<DisplayKind::Postfix, DisplayPostfix>);
+
+// The fixed-arity alternatives' bodies, now that DisplayNode is complete.
+
+inline DisplayFraction::DisplayFraction(DisplayNode numerator,
+                                        DisplayNode denominator)
+    : parts_{std::move(numerator), std::move(denominator)} {}
+inline const DisplayNode &DisplayFraction::numerator() const {
+    return parts_[0];
+}
+inline const DisplayNode &DisplayFraction::denominator() const {
+    return parts_[1];
+}
+
+inline DisplayPower::DisplayPower(DisplayNode base, DisplayNode exponent)
+    : parts_{std::move(base), std::move(exponent)} {}
+inline const DisplayNode &DisplayPower::base() const {
+    return parts_[0];
+}
+inline const DisplayNode &DisplayPower::exponent() const {
+    return parts_[1];
+}
+
+inline DisplayRoot::DisplayRoot(DisplayNode radicand, unsigned index)
+    : parts_{std::move(radicand)}, index_(index) {}
+inline const DisplayNode &DisplayRoot::radicand() const {
+    return parts_[0];
+}
+
+inline DisplayRelation::DisplayRelation(RelOp op, DisplayNode lhs, DisplayNode rhs)
+    : op_(op), sides_{std::move(lhs), std::move(rhs)} {}
+inline const DisplayNode &DisplayRelation::lhs() const {
+    return sides_[0];
+}
+inline const DisplayNode &DisplayRelation::rhs() const {
+    return sides_[1];
+}
+
+inline DisplayNegate::DisplayNegate(DisplayNode operand)
+    : operand_{std::move(operand)} {}
+inline const DisplayNode &DisplayNegate::operand() const {
+    return operand_[0];
+}
+
+inline DisplayPostfix::DisplayPostfix(std::string name, DisplayNode operand)
+    : name_(std::move(name)), operand_{std::move(operand)} {}
+inline const DisplayNode &DisplayPostfix::operand() const {
+    return operand_[0];
+}
+
+/// A display node holding `alternative`. The one way one is built.
+template <typename A>
+DisplayNode display_node(A alternative) {
+    return DisplayNode{DisplayNode::Payload(std::move(alternative))};
+}
 
 /// Expr -> display form. Layer one, and the part every renderer shares.
 DisplayNode to_display(const Expr &expr);
@@ -417,39 +626,25 @@ struct Resolved {
 /// text, which is the whole point. Text cannot say whether the radicand needs
 /// brackets as a power base; an earlier version that tried printed
 /// `sqrt(1 - x^2)` as `1 - x^2^(1/2)`, which is a different expression.
-inline DisplayNode root_as_power(const DisplayNode &root) {
-    DisplayNode one;
-    one.kind = DisplayKind::Integer;
-    one.integer = Integer(1);
-
-    DisplayNode index;
-    index.kind = DisplayKind::Integer;
-    index.integer = Integer(root.index);
-
-    DisplayNode exponent;
-    exponent.kind = DisplayKind::Fraction;
-    exponent.children.push_back(std::move(one));
-    exponent.children.push_back(std::move(index));
-
-    DisplayNode power;
-    power.kind = DisplayKind::Power;
-    power.children.push_back(root.children.front());
-    power.children.push_back(std::move(exponent));
-    return power;
+inline DisplayNode root_as_power(const DisplayRoot &root) {
+    DisplayNode exponent = display_node(
+        DisplayFraction(display_node(DisplayInteger{Integer(1)}),
+                        display_node(DisplayInteger{Integer(root.index())})));
+    return display_node(DisplayPower(root.radicand(), std::move(exponent)));
 }
 
 /// A postfix node as the call it stands for, for a renderer with no postfix
 /// notation: `factorial(x)`, with its operand grouped as an argument rather
 /// than as an operand.
-inline DisplayNode postfix_as_call(const DisplayNode &postfix) {
-    DisplayNode call = postfix;
-    call.kind = DisplayKind::Call;
-    return call;
+inline DisplayNode postfix_as_call(const DisplayPostfix &postfix) {
+    std::vector<DisplayNode> args;
+    args.push_back(postfix.operand());
+    return display_node(DisplayCall{postfix.name(), std::move(args)});
 }
 
 /// The operator a postfix node is written with.
-inline std::string_view postfix_operator(const DisplayNode &postfix) {
-    return postfix.text == "double_factorial" ? "!!" : "!";
+inline std::string_view postfix_operator(const DisplayPostfix &postfix) {
+    return postfix.name() == "double_factorial" ? "!!" : "!";
 }
 
 /// Layer two: the walk, with grouping applied. A template on the concrete
@@ -463,96 +658,113 @@ template <typename R, typename T>
 T render_node(const DisplayNode &node, Strength context, Resolved<R, T> &resolved) {
     R &renderer = resolved.renderer;
 
+    // A root or a postfix a renderer has no notation for is replaced
+    // outright by the construct it stands for, and that replacement decides
+    // its own grouping — so this returns rather than falling through to the
+    // grouping decision below.
     if constexpr (!RendersRoot<R, T>) {
-        if (node.kind == DisplayKind::Root) {
-            return render_node(root_as_power(node), context, resolved);
+        if (const auto *root = std::get_if<DisplayRoot>(&node.payload)) {
+            return render_node(root_as_power(*root), context, resolved);
         }
     }
     if constexpr (!RendersPostfix<R, T>) {
-        if (node.kind == DisplayKind::Postfix) {
-            return render_node(postfix_as_call(node), context, resolved);
+        if (const auto *postfix = std::get_if<DisplayPostfix>(&node.payload)) {
+            return render_node(postfix_as_call(*postfix), context, resolved);
         }
     }
 
     const auto child = [&](const DisplayNode &operand, Slot slot) {
         return render_node(operand, resolved.context_for(slot), resolved);
     };
-    const auto children = [&](Slot slot) {
+    const auto each = [&](const std::vector<DisplayNode> &operands, Slot slot) {
         std::vector<T> rendered;
-        rendered.reserve(node.children.size());
-        for (const DisplayNode &operand : node.children) {
+        rendered.reserve(operands.size());
+        for (const DisplayNode &operand : operands) {
             rendered.push_back(child(operand, slot));
         }
         return rendered;
     };
 
-    T value = [&]() -> T {
-        switch (node.kind) {
-        case DisplayKind::Integer:
-            return renderer.integer(node.integer);
-        case DisplayKind::Real:
-            return renderer.real(node.real);
-        case DisplayKind::Symbol:
-            return renderer.symbol(std::string_view(node.text));
-        case DisplayKind::Verbatim:
-            return renderer.verbatim(std::string_view(node.text));
+    // One arm per alternative, each reaching only for what its own kind has.
+    // A missing arm is a compile error; there is no fallthrough returning
+    // something empty for a kind nobody handled.
+    T value = std::visit(
+        fxt::overload{
+            [&](const DisplayInteger &number) {
+                return renderer.integer(number.value);
+            },
+            [&](const DisplayReal &number) { return renderer.real(number.value); },
+            [&](const DisplaySymbol &symbol) {
+                return renderer.symbol(std::string_view(symbol.name));
+            },
+            [&](const DisplayVerbatim &verbatim) {
+                return renderer.verbatim(std::string_view(verbatim.source));
+            },
 
-        case DisplayKind::Sum: {
-            std::vector<Term<T>> terms;
-            terms.reserve(node.children.size());
-            for (std::size_t i = 0; i < node.children.size(); ++i) {
-                const bool negated = i < node.negated.size() && node.negated[i];
-                terms.push_back({child(node.children[i],
-                                       negated ? Slot::NegatedTerm : Slot::SumTerm),
-                                 negated});
-            }
-            return renderer.sum(std::span<const Term<T>>(terms));
-        }
+            [&](const DisplaySum &sum) {
+                std::vector<Term<T>> terms;
+                terms.reserve(sum.terms.size());
+                for (const DisplayTerm &term : sum.terms) {
+                    terms.push_back(
+                        {child(term.node,
+                               term.negated ? Slot::NegatedTerm : Slot::SumTerm),
+                         term.negated});
+                }
+                return renderer.sum(std::span<const Term<T>>(terms));
+            },
 
-        case DisplayKind::Negate:
-            return resolved.negate(child(node.children[0], Slot::NegatedTerm));
+            [&](const DisplayProduct &product) {
+                const std::vector<T> factors = each(product.factors, Slot::Factor);
+                return renderer.product(std::span<const T>(factors));
+            },
 
-        case DisplayKind::Product: {
-            const std::vector<T> factors = children(Slot::Factor);
-            return renderer.product(std::span<const T>(factors));
-        }
+            [&](const DisplayFraction &fraction) {
+                return renderer.fraction(
+                    child(fraction.numerator(), Slot::Numerator),
+                    child(fraction.denominator(), Slot::Denominator));
+            },
 
-        case DisplayKind::Fraction:
-            return renderer.fraction(child(node.children[0], Slot::Numerator),
-                                     child(node.children[1], Slot::Denominator));
+            [&](const DisplayPower &power) {
+                return renderer.power(child(power.base(), Slot::Base),
+                                      child(power.exponent(), Slot::Exponent));
+            },
 
-        case DisplayKind::Power:
-            return renderer.power(child(node.children[0], Slot::Base),
-                                  child(node.children[1], Slot::Exponent));
+            [&](const DisplayRoot &root) {
+                // Only reached when the renderer has root(); see above.
+                return resolved.root(child(root.radicand(), Slot::Radicand),
+                                     root.index());
+            },
 
-        case DisplayKind::Root:
-            return resolved.root(child(node.children[0], Slot::Radicand),
-                                 node.index);
+            [&](const DisplayCall &call) {
+                const std::vector<T> args = each(call.args, Slot::Argument);
+                return renderer.call(std::string_view(call.head),
+                                     std::span<const T>(args));
+            },
 
-        case DisplayKind::Postfix:
-            return resolved.postfix(child(node.children[0], Slot::PostfixOperand),
-                                    postfix_operator(node));
+            [&](const DisplayList &list) {
+                const std::vector<T> items = each(list.items, Slot::Argument);
+                return resolved.list(items);
+            },
 
-        case DisplayKind::Call: {
-            const std::vector<T> args = children(Slot::Argument);
-            return renderer.call(std::string_view(node.text),
-                                 std::span<const T>(args));
-        }
+            [&](const DisplayRelation &relation) {
+                return renderer.relation(relation.op(),
+                                         child(relation.lhs(), Slot::RelationSide),
+                                         child(relation.rhs(), Slot::RelationSide));
+            },
 
-        case DisplayKind::List: {
-            const std::vector<T> items = children(Slot::Argument);
-            return resolved.list(items);
-        }
+            [&](const DisplayNegate &negation) {
+                return resolved.negate(child(negation.operand(), Slot::NegatedTerm));
+            },
 
-        case DisplayKind::Relation:
-            return renderer.relation(node.rel_op,
-                                     child(node.children[0], Slot::RelationSide),
-                                     child(node.children[1], Slot::RelationSide));
-        }
-        return renderer.verbatim(std::string_view{});
-    }();
+            [&](const DisplayPostfix &postfix) {
+                return resolved.postfix(
+                    child(postfix.operand(), Slot::PostfixOperand),
+                    postfix_operator(postfix));
+            },
+        },
+        node.payload);
 
-    if (resolved.strength_of(construct_of(node.kind)) < context) {
+    if (resolved.strength_of(construct_of(node.kind())) < context) {
         return renderer.group(value);
     }
     return value;

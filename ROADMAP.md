@@ -383,7 +383,7 @@ what is missing, with no base class for a user's type to inherit.
   no change: `active_context_` was already a `std::optional`, and
   `state_accounted_` is an honest flag — one fact, two values — not a state
   machine in disguise.
-- [ ] **`SExpr` and `DisplayNode` carry every field for every kind.** Both
+- [x] **`SExpr` and `DisplayNode` carry every field for every kind.** Both
   are the shape `Node` had before it became a variant: a kind beside
   `text`, `real`, `items` and the rest, with `digits()` "meaningless for
   other kinds — check first". `DisplayNode` also keeps `negated` as a
@@ -391,6 +391,20 @@ what is missing, with no base class for a user's type to inherit.
   a `std::vector<Term>` of child-and-sign pairs cannot be mismatched. The
   same treatment as `Node`. `DisplayNode` is in a public header, so it
   belongs with the renderer-extension decision above.
+  *Done.* Both are variants now, one alternative per kind, with `kind()`
+  read off the index. `SExpr` has a type per string kind, so `digits()` on
+  a symbol throws where it used to return the symbol's name.
+  `DisplayNode` has fourteen alternatives; the fixed-arity ones — fraction,
+  power, root, relation, negation, postfix — take their operands through a
+  constructor, and a sum is a `std::vector<DisplayTerm>` of addend-and-sign,
+  so the two can no longer be of different lengths and the walk's
+  `i < negated.size()` guard is gone. The walk is a `std::visit`, so a kind
+  reaches only for what it has and there is no fallthrough rendering an
+  empty verbatim for a kind nobody handled.
+  The renderer-extension decision is untouched: `DisplayNode` is in
+  `proxima::detail`, nothing outside `src/render` builds one, and what a
+  user's renderer sees — the concepts, `Term<T>`, `Construct`, `Slot` — is
+  unchanged.
 - [ ] **`Config` allows one of `sbcl_exe` and `maxima_core` without the
   other,** and discovery refuses it at runtime. A single optional value
   holding both — `std::optional<NamedInstallation>` — makes half a name
@@ -435,7 +449,9 @@ what is missing, with no base class for a user's type to inherit.
   800, and no static helpers exposed for testing.
 - [ ] **Adding a construct to rendering touches six places.** `DisplayKind`,
   `Construct`, `Slot`, `to_display`, `render_node` and `construct_of` all
-  change together, and a user cannot add one at all. That is the closed
+  change together — seven now, with the alternative beside `DisplayKind`,
+  though a missing arm is at least a compile error — and a user cannot add
+  one at all. That is the closed
   side of the renderer design, whose open side — a new renderer needs no
   change here — is the part that works. Already the "How renderers extend"
   decision above; this is the shape of the cost.

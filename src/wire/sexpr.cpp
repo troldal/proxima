@@ -2,6 +2,8 @@
 
 #include <proxima/errors.hpp>
 
+#include <fxt/utils/Overload.hpp>
+
 #include <charconv>
 #include <cstdlib>
 #include <system_error>
@@ -233,46 +235,32 @@ void append_escaped(std::string &out, std::string_view text) {
 } // namespace
 
 SExpr SExpr::integer(std::string digits) {
-    SExpr value;
-    value.kind_ = Kind::Integer;
-    value.text_ = std::move(digits);
-    return value;
+    return SExpr(Digits{std::move(digits)});
 }
 
 SExpr SExpr::real(double number) {
-    SExpr value;
-    value.kind_ = Kind::Real;
-    value.real_ = number;
-    return value;
+    return SExpr(number);
 }
 
 SExpr SExpr::symbol(std::string name) {
-    SExpr value;
-    value.kind_ = Kind::Symbol;
-    value.text_ = std::move(name);
-    return value;
+    return SExpr(Name{std::move(name)});
 }
 
 SExpr SExpr::string(std::string text) {
-    SExpr value;
-    value.kind_ = Kind::String;
-    value.text_ = std::move(text);
-    return value;
+    return SExpr(Text{std::move(text)});
 }
 
 SExpr SExpr::list(std::vector<SExpr> items) {
-    SExpr value;
-    value.kind_ = Kind::List;
-    value.items_ = std::move(items);
-    return value;
+    return SExpr(std::move(items));
 }
 
 std::optional<std::int64_t> SExpr::as_int64() const {
-    if (kind_ != Kind::Integer || text_.empty()) {
+    const auto *held = std::get_if<Digits>(&payload_);
+    if (held == nullptr || held->text.empty()) {
         return std::nullopt;
     }
-    const char *first = text_.data();
-    const char *last = first + text_.size();
+    const char *first = held->text.data();
+    const char *last = first + held->text.size();
     if (*first == '+') {
         ++first; // from_chars rejects a leading '+'.
     }
@@ -285,66 +273,52 @@ std::optional<std::int64_t> SExpr::as_int64() const {
 }
 
 const SExpr &SExpr::at(std::size_t index) const {
-    if (index >= items_.size()) {
+    const auto *items = std::get_if<std::vector<SExpr>>(&payload_);
+    if (items == nullptr || index >= items->size()) {
         throw ParseError("Maxima reply has no element " + std::to_string(index)
-                         + " (it has " + std::to_string(items_.size()) + ")");
+                         + " (it has " + std::to_string(size()) + ")");
     }
-    return items_[index];
-}
-
-bool SExpr::operator==(const SExpr &other) const {
-    if (kind_ != other.kind_) {
-        return false;
-    }
-    switch (kind_) {
-    case Kind::Integer:
-    case Kind::Symbol:
-    case Kind::String:
-        return text_ == other.text_;
-    case Kind::Real:
-        return real_ == other.real_;
-    case Kind::List:
-        return items_ == other.items_;
-    }
-    return false;
+    return (*items)[index];
 }
 
 std::string SExpr::to_string() const {
-    switch (kind_) {
-    case Kind::Integer:
-        return text_;
-    case Kind::Real: {
-        char buffer[40];
-        const auto [stopped, error]
-            = std::to_chars(buffer, buffer + sizeof(buffer), real_);
-        std::string rendered(buffer, error == std::errc{} ? stopped : buffer);
-        // Keep it readable back as a float rather than an integer.
-        if (rendered.find_first_of(".e") == std::string::npos) {
-            rendered += ".0";
-        }
-        return rendered;
-    }
-    case Kind::Symbol:
-        return text_;
-    case Kind::String: {
-        std::string out = "\"";
-        append_escaped(out, text_);
-        out.push_back('"');
-        return out;
-    }
-    case Kind::List: {
-        std::string out = "(";
-        for (size_t i = 0; i < items_.size(); ++i) {
-            if (i != 0) {
-                out.push_back(' ');
-            }
-            out += items_[i].to_string();
-        }
-        out.push_back(')');
-        return out;
-    }
-    }
-    return {};
+    // One arm per alternative; the payload cannot be anything else, so there
+    // is no unreachable fallthrough to return an empty string from.
+    return std::visit(
+        fxt::overload{
+            [](const Digits &digits) { return digits.text; },
+            [](double real) {
+                char buffer[40];
+                const auto [stopped, error]
+                    = std::to_chars(buffer, buffer + sizeof(buffer), real);
+                std::string rendered(buffer,
+                                     error == std::errc{} ? stopped : buffer);
+                // Keep it readable back as a float rather than an integer.
+                if (rendered.find_first_of(".e") == std::string::npos) {
+                    rendered += ".0";
+                }
+                return rendered;
+            },
+            [](const Name &name) { return name.text; },
+            [](const Text &text) {
+                std::string out = "\"";
+                append_escaped(out, text.text);
+                out.push_back('"');
+                return out;
+            },
+            [](const std::vector<SExpr> &items) {
+                std::string out = "(";
+                for (size_t i = 0; i < items.size(); ++i) {
+                    if (i != 0) {
+                        out.push_back(' ');
+                    }
+                    out += items[i].to_string();
+                }
+                out.push_back(')');
+                return out;
+            },
+        },
+        payload_);
 }
 
 SExpr parse_sexpr(std::string_view text) {
