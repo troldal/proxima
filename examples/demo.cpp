@@ -7,9 +7,11 @@
 // renderer written the way any user of the library would write one.
 
 #include <proxima/assumptions.hpp>
+#include <proxima/config.hpp>
 #include <proxima/errors.hpp>
 #include <proxima/expr.hpp>
 #include <proxima/functions.hpp>
+#include <proxima/kernel.hpp>
 #include <proxima/mathml.hpp>
 #include <proxima/numeric.hpp>
 #include <proxima/ops.hpp>
@@ -20,12 +22,53 @@
 
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <print>
 #include <string>
 #include <vector>
 
 namespace {
+
+/// Where Maxima is, when this program says rather than letting Proxima look.
+///
+/// Naming the SBCL runtime and the Maxima core outright means nothing is
+/// searched for and no directory layout is assumed — what an application
+/// shipping its own copy of Maxima does:
+///
+///     config.sbcl_exe = "C:/maxima-5.50.0/bin/sbcl.exe";
+///     config.maxima_core =
+///         "C:/maxima-5.50.0/lib/maxima/5.50.0/binary-sbcl/maxima.core";
+///
+/// Taken from the environment here, so the demo still runs anywhere. With
+/// neither variable set, Proxima discovers the installation as it always
+/// does; PROXIMA_MAXIMA_ROOT names a root and leaves the rest to it.
+proxima::Config maxima_location() {
+    proxima::Config config;
+    if (const char *root = std::getenv("PROXIMA_MAXIMA_ROOT")) {
+        config.maxima_root = root;
+    }
+    if (const char *sbcl = std::getenv("PROXIMA_SBCL_EXE")) {
+        config.sbcl_exe = sbcl;
+    }
+    if (const char *core = std::getenv("PROXIMA_MAXIMA_CORE")) {
+        config.maxima_core = core;
+    }
+    return config;
+}
+
+/// Says which of the three the run is using, before anything is asked.
+void report_location(const proxima::Config &config) {
+    if (!config.sbcl_exe.empty() || !config.maxima_core.empty()) {
+        std::println("Maxima: named outright\n  sbcl = {}\n  core = {}",
+                     config.sbcl_exe.string(), config.maxima_core.string());
+    } else if (!config.maxima_root.empty()) {
+        std::println("Maxima: under the root {}", config.maxima_root.string());
+    } else {
+        std::println("Maxima: discovered (set PROXIMA_SBCL_EXE and "
+                     "PROXIMA_MAXIMA_CORE to name it)");
+    }
+}
 
 /// Indents every line of a multi-line block, so a drawn expression sits
 /// under its label.
@@ -54,6 +97,12 @@ void show_rendered(const char *label, const proxima::Expr &expr) {
 
 int main() {
     try {
+        // Every operation below is asked of this kernel, rather than of the
+        // shared one, so the location above is what it uses.
+        const proxima::Config config = maxima_location();
+        report_location(config);
+        proxima::Kernel kernel(config);
+
         const proxima::Symbol x("x");
 
         // Two ways to build an expression: with operators, or from text.
@@ -65,11 +114,13 @@ int main() {
         std::println("  from text      = {}   {}", from_text,
                      from_text == f ? "(the same expression)"
                                     : "(a different one!)");
-        std::println("f'               = {}", *proxima::diff(f, x));
+        std::println("f'               = {}", *proxima::diff(f, x, 1, kernel));
         std::println("f(5)             = {}",
-                     *proxima::subst(f, x, proxima::Expr(5)));
-        std::println("expand((x+1)^3)  = {}", *proxima::expand(pow(x + 1, 3)));
-        std::println("factor(x^2-1)    = {}", *proxima::factor(pow(x, 2) - 1));
+                     *proxima::subst(f, x, proxima::Expr(5), kernel));
+        std::println("expand((x+1)^3)  = {}",
+                     *proxima::expand(pow(x + 1, 3), kernel));
+        std::println("factor(x^2-1)    = {}",
+                     *proxima::factor(pow(x, 2) - 1, kernel));
 
         // Exact arithmetic: not 0.7333...
         std::println("1/3 + 2/5        = {}",
@@ -78,23 +129,25 @@ int main() {
 
         // An integral, and the derivative of the result to check it.
         const proxima::Expr integrand = pow(x, 2) * proxima::sin(x);
-        if (const auto integral = proxima::integrate(integrand, x)) {
+        if (const auto integral = proxima::integrate(integrand, x, kernel)) {
             std::println("int x^2 sin(x)   = {}", *integral);
-            std::println("  differentiated = {}",
-                         *proxima::ratsimp(*proxima::diff(*integral, x)));
+            std::println(
+                "  differentiated = {}",
+                *proxima::ratsimp(*proxima::diff(*integral, x, 1, kernel), kernel));
         }
 
-        if (const auto area
-            = proxima::integrate(x * x, x, proxima::Expr(0), proxima::Expr(1))) {
+        if (const auto area = proxima::integrate(x * x, x, proxima::Expr(0),
+                                                 proxima::Expr(1), kernel)) {
             std::println("int_0^1 x^2      = {}", *area);
         }
 
-        if (const auto l
-            = proxima::limit(proxima::sin(x) / x, x, proxima::Expr(0))) {
+        if (const auto l = proxima::limit(proxima::sin(x) / x, x, proxima::Expr(0),
+                                          proxima::Side::Both, kernel)) {
             std::println("lim sin(x)/x     = {}", *l);
         }
 
-        if (const auto roots = proxima::solve(eq(pow(x, 2), proxima::Expr(1)), x)) {
+        if (const auto roots
+            = proxima::solve(eq(pow(x, 2), proxima::Expr(1)), x, kernel)) {
             std::print("solve x^2 = 1    = ");
             for (const proxima::Expr &root : *roots) {
                 std::print("{} ", root);
@@ -107,7 +160,7 @@ int main() {
         const std::vector<proxima::Expr> system{eq(x + y, proxima::Expr(3)),
                                                 eq(x - y, proxima::Expr(1))};
         const std::vector<proxima::Symbol> unknowns{x, y};
-        if (const auto found = proxima::solve(system, unknowns)) {
+        if (const auto found = proxima::solve(system, unknowns, kernel)) {
             for (const proxima::Solution &solution : *found) {
                 std::println("x+y=3, x-y=1     = x = {}, y = {}", solution[0],
                              solution[1]);
@@ -122,12 +175,13 @@ int main() {
         const proxima::Symbol a("a");
         const proxima::Symbol b("b");
         const proxima::Symbol c("c");
-        if (const auto quadratic
-            = proxima::solve(eq(a * pow(x, 2) + b * x + c, proxima::Expr(0)), x);
+        if (const auto quadratic = proxima::solve(
+                eq(a * pow(x, 2) + b * x + c, proxima::Expr(0)), x, kernel);
             quadratic && !quadratic->empty()) {
             show_rendered("a root of a*x^2 + b*x + c = 0:", quadratic->back());
         }
-        show_rendered("d/dx sin(x)/x:", *proxima::diff(proxima::sin(x) / x, x));
+        show_rendered("d/dx sin(x)/x:",
+                      *proxima::diff(proxima::sin(x) / x, x, 1, kernel));
         std::println();
 
         // The other parser hands the text to Maxima itself, which accepts
@@ -135,7 +189,7 @@ int main() {
         // the two answer differently.
         std::println("Expr::parse(5!)   = {}   (parsed, not evaluated)",
                      *proxima::Expr::parse("5!"));
-        if (const auto via_maxima = proxima::parse("5!")) {
+        if (const auto via_maxima = proxima::parse("5!", kernel)) {
             std::println("proxima::parse(5!)    = {}            (Maxima simplifies "
                          "as it reads)",
                          *via_maxima);
@@ -143,7 +197,8 @@ int main() {
 
         // Failure is an ordinary outcome, reported rather than thrown: Maxima
         // has no closed form for this one.
-        const auto hopeless = proxima::integrate(proxima::exp(proxima::sin(x)), x);
+        const auto hopeless
+            = proxima::integrate(proxima::exp(proxima::sin(x)), x, kernel);
         std::println("int e^sin(x)     = {}",
                      hopeless ? hopeless->str()
                               : "no result: " + hopeless.error().message());
@@ -153,20 +208,20 @@ int main() {
         const proxima::Symbol n("n");
         const proxima::Expr power = pow(x, n);
 
-        const auto unknown = proxima::integrate(power, x);
+        const auto unknown = proxima::integrate(power, x, kernel);
         std::println("int x^n          = {}",
                      unknown ? unknown->str()
                              : "no result: " + unknown.error().message());
 
         // Supplying it with the question.
         if (const auto known
-            = proxima::integrate(power, x, proxima::assuming(gt(n, 0)))) {
+            = proxima::integrate(power, x, {proxima::assuming(gt(n, 0)), kernel})) {
             std::println("  assuming n > 0 = {}", *known);
         }
 
         // Once a closed form exists, turning it into numbers is ordinary
         // arithmetic. No further round trips, so this is usable in a loop.
-        if (const auto antiderivative = proxima::integrate(integrand, x)) {
+        if (const auto antiderivative = proxima::integrate(integrand, x, kernel)) {
             const auto F = proxima::as_function(*antiderivative, x);
             std::println("F(1) - F(0)      = {:.6g}", F(1.0) - F(0.0));
         }
