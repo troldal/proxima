@@ -416,16 +416,14 @@ MaximaInstall discover_maxima(const Config &config, const EnvLookup &env,
     // Named outright: the two files are the installation. Nothing is
     // searched for and no layout is assumed, which is what an application
     // shipping its own copy of Maxima needs.
-    if (!config.sbcl_exe.empty() || !config.maxima_core.empty()) {
+    if (config.installation) {
+        const Installation &named = *config.installation;
+        // Only whether the files are there: that both were named is settled
+        // by Installation's constructor, where they were written.
         for (const auto &[which, path] :
-             {std::pair{"Config::sbcl_exe", config.sbcl_exe},
-              std::pair{"Config::maxima_core", config.maxima_core}}) {
-            if (path.empty()) {
-                throw KernelError(
-                    std::string(which)
-                    + " is not set: Config::sbcl_exe and Config::maxima_core name "
-                      "an installation together, or neither is set");
-            }
+             {std::pair{"Config::installation's SBCL executable", named.sbcl_exe()},
+              std::pair{"Config::installation's Maxima core",
+                        named.maxima_core()}}) {
             if (!regular_file_exists(path)) {
                 throw KernelError(std::string(which)
                                   + " does not name a file: " + describe_path(path));
@@ -433,17 +431,17 @@ MaximaInstall discover_maxima(const Config &config, const EnvLookup &env,
         }
 
         MaximaInstall install;
-        install.sbcl_exe = config.sbcl_exe;
-        install.maxima_core = config.maxima_core;
+        install.sbcl_exe = named.sbcl_exe();
+        install.maxima_core = named.maxima_core();
         // The prefix Maxima is told about: as configured, or the directory
         // above SBCL's, which is what an installation laid out as usual has.
         install.root = config.maxima_root.empty()
-                           ? config.sbcl_exe.parent_path().parent_path()
+                           ? named.sbcl_exe().parent_path().parent_path()
                            : config.maxima_root;
-        install.version_tag = tag_from_core(config.maxima_core);
+        install.version_tag = tag_from_core(named.maxima_core());
 #ifdef _WIN32
         install.raise_dynamic_space_size = regular_file_exists(
-            config.sbcl_exe.parent_path() / "libgcc_s_seh-1.dll");
+            named.sbcl_exe().parent_path() / "libgcc_s_seh-1.dll");
 #endif
         return install;
     }
@@ -469,8 +467,8 @@ MaximaInstall discover_maxima(const Config &config, const EnvLookup &env,
     if (config.search == Search::Configured) {
         throw KernelError(
             "No Maxima configured, and Config::search is Search::Configured, so "
-            "none was looked for. Set Config::sbcl_exe and Config::maxima_core, "
-            "or Config::maxima_root, or allow Search::Environment.");
+            "none was looked for. Set Config::installation, or "
+            "Config::maxima_root, or allow Search::Environment.");
     }
 
     std::vector<fs::path> tried;

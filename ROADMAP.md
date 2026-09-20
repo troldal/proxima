@@ -179,8 +179,8 @@ a distribution that ships only that build.
 - **Assembling and shipping a copy of Maxima.** Proxima is a library, not an
   application: which Maxima to ship, and how to trim it, belongs to the
   program that ships one. What the library owes such a program is a way to
-  say where its copy is, and `Config::sbcl_exe` and `Config::maxima_core` are
-  that — they assume no layout at all. The
+  say where its copy is, and `Config::installation` is that — it assumes no
+  layout at all. The
   [how-to](docs/sphinx/how-to/choose-maxima.md) shows the use; the library
   will not go looking beside the executable or build the copy itself.
 
@@ -405,10 +405,16 @@ what is missing, with no base class for a user's type to inherit.
   `proxima::detail`, nothing outside `src/render` builds one, and what a
   user's renderer sees — the concepts, `Term<T>`, `Construct`, `Slot` — is
   unchanged.
-- [ ] **`Config` allows one of `sbcl_exe` and `maxima_core` without the
+- [x] **`Config` allows one of `sbcl_exe` and `maxima_core` without the
   other,** and discovery refuses it at runtime. A single optional value
   holding both — `std::optional<NamedInstallation>` — makes half a name
   unrepresentable. Public, so a 0.4 change.
+  *Done.* `Config::installation` is a `std::optional<Installation>`, and
+  `Installation`'s constructor takes both paths and refuses an empty one, so
+  half a name is refused where it is written rather than when a kernel
+  starts. Discovery's "is not set" branch is gone; what is left there is
+  whether the files are *there*, which no constructor can answer honestly —
+  one can be deleted between the two moments.
 - [ ] **A `Solution` is positional.** `Solution` is `std::vector<Expr>`, with
   `solution[i]` belonging to `unknowns[i]` by convention only; nothing ties
   a solution to the unknowns it answers. A value that carries its symbols

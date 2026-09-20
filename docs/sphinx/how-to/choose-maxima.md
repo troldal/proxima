@@ -6,7 +6,7 @@
 
 When a kernel first starts it looks, in order, at:
 
-1. `Config::sbcl_exe` and `Config::maxima_core`, if you set them — see
+1. `Config::installation`, if you set it — see
    [Name it outright](#name-it-outright), which ends the search here;
 2. `Config::maxima_root`, if you set it;
 3. the environment variables `MAXIMA_ROOT` and then `MAXIMA_PREFIX`;
@@ -33,15 +33,18 @@ To leave nothing to discovery, name the two files Proxima runs:
 
 ```cpp
 proxima::Config config;
-config.sbcl_exe = "/opt/my-app/maxima/bin/sbcl";
-config.maxima_core = "/opt/my-app/maxima/lib/maxima/5.50.0/binary-sbcl/maxima.core";
+config.installation = proxima::Installation(
+    "/opt/my-app/maxima/bin/sbcl",
+    "/opt/my-app/maxima/lib/maxima/5.50.0/binary-sbcl/maxima.core");
 proxima::Kernel kernel(config);
 ```
 
 Nothing is then searched for, no layout is assumed and no launcher is run:
-those two files are the installation. Set both or neither — one without the
-other is a `KernelError`, as is either one naming no file. `maxima_root` may
-be set alongside them, and is then only the prefix Maxima is told about;
+those two files are the installation. They are one value because they are one
+fact: an `Installation` names both, and refuses an empty path where you write
+it rather than when a kernel starts. Whether the files are *there* is still
+the kernel's question, and an answer of no is a `KernelError`. `maxima_root`
+may be set alongside it, and is then only the prefix Maxima is told about;
 left empty, the prefix is the directory above SBCL's.
 
 This is what an application shipping its own copy of Maxima wants, and an
@@ -61,7 +64,9 @@ narrow string is read in the ANSI code page on Windows, so a path with such
 characters must not come from a `const char *` or a narrow `argv`:
 
 ```cpp
-config.maxima_core = u8"C:/maxima-探索/lib/maxima/5.50.0/binary-sbcl/maxima.core";
+config.installation = proxima::Installation(
+    u8"C:/maxima-探索/bin/sbcl.exe",
+    u8"C:/maxima-探索/lib/maxima/5.50.0/binary-sbcl/maxima.core");
 ```
 
 ## Refuse to look elsewhere

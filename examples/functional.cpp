@@ -78,8 +78,13 @@ constexpr const char *kMaximaRoot = "";
 
 proxima::Config maxima_location() {
     proxima::Config config;
-    config.sbcl_exe = kSbclExe;
-    config.maxima_core = kMaximaCore;
+    // An Installation names the two together, so both have to be filled in;
+    // there is no way to set one. Left empty, as they are here, nothing is
+    // named and Proxima discovers the installation.
+    if (!std::string_view(kSbclExe).empty()
+        && !std::string_view(kMaximaCore).empty()) {
+        config.installation = proxima::Installation(kSbclExe, kMaximaCore);
+    }
     config.maxima_root = kMaximaRoot;
     return config;
 }
@@ -302,9 +307,10 @@ int main() {
         // One kernel for part two, running the Maxima named at the top of
         // this file — or the one discovered, when nothing is named.
         const proxima::Config location = maxima_location();
-        if (!location.sbcl_exe.empty() || !location.maxima_core.empty()) {
-            show("Maxima, named outright", location.sbcl_exe.string() + "\n      "
-                                               + location.maxima_core.string());
+        if (location.installation) {
+            show("Maxima, named outright",
+                 location.installation->sbcl_exe().string() + "\n      "
+                     + location.installation->maxima_core().string());
         } else if (!location.maxima_root.empty()) {
             show("Maxima, under the root", location.maxima_root.string());
         } else {

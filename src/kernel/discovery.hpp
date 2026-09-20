@@ -125,7 +125,7 @@ CoreSpelling core_spelling(const std::filesystem::path &core);
 /// Returns the first usable installation, or throws KernelError naming every
 /// location tried.
 ///
-/// Config::sbcl_exe and Config::maxima_core, set together, end it before it
+/// Config::installation, when it is set, ends it before it
 /// begins: those two files are the installation, and nothing is searched for
 /// or inferred. Failing that, a non-empty Config::maxima_root is
 /// authoritative: if it does not hold a usable installation this throws

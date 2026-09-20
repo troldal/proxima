@@ -659,8 +659,7 @@ TEST_CASE("naming SBCL and the core outright skips discovery entirely") {
         std::filesystem::path("images") / "5.50.0" / "binary-sbcl" / "maxima.core");
 
     proxima::Config config;
-    config.sbcl_exe = sbcl;
-    config.maxima_core = core;
+    config.installation = proxima::Installation(sbcl, core);
 
     // An environment naming somewhere else entirely is not consulted.
     const auto found = proxima::detail::discover_maxima(
@@ -679,28 +678,35 @@ TEST_CASE("naming SBCL and the core outright skips discovery entirely") {
     }
 }
 
-TEST_CASE("one of the two paths without the other is an error") {
+TEST_CASE("one of the two paths without the other cannot be written") {
+    // It used to be two fields of Config, so setting one and forgetting the
+    // other compiled, and was refused when a kernel started. An Installation
+    // is the pair, and refuses half of one where it is written.
     FakeInstall install;
     const std::filesystem::path sbcl = install.file(kSbclName);
+    const std::filesystem::path core = install.core("5.50.0");
 
-    proxima::Config config;
-    config.sbcl_exe = sbcl;
-    CHECK_THROWS_WITH_AS(proxima::detail::discover_maxima(config, fake_env({})),
-                         doctest::Contains("Config::maxima_core is not set"),
-                         proxima::KernelError);
+    CHECK_THROWS_AS(proxima::Installation(sbcl, ""), proxima::Error);
+    CHECK_THROWS_AS(proxima::Installation("", core), proxima::Error);
+    CHECK_THROWS_AS(proxima::Installation("", ""), proxima::Error);
+    CHECK_NOTHROW(proxima::Installation(sbcl, core));
 
-    config.sbcl_exe.clear();
-    config.maxima_core = install.core("5.50.0");
-    CHECK_THROWS_WITH_AS(proxima::detail::discover_maxima(config, fake_env({})),
-                         doctest::Contains("Config::sbcl_exe is not set"),
-                         proxima::KernelError);
-
-    SUBCASE("and so is a path that names nothing") {
-        config.sbcl_exe = install.root() / "bin" / "no-such-sbcl";
+    SUBCASE("a path that names nothing is still discovery's to refuse") {
+        // Whether a file is there is not a question a constructor can answer
+        // honestly: it could have been deleted by the time a kernel starts.
+        proxima::Config config;
+        config.installation
+            = proxima::Installation(install.root() / "bin" / "no-such-sbcl", core);
         CHECK_THROWS_WITH_AS(
             proxima::detail::discover_maxima(config, fake_env({})),
-            doctest::Contains("Config::sbcl_exe does not name a file"),
+            doctest::Contains("SBCL executable does not name a file"),
             proxima::KernelError);
+
+        config.installation
+            = proxima::Installation(sbcl, install.root() / "no-such-core");
+        CHECK_THROWS_WITH_AS(proxima::detail::discover_maxima(config, fake_env({})),
+                             doctest::Contains("Maxima core does not name a file"),
+                             proxima::KernelError);
     }
 }
 
@@ -771,7 +777,7 @@ TEST_CASE("Search::Configured looks nowhere, and says so") {
         const std::string message = e.what();
         CAPTURE(message);
         CHECK(message.find("Search::Configured") != std::string::npos);
-        CHECK(message.find("Config::sbcl_exe") != std::string::npos);
+        CHECK(message.find("Config::installation") != std::string::npos);
         // It did not even try what the environment named.
         CHECK(message.find("from/the/environment") == std::string::npos);
     }
@@ -784,8 +790,7 @@ TEST_CASE("what a Config names is used whatever the policy") {
 
     proxima::Config config;
     config.search = proxima::Search::Configured;
-    config.sbcl_exe = sbcl;
-    config.maxima_core = core;
+    config.installation = proxima::Installation(sbcl, core);
 
     const auto found = proxima::detail::discover_maxima(config, fake_env({}));
     CHECK(found.sbcl_exe == sbcl);

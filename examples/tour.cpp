@@ -71,8 +71,13 @@ constexpr const char *kMaximaRoot = "";
 
 proxima::Config maxima_location() {
     proxima::Config config;
-    config.sbcl_exe = kSbclExe;
-    config.maxima_core = kMaximaCore;
+    // An Installation names the two together, so both have to be filled in;
+    // there is no way to set one. Left empty, as they are here, nothing is
+    // named and Proxima discovers the installation.
+    if (!std::string_view(kSbclExe).empty()
+        && !std::string_view(kMaximaCore).empty()) {
+        config.installation = proxima::Installation(kSbclExe, kMaximaCore);
+    }
     config.maxima_root = kMaximaRoot;
     return config;
 }
@@ -711,9 +716,9 @@ void the_kernel() {
     // one kernel take turns.
     //
     // proxima::Config configures it. Every field has a sensible default:
-    //   sbcl_exe         the SBCL runtime to launch, named outright
-    //   maxima_core      the Maxima core to launch it with; with sbcl_exe set,
-    //                   nothing is searched for and no layout is assumed
+    //   installation     the SBCL runtime and the Maxima core, named
+    //                   outright and together: set it and nothing is searched
+    //                   for and no layout is assumed
     //   maxima_root      where Maxima is installed; empty means discover it
     //   timeout         how long one call may take (default two minutes)
     //   startup_timeout  how long starting or restarting may take
@@ -850,9 +855,10 @@ int main() {
         // One kernel for the rest of the tour, running the Maxima named at
         // the top of this file — or the one discovered, when nothing is.
         const proxima::Config location = maxima_location();
-        if (!location.sbcl_exe.empty() || !location.maxima_core.empty()) {
-            show("Maxima, named outright", location.sbcl_exe.string());
-            show("  with the core", location.maxima_core.string());
+        if (location.installation) {
+            show("Maxima, named outright",
+                 location.installation->sbcl_exe().string());
+            show("  with the core", location.installation->maxima_core().string());
         } else if (!location.maxima_root.empty()) {
             show("Maxima, under the root", location.maxima_root.string());
         } else {

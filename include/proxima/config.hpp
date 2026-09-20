@@ -1,9 +1,13 @@
 #pragma once
 
+#include <proxima/errors.hpp>
+
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
+#include <utility>
 
 namespace proxima {
 
@@ -12,8 +16,8 @@ namespace proxima {
 
 /// How far a Kernel may go looking for Maxima, beyond what Config names.
 ///
-/// Each step includes the ones before it. Config::sbcl_exe, Config::maxima_core
-/// and Config::maxima_root are consulted whichever this is: they are what the
+/// Each step includes the ones before it. Config::installation and
+/// Config::maxima_root are consulted whichever this is: they are what the
 /// program itself says, not searching.
 enum class Search {
     /// What Config names, and nothing else. A program that ships its own
@@ -30,6 +34,40 @@ enum class Search {
     Automatic,
 };
 
+/// A Maxima installation named outright: the SBCL executable to run, and the
+/// Maxima core to run it with.
+///
+/// The two are one fact, so they are one value. They used to be two fields of
+/// Config, so either could be set without the other — and that half a name
+/// was refused when a kernel started, a long way from where it was written.
+/// There is no way to hold one here.
+class Installation {
+public:
+    /// Throws proxima::Error if either path is empty.
+    ///
+    /// Whether the files *exist* is the kernel's question, and it answers it
+    /// with a KernelError when one is started. Whether you named both is this
+    /// constructor's, and it answers it here.
+    Installation(std::filesystem::path sbcl, std::filesystem::path core)
+        : sbcl_exe_(std::move(sbcl)), maxima_core_(std::move(core)) {
+        if (sbcl_exe_.empty() || maxima_core_.empty()) {
+            throw Error("an Installation names the SBCL executable and the "
+                        "Maxima core together, and neither may be empty");
+        }
+    }
+
+    /// The SBCL executable, e.g. `C:\maxima-5.50.0\bin\sbcl.exe`.
+    const std::filesystem::path &sbcl_exe() const { return sbcl_exe_; }
+
+    /// The core it is launched with, e.g.
+    /// `C:\maxima-5.50.0\lib\maxima\5.50.0\binary-sbcl\maxima.core`.
+    const std::filesystem::path &maxima_core() const { return maxima_core_; }
+
+private:
+    std::filesystem::path sbcl_exe_;
+    std::filesystem::path maxima_core_;
+};
+
 /// Settings for a Kernel.
 struct Config {
     /// Root of the Maxima installation, e.g. `C:\maxima-5.50.0`.
@@ -43,23 +81,22 @@ struct Config {
     /// running `<root>/bin/maxima -d`, rather than inferred from the layout;
     /// a copy with no launcher falls back to
     /// `<root>/lib[64]/maxima/<version>/binary-sbcl/maxima.core`. To leave
-    /// nothing to discovery at all, see Config::sbcl_exe.
+    /// nothing to discovery at all, see Config::installation.
     std::filesystem::path maxima_root;
 
-    /// The SBCL executable and the Maxima core to launch, named exactly.
+    /// The installation to launch, named exactly.
     ///
-    /// Set both and nothing is inferred: no layout is assumed, no directory
-    /// is searched, and no launcher is consulted — Proxima runs the two files
-    /// named here. That is what an application shipping its own copy of
-    /// Maxima wants, an installer knowing where it put things, and anyone who
-    /// would rather say than have the library guess.
+    /// Set it and nothing is inferred: no layout is assumed, no directory is
+    /// searched, and no launcher is consulted — Proxima runs the two files it
+    /// names. That is what an application shipping its own copy of Maxima
+    /// wants, an installer knowing where it put things, and anyone who would
+    /// rather say than have the library guess.
     ///
-    /// Both or neither: one without the other is a KernelError, as is either
-    /// one not naming a file. maxima_root may be set alongside them, and is
-    /// then used only as the prefix Maxima is told about; left empty, the
-    /// prefix is taken to be the directory above SBCL's.
-    std::filesystem::path sbcl_exe;
-    std::filesystem::path maxima_core; ///< See Config::sbcl_exe.
+    /// Either file not being there is a KernelError when a kernel starts.
+    /// maxima_root may be set alongside this, and is then used only as the
+    /// prefix Maxima is told about; left empty, the prefix is taken to be the
+    /// directory above SBCL's.
+    std::optional<Installation> installation;
 
     /// How far to look beyond what this Config names, when it names nothing
     /// usable. Automatic by default, which is what makes an ordinary

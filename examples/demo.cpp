@@ -25,6 +25,7 @@
 #include <exception>
 #include <print>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -49,17 +50,23 @@ constexpr const char *kMaximaRoot = "";
 
 proxima::Config maxima_location() {
     proxima::Config config;
-    config.sbcl_exe = kSbclExe;
-    config.maxima_core = kMaximaCore;
+    // An Installation names the two together, so both have to be filled in;
+    // there is no way to set one. Left empty, as they are here, nothing is
+    // named and Proxima discovers the installation.
+    if (!std::string_view(kSbclExe).empty()
+        && !std::string_view(kMaximaCore).empty()) {
+        config.installation = proxima::Installation(kSbclExe, kMaximaCore);
+    }
     config.maxima_root = kMaximaRoot;
     return config;
 }
 
 /// Says which of the three the run is using, before anything is asked.
 void report_location(const proxima::Config &config) {
-    if (!config.sbcl_exe.empty() || !config.maxima_core.empty()) {
+    if (config.installation) {
         std::println("Maxima: named outright\n  sbcl = {}\n  core = {}",
-                     config.sbcl_exe.string(), config.maxima_core.string());
+                     config.installation->sbcl_exe().string(),
+                     config.installation->maxima_core().string());
     } else if (!config.maxima_root.empty()) {
         std::println("Maxima: under the root {}", config.maxima_root.string());
     } else {

@@ -10,6 +10,24 @@ change the API. [RELEASING.md](RELEASING.md) says how a release is made, and
 
 ### Changed
 
+- **`Config::sbcl_exe` and `Config::maxima_core` are one value,**
+  `Config::installation`, a `std::optional<proxima::Installation>`. They name
+  one thing together, and as two fields either could be set without the other
+  — which was refused when a kernel started, a long way from where it was
+  written. `Installation` takes both and refuses an empty path there and then.
+  Whether the files exist is still the kernel's question and still a
+  `KernelError`.
+
+  ```cpp
+  // before
+  config.sbcl_exe = "/opt/maxima/bin/sbcl";
+  config.maxima_core = "/opt/maxima/lib/maxima/5.50.0/binary-sbcl/maxima.core";
+  // after
+  config.installation = proxima::Installation(
+      "/opt/maxima/bin/sbcl",
+      "/opt/maxima/lib/maxima/5.50.0/binary-sbcl/maxima.core");
+  ```
+
 - **The on-disk answer cache has a new format,** `proxima-cache-2`, which
   records the *cause* of a failed answer rather than leaving it to be
   recovered from the first words of Maxima's message. Entries written by 0.3
