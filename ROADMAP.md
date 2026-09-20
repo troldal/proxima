@@ -313,6 +313,126 @@ and not later: after 1.0 they cannot be made.
   no concern of a public header. `Kernel::tell` returns `result<fxt::unit>`,
   the one place an FXT type other than the result appears in a signature.
 
+### From the design review
+
+The implementation read against the SOLID principles and for states the
+types allow but the code forbids — the second being the sharper question,
+since every such state is a rule some function has to remember. Most of
+these are internal, so they need no release to change; they are here because
+the public ones among them are, and because the internal ones are what a
+contributor should know before touching the session or the node.
+
+What already does this well, and should stay as it is: `Payload`, which is
+the only way to make text Maxima's reader sees, and escapes it in its two
+factories; `Query` against `Statement`, so a question and an instruction are
+different types and `ask` cannot take the wrong one; `Expr`, normalised at
+construction so no unnormalised expression exists; `Integer`, canonical
+between its inline and its wide form; `Assumptions`, sorted and deduplicated
+so equal facts are one value; `Symbol` where a variable is meant; NaN refused
+at the door; and the renderer concepts, four of them so the diagnostic names
+what is missing, with no base class for a user's type to inherit.
+
+**States the types allow and the code forbids**
+
+- [ ] **`Node`'s kind and payload can disagree.** `kind` is one field and
+  `payload` a variant beside it, so a node of `Kind::Integer` holding a
+  string is constructible, and every one of the eight builders sets both by
+  hand; the accessors then `std::get` on trust. And `Add`, `Mul`, `Pow` and
+  `Relation` all hold a `std::vector<Expr>`, so a power with three operands
+  or a relation with one is representable, and `match` indexes `[0]` and
+  `[1]` unchecked. `rel_op` is meaningful for a relation only and present
+  everywhere, defaulting to `Equal`. Let the variant *be* the kind — one
+  alternative per kind, a `Relation{op, lhs, rhs}` among them, and a pair
+  rather than a vector where there are exactly two — and derive `kind()`
+  from its index. Internal; the library's central invariant should not rest
+  on discipline in eight places.
+- [ ] **`Reply` and the cause, by string prefix.** `Reply` is `{ok, value,
+  reason}`, so a success with a reason and a failure with a value are both
+  representable; and `to_result` decides the cause by whether the reason
+  *begins with* "this computation needs an assumption" — a literal that
+  lives in the Lisp helper in `session.cpp`, in `kInconsistent` in
+  `session.hpp`, and again in `reply.hpp`, which says "must stay in step".
+  A Maxima error that happened to begin with those words would be
+  misclassified. Have the helper's frame carry the kind of failure as its
+  status token — `T`, `NIL`, or a third value for a question — and make
+  `Reply` a value or a failure-with-cause, which the caches can serialise
+  as easily as a flag.
+- [ ] **`MaximaSession`'s lifecycle is booleans and sentinels.** `recovering_`,
+  `state_accounted_`, a `factory_` that may be empty (three constructors,
+  one of which makes "a death final"), a `transport_` that may be null, and
+  `active_context_` using the empty string for "unknown". Together they
+  encode a small state machine — running, recovering, cannot restart —
+  that no type spells out, and `restart()` finds the last of those by
+  testing the factory at the moment it is called. An explicit state, and
+  `std::optional` where the empty string stands for "not known".
+- [ ] **`SExpr` and `DisplayNode` carry every field for every kind.** Both
+  are the shape `Node` had before it became a variant: a kind beside
+  `text`, `real`, `items` and the rest, with `digits()` "meaningless for
+  other kinds — check first". `DisplayNode` also keeps `negated` as a
+  vector parallel to `children`, which the walk guards with a length check;
+  a `std::vector<Term>` of child-and-sign pairs cannot be mismatched. The
+  same treatment as `Node`. `DisplayNode` is in a public header, so it
+  belongs with the renderer-extension decision above.
+- [ ] **`Config` allows one of `sbcl_exe` and `maxima_core` without the
+  other,** and discovery refuses it at runtime. A single optional value
+  holding both — `std::optional<NamedInstallation>` — makes half a name
+  unrepresentable. Public, so a 0.4 change.
+- [ ] **A `Solution` is positional.** `Solution` is `std::vector<Expr>`, with
+  `solution[i]` belonging to `unknowns[i]` by convention only; nothing ties
+  a solution to the unknowns it answers. A value that carries its symbols
+  — a small map, or a struct with `value_of(x)` — cannot be read against
+  the wrong list. Public.
+- [ ] **An assumption need not be a relation.** `assuming(Expr(5))` compiles,
+  and fails inside Maxima on first use, with the context machinery in
+  between. A `with(Expr fact)` that requires a relation, or a `Fact` type
+  the relation builders return, would refuse it where it is written.
+  Public.
+- [ ] **The head tables run in both directions by hand.** `kDisplayNames` in
+  `from_maxima.cpp` and `kInternalHeads` in `to_maxima.cpp` are the same
+  four pairs written twice, one the reverse of the other, plus `list`; an
+  entry added to one and not the other is a head that arrives but does not
+  go back. One table, read both ways.
+- [x] **A default-constructed `Nodes::iterator` was not at the end.** It
+  dereferenced to the integer zero and compared unequal to the sentinel.
+  *Fixed* in this review: a default iterator is done.
+
+**SOLID, where it is worth a change**
+
+- [ ] **`MaximaSession` has five jobs.** Framing the protocol (`request_for`,
+  `read_frame`, the delimiters), keeping the transport alive (`recover`,
+  `handshake`), deciding what is cached and when (`eval_pure` against two
+  caches and a generation counter), managing Maxima's contexts for
+  assumptions (an LRU of sixteen, `select_environment`, `switch_context`),
+  and the launch recipe (`launch_command`, `launch_environment`, the
+  private user directory). Eight hundred lines, two locks, and a public
+  interface of static helpers "exposed for testing" because the pieces
+  cannot be tested apart. Three of them come out cleanly: a `Framing`
+  unit, a `ContextTable`, and a `Launcher`; each is already internally
+  coherent and mostly static.
+- [ ] **Adding a construct to rendering touches six places.** `DisplayKind`,
+  `Construct`, `Slot`, `to_display`, `render_node` and `construct_of` all
+  change together, and a user cannot add one at all. That is the closed
+  side of the renderer design, whose open side — a new renderer needs no
+  change here — is the part that works. Already the "How renderers extend"
+  decision above; this is the shape of the cost.
+- [ ] **`unwrap`'s mapping from cause to exception is a switch to keep in
+  step with `Cause`,** with `default` swallowing every cause it does not
+  name into `MaximaError`. Listed among the API findings; the design
+  point is that an enum and a switch on it in another header are two
+  things to change for one addition.
+- [ ] **A clock the session cannot be given.** `read_frame` reads
+  `steady_clock` directly, so every timeout test waits out real time in
+  50 ms polls. Not urgent — the tests pass — but the one dependency the
+  session does not take from outside, where it takes the transport, the
+  environment and the command runner.
+
+Kept as they are, deliberately: `Kernel` as a thin facade over the session;
+`Config` as one flat struct, since grouping its fields would be a public
+change for little; the `if` chain in `from_maxima`, which maps a closed set
+of Maxima heads and reads better than a table would; and the two evaluators
+sharing one builtin table in `numeric.cpp`, which is the data-driven shape
+this library should have more of.
+
 ### Local tools users of SymPy or GiNaC will look for
 
 All pure, needing no kernel.

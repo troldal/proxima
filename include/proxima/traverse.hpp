@@ -86,12 +86,16 @@ public:
 
     private:
         friend class Nodes;
-        explicit iterator(const Expr &root) : root_(root), current_(root) {}
+        explicit iterator(const Expr &root)
+            : root_(root), current_(root), done_(false) {}
 
         Expr root_; ///< Keeps the whole tree alive, so the spans below stay valid.
         Expr current_;
         std::vector<std::span<const Expr>> pending_;
-        bool done_ = false;
+        /// A default-constructed iterator is at the end: it has no tree, so
+        /// there is nothing it could be pointing at. It used to say otherwise,
+        /// and dereference to the integer zero.
+        bool done_ = true;
     };
 
     explicit Nodes(Expr expr) : expr_(std::move(expr)) {}

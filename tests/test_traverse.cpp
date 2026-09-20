@@ -277,3 +277,10 @@ TEST_CASE("rewrite replaces what f says to, and shares the rest") {
         CHECK(folded == Expr(8));
     }
 }
+
+TEST_CASE("a default-constructed Nodes iterator is at the end") {
+    // It has no tree, so there is nothing it could point at. It used to
+    // dereference to the integer zero and compare unequal to the sentinel.
+    const proxima::Nodes::iterator none;
+    CHECK(none == std::default_sentinel);
+}
