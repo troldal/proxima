@@ -34,6 +34,7 @@ using proxima::detail::EnvLookup;
 using proxima::detail::inspect_root;
 using proxima::detail::MaximaInstall;
 using proxima::detail::MaximaSession;
+using proxima::detail::to_utf8;
 
 namespace {
 
@@ -585,3 +586,188 @@ TEST_CASE("a non-ASCII path is handed to SBCL in a form it can open") {
 
     fs::remove_all(dir, ec);
 }
+
+// --- naming the installation, and asking it where it keeps its core --------
+
+namespace {
+
+/// A directory tree shaped like an installation, removed when it goes away.
+class FakeInstall {
+public:
+    FakeInstall() {
+        namespace fs = std::filesystem;
+        root_ = fs::temp_directory_path()
+                / ("proxima-discovery-" + std::to_string(::intptr_t(this)));
+        std::error_code ec;
+        fs::remove_all(root_, ec);
+        fs::create_directories(root_ / "bin", ec);
+    }
+    ~FakeInstall() {
+        std::error_code ec;
+        std::filesystem::remove_all(root_, ec);
+    }
+    FakeInstall(const FakeInstall &) = delete;
+    FakeInstall &operator=(const FakeInstall &) = delete;
+
+    const std::filesystem::path &root() const { return root_; }
+    std::filesystem::path sbcl() const { return root_ / "bin" / kSbclName; }
+
+    /// Creates `relative` with some content, and the directories above it.
+    std::filesystem::path file(const std::filesystem::path &relative) {
+        const std::filesystem::path path = root_ / relative;
+        std::error_code ec;
+        std::filesystem::create_directories(path.parent_path(), ec);
+        std::ofstream(path) << "x";
+        return path;
+    }
+
+    /// A core under the documented layout, for the tag given.
+    std::filesystem::path core(std::string_view tag) {
+        return file(std::filesystem::path("lib") / "maxima" / std::string(tag)
+                    / "binary-sbcl" / "maxima.core");
+    }
+
+private:
+    std::filesystem::path root_;
+};
+
+/// A runner that answers as `maxima -d` does, for one images directory, and
+/// records what it was asked to run.
+proxima::detail::CommandRunner fake_launcher(const std::filesystem::path &images_dir,
+                                             std::vector<std::string> *ran
+                                             = nullptr) {
+    return [images = proxima::detail::to_utf8(images_dir), ran](
+               const std::vector<std::string> &argv) -> std::optional<std::string> {
+        if (ran != nullptr) {
+            ran->insert(ran->end(), argv.begin(), argv.end());
+        }
+        return "maxima-prefix:           /somewhere\n"
+               "maxima-imagesdir:        "
+               + images
+               + "\n"
+                 "maxima-userdir:          /home/someone/.maxima\n";
+    };
+}
+
+} // namespace
+
+TEST_CASE("naming SBCL and the core outright skips discovery entirely") {
+    FakeInstall install;
+    const std::filesystem::path sbcl
+        = install.file(std::filesystem::path("lisp") / kSbclName);
+    const std::filesystem::path core = install.file(
+        std::filesystem::path("images") / "5.50.0" / "binary-sbcl" / "maxima.core");
+
+    proxima::Config config;
+    config.sbcl_exe = sbcl;
+    config.maxima_core = core;
+
+    // An environment naming somewhere else entirely is not consulted.
+    const auto found = proxima::detail::discover_maxima(
+        config, fake_env({{"MAXIMA_ROOT", abs("nowhere/at/all").string()}}),
+        fake_launcher("/not/asked"));
+    CHECK(found.sbcl_exe == sbcl);
+    CHECK(found.maxima_core == core);
+    CHECK(found.version_tag == "5.50.0");
+    // The prefix Maxima is told about: the directory above SBCL's, by default.
+    CHECK(found.root == install.root());
+
+    SUBCASE("maxima_root, when given too, is the prefix") {
+        config.maxima_root = install.root();
+        CHECK(proxima::detail::discover_maxima(config, fake_env({})).root
+              == install.root());
+    }
+}
+
+TEST_CASE("one of the two paths without the other is an error") {
+    FakeInstall install;
+    const std::filesystem::path sbcl = install.file(kSbclName);
+
+    proxima::Config config;
+    config.sbcl_exe = sbcl;
+    CHECK_THROWS_WITH_AS(proxima::detail::discover_maxima(config, fake_env({})),
+                         doctest::Contains("Config::maxima_core is not set"),
+                         proxima::KernelError);
+
+    config.sbcl_exe.clear();
+    config.maxima_core = install.core("5.50.0");
+    CHECK_THROWS_WITH_AS(proxima::detail::discover_maxima(config, fake_env({})),
+                         doctest::Contains("Config::sbcl_exe is not set"),
+                         proxima::KernelError);
+
+    SUBCASE("and so is a path that names nothing") {
+        config.sbcl_exe = install.root() / "bin" / "no-such-sbcl";
+        CHECK_THROWS_WITH_AS(
+            proxima::detail::discover_maxima(config, fake_env({})),
+            doctest::Contains("Config::sbcl_exe does not name a file"),
+            proxima::KernelError);
+    }
+}
+
+TEST_CASE("the installation is asked where its core is, rather than guessed at") {
+    FakeInstall install;
+    install.file(std::filesystem::path("bin") / kSbclName);
+#ifdef _WIN32
+    const std::filesystem::path launcher
+        = install.file(std::filesystem::path("bin") / "maxima.bat");
+#else
+    const std::filesystem::path launcher
+        = install.file(std::filesystem::path("bin") / "maxima");
+#endif
+
+    // Two cores: one where the layout walk looks, one only the launcher knows.
+    install.core("5.50.0");
+    const std::filesystem::path elsewhere
+        = install.file(std::filesystem::path("elsewhere") / "9.9.9" / "binary-sbcl"
+                       / "maxima.core");
+
+    std::vector<std::string> ran;
+    const auto found
+        = inspect_root(install.root(), fake_launcher(elsewhere.parent_path(), &ran));
+    REQUIRE(found.has_value());
+    CHECK(found->maxima_core == elsewhere);
+    CHECK(found->version_tag == "9.9.9");
+    CHECK(ran == std::vector<std::string>{proxima::detail::to_utf8(launcher), "-d"});
+
+    SUBCASE("with no launcher to ask, the layout decides") {
+        const auto by_layout = inspect_root(install.root());
+        REQUIRE(by_layout.has_value());
+        CHECK(by_layout->maxima_core
+              == install.root() / "lib" / "maxima" / "5.50.0" / "binary-sbcl"
+                     / "maxima.core");
+        CHECK(by_layout->version_tag == "5.50.0");
+    }
+
+    SUBCASE("an answer naming no core is no answer") {
+        // A launcher for another Lisp, or one that fails: the layout is used.
+        const proxima::detail::CommandRunner silent
+            = [](const std::vector<std::string> &) -> std::optional<std::string> {
+            return std::nullopt;
+        };
+        const proxima::detail::CommandRunner without_core
+            = fake_launcher(install.root() / "empty");
+        for (const proxima::detail::CommandRunner &run : {silent, without_core}) {
+            const auto still = inspect_root(install.root(), run);
+            REQUIRE(still.has_value());
+            CHECK(still->version_tag == "5.50.0");
+        }
+    }
+}
+
+TEST_SUITE("maxima") {
+
+TEST_CASE("the real installation answers where its core is") {
+    // The one test here that runs the launcher: what every other test fakes.
+    proxima::Config config;
+    const auto install = proxima::detail::discover_maxima(
+        config, proxima::detail::system_env(), proxima::detail::system_command());
+
+    const auto asked = proxima::detail::ask_launcher(
+        install.root, proxima::detail::system_command());
+    REQUIRE(asked.has_value());
+    CHECK(asked->first == install.maxima_core);
+    CHECK(asked->second == install.version_tag);
+    CHECK(std::filesystem::is_regular_file(asked->first));
+}
+
+} // TEST_SUITE("maxima")

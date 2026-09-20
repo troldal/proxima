@@ -100,10 +100,13 @@ alone; nothing of Boost reaches the consumer's include path. Consumers who
 carry their own FXT or Boost should expect it to be found first only if their
 `CMAKE_PREFIX_PATH` says so.
 
-Discovery order: `Config::maxima_root`, then `$MAXIMA_ROOT`, `$MAXIMA_PREFIX`,
-the parent of any `$PATH` entry named `bin`, then the conventional install
-locations. A root given explicitly is authoritative: if it is wrong, that is an
-error rather than a reason to run some other installation.
+Discovery order: `Config::sbcl_exe` and `Config::maxima_core`, which name the
+installation outright and end the search; else `Config::maxima_root`, then
+`$MAXIMA_ROOT`, `$MAXIMA_PREFIX`, the parent of any `$PATH` entry named `bin`,
+then the conventional install locations. A root given explicitly is
+authoritative: if it is wrong, that is an error rather than a reason to run
+some other installation. Under a root, where the core lies is asked of the
+installation (`maxima -d`) rather than inferred from the layout.
 
 ## Building
 

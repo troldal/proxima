@@ -130,7 +130,8 @@ constexpr const char *kHelperLisp = R"LISP((progn
 
 std::unique_ptr<ITransport> launch_maxima(const Config &config,
                                           std::string &version_tag) {
-    const MaximaInstall install = discover_maxima(config, system_env());
+    const MaximaInstall install
+        = discover_maxima(config, system_env(), system_command());
     version_tag = install.version_tag;
 
     // SBCL's runtime opens its executable and core by the names on its
@@ -268,7 +269,7 @@ MaximaSession::launch_environment(const MaximaInstall &install,
     // the crosscompiled installer does not. A distribution SBCL has its home
     // compiled in (/usr/lib/sbcl on openSUSE), which is *not* <root>/bin —
     // overriding it there would break contrib loading rather than fix it.
-    env.emplace_back("SBCL_HOME", to_maxima_path(install.root / "bin"));
+    env.emplace_back("SBCL_HOME", to_maxima_path(install.sbcl_exe.parent_path()));
 #endif
 
     if (!config.load_user_init) {

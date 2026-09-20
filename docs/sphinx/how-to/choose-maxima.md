@@ -6,17 +6,46 @@
 
 When a kernel first starts it looks, in order, at:
 
-1. `Config::maxima_root`, if you set it;
-2. the environment variables `MAXIMA_ROOT` and then `MAXIMA_PREFIX`;
-3. the parent of any directory on `PATH` named `bin`;
-4. the conventional install locations: on Windows, a directory named like
+1. `Config::sbcl_exe` and `Config::maxima_core`, if you set them — see
+   [Name it outright](#name-it-outright), which ends the search here;
+2. `Config::maxima_root`, if you set it;
+3. the environment variables `MAXIMA_ROOT` and then `MAXIMA_PREFIX`;
+4. the parent of any directory on `PATH` named `bin`;
+5. the conventional install locations: on Windows, a directory named like
    Maxima under `C:\`, `C:\Program Files` or `C:\Program Files (x86)`, the
    newest first; elsewhere `/usr/local`, then `/usr`, then one under `/opt`.
 
 A root is usable when it holds an SBCL runtime at `<root>/bin/sbcl` (`sbcl.exe`
-on Windows) and a Maxima core at
-`<root>/lib/maxima/<version>/binary-sbcl/maxima.core`. If none is found, the
-first operation throws `proxima::KernelError` naming every place it looked.
+on Windows) and a Maxima core. Where the core is, Proxima asks the
+installation rather than assuming: it runs `<root>/bin/maxima -d`, whose
+`maxima-imagesdir` names the directory holding `maxima.core`. That is the
+installation's own answer, so `lib` against `lib64` and however the version
+directory is spelled do not matter. A copy with no launcher to ask — a trimmed
+one shipped with an application — falls back to the documented layout,
+`<root>/lib/maxima/<version>/binary-sbcl/maxima.core`.
+
+If none is found, the first operation throws `proxima::KernelError` naming
+every place it looked.
+
+## Name it outright
+
+To leave nothing to discovery, name the two files Proxima runs:
+
+```cpp
+proxima::Config config;
+config.sbcl_exe = "/opt/my-app/maxima/bin/sbcl";
+config.maxima_core = "/opt/my-app/maxima/lib/maxima/5.50.0/binary-sbcl/maxima.core";
+proxima::Kernel kernel(config);
+```
+
+Nothing is then searched for, no layout is assumed and no launcher is run:
+those two files are the installation. Set both or neither — one without the
+other is a `KernelError`, as is either one naming no file. `maxima_root` may
+be set alongside them, and is then only the prefix Maxima is told about;
+left empty, the prefix is the directory above SBCL's.
+
+This is what an application shipping its own copy of Maxima wants, and an
+installer that knows where it put things.
 
 ## Use a particular installation
 
@@ -35,7 +64,8 @@ program you do not want to rebuild, set `MAXIMA_ROOT` instead.
 Proxima starts SBCL with Maxima's core directly, and tells Maxima where its
 own files are, so a copy of the installation in your application's directory
 works as well as an installed one. Point `Config::maxima_root` at it — for
-example at a `maxima` directory beside your executable.
+example at a `maxima` directory beside your executable — or name the two
+files outright, as above, which asks nothing of the copy's layout.
 
 What the copy needs:
 

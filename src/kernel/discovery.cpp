@@ -1,5 +1,6 @@
 #include "kernel/discovery.hpp"
 
+#include "transport/child_process.hpp"
 #include "util/utf8.hpp"
 
 #include <proxima/errors.hpp>
@@ -7,7 +8,12 @@
 #include <boost/process/v2/environment.hpp>
 
 #include <algorithm>
+#include <chrono>
+#include <cstddef>
+#include <string>
 #include <system_error>
+#include <utility>
+#include <vector>
 
 namespace proxima::detail {
 namespace {
@@ -137,6 +143,53 @@ std::optional<std::pair<fs::path, std::string>> find_core(const fs::path &root) 
     return std::nullopt;
 }
 
+/// The version tag naming the directory above `binary-sbcl`, which is how
+/// both layouts spell it: .../maxima/<tag>/binary-sbcl/maxima.core.
+std::string tag_from_core(const fs::path &core) {
+    const fs::path images_dir = core.parent_path();
+    if (auto tag = try_to_utf8(images_dir.parent_path().filename())) {
+        return *tag;
+    }
+    return "unknown";
+}
+
+/// Maxima's launcher under `root`, or an empty path if it is not there.
+fs::path launcher_in(const fs::path &root) {
+#ifdef _WIN32
+    const fs::path launcher = root / "bin" / "maxima.bat";
+#else
+    const fs::path launcher = root / "bin" / "maxima";
+#endif
+    return regular_file_exists(launcher) ? launcher : fs::path{};
+}
+
+/// The value of a `name: value` line of `maxima -d` output.
+std::optional<std::string> field_of(const std::string &text, std::string_view name) {
+    for (std::size_t start = 0; start < text.size();) {
+        const std::size_t end = text.find('\n', start);
+        std::string_view line(text.data() + start,
+                              (end == std::string::npos ? text.size() : end)
+                                  - start);
+        start = end == std::string::npos ? text.size() : end + 1;
+        if (!line.starts_with(name)) {
+            continue;
+        }
+        line.remove_prefix(name.size());
+        while (!line.empty() && (line.front() == ' ' || line.front() == '\t')) {
+            line.remove_prefix(1);
+        }
+        while (
+            !line.empty()
+            && (line.back() == ' ' || line.back() == '\t' || line.back() == '\r')) {
+            line.remove_suffix(1);
+        }
+        if (!line.empty()) {
+            return std::string(line);
+        }
+    }
+    return std::nullopt;
+}
+
 } // namespace
 
 EnvLookup system_env() {
@@ -158,6 +211,93 @@ EnvLookup system_env() {
         }
         return text;
     };
+}
+
+CommandRunner system_command() {
+    return [](const std::vector<std::string> &argv) -> std::optional<std::string> {
+        if (argv.empty()) {
+            return std::nullopt;
+        }
+        std::vector<std::string> command = argv;
+#ifdef _WIN32
+        // Windows cannot start a .bat directly: CreateProcess needs the
+        // command interpreter, which reads the script.
+        if (command.front().ends_with(".bat") || command.front().ends_with(".cmd")) {
+            const auto comspec = system_env()("COMSPEC");
+            command.insert(
+                command.begin(),
+                {comspec.value_or("C:\\Windows\\System32\\cmd.exe"), "/c"});
+        }
+#endif
+        try {
+            ChildProcessTransport child(command);
+            std::string output;
+            // Bounded in both directions: a launcher that says nothing cannot
+            // hold discovery up, and one that says too much cannot exhaust
+            // memory. Either way what is wanted is a handful of short lines.
+            constexpr std::size_t kMostOutput = 64 * 1024;
+            const auto deadline
+                = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+            while (output.size() < kMostOutput) {
+                const auto left
+                    = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        deadline - std::chrono::steady_clock::now());
+                if (left <= std::chrono::milliseconds::zero()) {
+                    break;
+                }
+                const std::string chunk
+                    = child.receive(std::min(left, std::chrono::milliseconds(500)));
+                if (!chunk.empty()) {
+                    output += chunk;
+                    continue;
+                }
+                if (!child.alive()) {
+                    break;
+                }
+            }
+            child.terminate();
+            return output;
+        } catch (const KernelError &) {
+            // Not there, or not runnable: no answer, rather than an error.
+            return std::nullopt;
+        }
+    };
+}
+
+std::optional<std::pair<fs::path, std::string>>
+ask_launcher(const fs::path &root, const CommandRunner &run) {
+    if (!run) {
+        return std::nullopt;
+    }
+    const fs::path launcher = launcher_in(root);
+    if (launcher.empty()) {
+        return std::nullopt;
+    }
+    const auto launcher_utf8 = try_to_utf8(launcher);
+    if (!launcher_utf8) {
+        return std::nullopt;
+    }
+
+    const auto output = run({*launcher_utf8, "-d"});
+    if (!output) {
+        return std::nullopt;
+    }
+    const auto images = field_of(*output, "maxima-imagesdir:");
+    if (!images) {
+        return std::nullopt;
+    }
+    const auto images_dir = try_path_from_utf8(*images);
+    if (!images_dir) {
+        return std::nullopt;
+    }
+
+    // Trust it only as far as the file it implies: a launcher for another
+    // Lisp answers with a directory that holds no maxima.core.
+    const fs::path core = *images_dir / "maxima.core";
+    if (!regular_file_exists(core)) {
+        return std::nullopt;
+    }
+    return std::pair{core, tag_from_core(core)};
 }
 
 std::vector<fs::path> candidate_roots(const Config &config, const EnvLookup &env) {
@@ -228,7 +368,8 @@ std::vector<fs::path> known_install_roots() {
     return roots;
 }
 
-std::optional<MaximaInstall> inspect_root(const fs::path &root) {
+std::optional<MaximaInstall> inspect_root(const fs::path &root,
+                                          const CommandRunner &run) {
     if (!directory_exists(root)) {
         return std::nullopt;
     }
@@ -241,7 +382,12 @@ std::optional<MaximaInstall> inspect_root(const fs::path &root) {
         return std::nullopt;
     }
 
-    auto core = find_core(root);
+    // The installation's own answer first; the layout walk only if there is
+    // no launcher to ask, as in a copy shipped with an application.
+    auto core = ask_launcher(root, run);
+    if (!core) {
+        core = find_core(root);
+    }
     if (!core) {
         return std::nullopt;
     }
@@ -263,13 +409,49 @@ std::optional<MaximaInstall> inspect_root(const fs::path &root) {
     return install;
 }
 
-MaximaInstall discover_maxima(const Config &config, const EnvLookup &env) {
+MaximaInstall discover_maxima(const Config &config, const EnvLookup &env,
+                              const CommandRunner &run) {
+    // Named outright: the two files are the installation. Nothing is
+    // searched for and no layout is assumed, which is what an application
+    // shipping its own copy of Maxima needs.
+    if (!config.sbcl_exe.empty() || !config.maxima_core.empty()) {
+        for (const auto &[which, path] :
+             {std::pair{"Config::sbcl_exe", config.sbcl_exe},
+              std::pair{"Config::maxima_core", config.maxima_core}}) {
+            if (path.empty()) {
+                throw KernelError(
+                    std::string(which)
+                    + " is not set: Config::sbcl_exe and Config::maxima_core name "
+                      "an installation together, or neither is set");
+            }
+            if (!regular_file_exists(path)) {
+                throw KernelError(std::string(which)
+                                  + " does not name a file: " + describe_path(path));
+            }
+        }
+
+        MaximaInstall install;
+        install.sbcl_exe = config.sbcl_exe;
+        install.maxima_core = config.maxima_core;
+        // The prefix Maxima is told about: as configured, or the directory
+        // above SBCL's, which is what an installation laid out as usual has.
+        install.root = config.maxima_root.empty()
+                           ? config.sbcl_exe.parent_path().parent_path()
+                           : config.maxima_root;
+        install.version_tag = tag_from_core(config.maxima_core);
+#ifdef _WIN32
+        install.raise_dynamic_space_size = regular_file_exists(
+            config.sbcl_exe.parent_path() / "libgcc_s_seh-1.dll");
+#endif
+        return install;
+    }
+
     // An explicitly configured root is authoritative. Falling through to the
     // search when it turns out to be wrong would silently run a different
     // installation than the caller asked for, turning a configuration mistake
     // into results that are merely surprising instead of an error.
     if (!config.maxima_root.empty()) {
-        if (auto install = inspect_root(config.maxima_root)) {
+        if (auto install = inspect_root(config.maxima_root, run)) {
             return *install;
         }
         throw KernelError(
@@ -285,7 +467,7 @@ MaximaInstall discover_maxima(const Config &config, const EnvLookup &env) {
     const auto search
         = [&](const std::vector<fs::path> &roots) -> std::optional<MaximaInstall> {
         for (const fs::path &root : roots) {
-            if (auto install = inspect_root(root)) {
+            if (auto install = inspect_root(root, run)) {
                 return install;
             }
             tried.push_back(root);

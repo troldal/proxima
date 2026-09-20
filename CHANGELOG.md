@@ -8,6 +8,19 @@ change the API. [RELEASING.md](RELEASING.md) says how a release is made, and
 
 ## [Unreleased]
 
+### Added
+
+- **`Config::sbcl_exe` and `Config::maxima_core`,** which name the
+  installation outright: set both and nothing is searched for, no layout is
+  assumed and no launcher is run.
+
+### Changed
+
+- **Where the Maxima core lies is asked of the installation** — `maxima -d` —
+  rather than inferred from the directory layout. A copy with no launcher, as
+  one shipped with an application may be, still falls back to the documented
+  layout.
+
 ## [0.2.0] — 2026-09-19
 
 *Ready to depend on:*

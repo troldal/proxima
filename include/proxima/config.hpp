@@ -18,7 +18,28 @@ struct Config {
     /// $MAXIMA_PREFIX, then the parent of any $PATH entry named "bin", then the
     /// conventional install locations. A root given here is still validated;
     /// discovery throws KernelError naming everything it tried.
+    ///
+    /// Where the core lies under a root is asked of the installation, by
+    /// running `<root>/bin/maxima -d`, rather than inferred from the layout;
+    /// a copy with no launcher falls back to
+    /// `<root>/lib[64]/maxima/<version>/binary-sbcl/maxima.core`. To leave
+    /// nothing to discovery at all, see Config::sbcl_exe.
     std::filesystem::path maxima_root;
+
+    /// The SBCL executable and the Maxima core to launch, named exactly.
+    ///
+    /// Set both and nothing is inferred: no layout is assumed, no directory
+    /// is searched, and no launcher is consulted — Proxima runs the two files
+    /// named here. That is what an application shipping its own copy of
+    /// Maxima wants, an installer knowing where it put things, and anyone who
+    /// would rather say than have the library guess.
+    ///
+    /// Both or neither: one without the other is a KernelError, as is either
+    /// one not naming a file. maxima_root may be set alongside them, and is
+    /// then used only as the prefix Maxima is told about; left empty, the
+    /// prefix is taken to be the directory above SBCL's.
+    std::filesystem::path sbcl_exe;
+    std::filesystem::path maxima_core; ///< See Config::sbcl_exe.
 
     /// How long to wait for a single statement to produce its result before
     /// giving up on it.

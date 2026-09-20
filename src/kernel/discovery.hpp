@@ -36,6 +36,26 @@ using EnvLookup = std::function<std::optional<std::string>(std::string_view)>;
 /// values outside the ANSI code page arrive intact.
 EnvLookup system_env();
 
+/// Runs a command and returns everything it wrote to standard output, or
+/// nullopt if it could not be run or did not finish in time. Arguments are
+/// UTF-8, as everywhere inside the library.
+using CommandRunner
+    = std::function<std::optional<std::string>(const std::vector<std::string> &)>;
+
+/// Runs the command as a child process. A `.bat` launcher is run through the
+/// command interpreter, which is the only way Windows starts one.
+CommandRunner system_command();
+
+/// What `maxima -d` says about an installation: the directory holding
+/// maxima.core, and the version tag naming the directory above it.
+///
+/// The installation's own answer, so no layout is assumed — neither lib
+/// against lib64 nor how the version directory is spelled. None if `root` has
+/// no launcher, if it could not be run, or if what it printed does not name
+/// an existing core.
+std::optional<std::pair<std::filesystem::path, std::string>>
+ask_launcher(const std::filesystem::path &root, const CommandRunner &run);
+
 /// Candidate installation roots in precedence order:
 ///
 ///   1. config.maxima_root, when set explicitly
@@ -54,14 +74,19 @@ std::vector<std::filesystem::path> candidate_roots(const Config &config,
 /// after candidate_roots comes up empty.
 std::vector<std::filesystem::path> known_install_roots();
 
-/// Validates one candidate root against the expected layout, returning nullopt
-/// if it is not a usable SBCL-based Maxima installation.
+/// Validates one candidate root, returning nullopt if it is not a usable
+/// SBCL-based Maxima installation.
 ///
-/// Targeted rather than exhaustive: the prototype's recursive walk descended
+/// The core is located by asking the installation — `maxima -d` — and only
+/// where that is not possible by the expected layout. That fallback is
+/// targeted rather than exhaustive: the prototype's recursive walk descended
 /// into gnuplot, vtk, clisp and doc — thousands of files — and could match an
 /// unrelated sbcl.exe. Only <root>/bin and <root>/lib are consulted, and the
 /// bounded fallback within them runs only if the standard layout is absent.
-std::optional<MaximaInstall> inspect_root(const std::filesystem::path &root);
+///
+/// With no `run`, the launcher is not consulted and the layout alone decides.
+std::optional<MaximaInstall> inspect_root(const std::filesystem::path &root,
+                                          const CommandRunner &run = {});
 
 /// The spelling of `path` to put on SBCL's command line.
 ///
@@ -81,9 +106,13 @@ std::filesystem::path sbcl_readable_path(const std::filesystem::path &path);
 /// Returns the first usable installation, or throws KernelError naming every
 /// location tried.
 ///
-/// A non-empty Config::maxima_root is authoritative: if it does not hold a
-/// usable installation this throws rather than searching on, so a mistyped
-/// path surfaces as an error instead of silently running a different Maxima.
-MaximaInstall discover_maxima(const Config &config, const EnvLookup &env);
+/// Config::sbcl_exe and Config::maxima_core, set together, end it before it
+/// begins: those two files are the installation, and nothing is searched for
+/// or inferred. Failing that, a non-empty Config::maxima_root is
+/// authoritative: if it does not hold a usable installation this throws
+/// rather than searching on, so a mistyped path surfaces as an error instead
+/// of silently running a different Maxima.
+MaximaInstall discover_maxima(const Config &config, const EnvLookup &env,
+                              const CommandRunner &run = {});
 
 } // namespace proxima::detail
