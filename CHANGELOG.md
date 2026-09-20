@@ -13,6 +13,10 @@ change the API. [RELEASING.md](RELEASING.md) says how a release is made, and
 - **`Config::sbcl_exe` and `Config::maxima_core`,** which name the
   installation outright: set both and nothing is searched for, no layout is
   assumed and no launcher is run.
+- **`Config::search`,** which bounds how far a kernel looks beyond what the
+  Config names: `Search::Configured` not at all, `Search::Environment` as far
+  as `MAXIMA_ROOT` and `PATH`, `Search::Automatic` — the default — on to the
+  conventional install locations.
 
 ### Changed
 

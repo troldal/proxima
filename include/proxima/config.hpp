@@ -10,6 +10,26 @@ namespace proxima {
 /// @addtogroup kernel
 /// @{
 
+/// How far a Kernel may go looking for Maxima, beyond what Config names.
+///
+/// Each step includes the ones before it. Config::sbcl_exe, Config::maxima_core
+/// and Config::maxima_root are consulted whichever this is: they are what the
+/// program itself says, not searching.
+enum class Search {
+    /// What Config names, and nothing else. A program that ships its own
+    /// Maxima, or one that must never run another, wants this: if what it
+    /// named is not there, that is an error rather than a reason to run some
+    /// other installation.
+    Configured,
+    /// And what the environment says: $MAXIMA_ROOT, $MAXIMA_PREFIX, and the
+    /// parent of any $PATH entry named "bin".
+    Environment,
+    /// And the conventional install locations — on Windows, a directory named
+    /// like Maxima under C:\ or Program Files; elsewhere /usr/local, /usr and
+    /// /opt. What makes a plain installation work with no configuration.
+    Automatic,
+};
+
 /// Settings for a Kernel.
 struct Config {
     /// Root of the Maxima installation, e.g. `C:\maxima-5.50.0`.
@@ -40,6 +60,12 @@ struct Config {
     /// prefix is taken to be the directory above SBCL's.
     std::filesystem::path sbcl_exe;
     std::filesystem::path maxima_core; ///< See Config::sbcl_exe.
+
+    /// How far to look beyond what this Config names, when it names nothing
+    /// usable. Automatic by default, which is what makes an ordinary
+    /// installation work without configuration; Search::Configured refuses to
+    /// look at all.
+    Search search = Search::Automatic;
 
     /// How long to wait for a single statement to produce its result before
     /// giving up on it.

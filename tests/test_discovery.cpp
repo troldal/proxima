@@ -754,6 +754,78 @@ TEST_CASE("the installation is asked where its core is, rather than guessed at")
     }
 }
 
+// --- how far discovery may look -------------------------------------------
+
+TEST_CASE("Search::Configured looks nowhere, and says so") {
+    // An embedder who must never run some other Maxima sets this: what the
+    // Config names, or an error naming what was not consulted.
+    proxima::Config config;
+    config.search = proxima::Search::Configured;
+
+    const auto env = fake_env({{"MAXIMA_ROOT", abs("from/the/environment").string()},
+                               {"PATH", path_var({"maxima-x/bin"})}});
+    try {
+        proxima::detail::discover_maxima(config, env);
+        FAIL("expected discovery to refuse to look");
+    } catch (const proxima::KernelError &e) {
+        const std::string message = e.what();
+        CAPTURE(message);
+        CHECK(message.find("Search::Configured") != std::string::npos);
+        CHECK(message.find("Config::sbcl_exe") != std::string::npos);
+        // It did not even try what the environment named.
+        CHECK(message.find("from/the/environment") == std::string::npos);
+    }
+}
+
+TEST_CASE("what a Config names is used whatever the policy") {
+    FakeInstall install;
+    const std::filesystem::path sbcl = install.file(kSbclName);
+    const std::filesystem::path core = install.core("5.50.0");
+
+    proxima::Config config;
+    config.search = proxima::Search::Configured;
+    config.sbcl_exe = sbcl;
+    config.maxima_core = core;
+
+    const auto found = proxima::detail::discover_maxima(config, fake_env({}));
+    CHECK(found.sbcl_exe == sbcl);
+    CHECK(found.maxima_core == core);
+
+    SUBCASE("a root, too") {
+        proxima::Config by_root;
+        by_root.search = proxima::Search::Configured;
+        by_root.maxima_root = install.root();
+        install.file(std::filesystem::path("bin") / kSbclName);
+        CHECK(proxima::detail::discover_maxima(by_root, fake_env({})).maxima_core
+              == core);
+    }
+}
+
+TEST_CASE("Search::Environment consults the environment but not the conventional "
+          "locations") {
+    // The environment names somewhere useless, so the search runs out. Under
+    // Automatic it would go on to the conventional locations, where this
+    // machine may genuinely have a Maxima; under Environment it stops.
+    proxima::Config config;
+    config.search = proxima::Search::Environment;
+    const auto env = fake_env({{"MAXIMA_ROOT", abs("nowhere/at/all").string()}});
+
+    try {
+        proxima::detail::discover_maxima(config, env);
+        FAIL("expected discovery to run out of candidates");
+    } catch (const proxima::KernelError &e) {
+        const std::string message = e.what();
+        CAPTURE(message);
+        // It tried what the environment named, and said where it stopped.
+        CHECK(message.find(abs("nowhere/at/all").string()) != std::string::npos);
+        CHECK(message.find("Search::Environment") != std::string::npos);
+    }
+}
+
+TEST_CASE("Automatic is the default") {
+    CHECK(proxima::Config{}.search == proxima::Search::Automatic);
+}
+
 TEST_SUITE("maxima") {
 
 TEST_CASE("the real installation answers where its core is") {

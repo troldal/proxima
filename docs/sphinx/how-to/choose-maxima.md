@@ -47,6 +47,27 @@ left empty, the prefix is the directory above SBCL's.
 This is what an application shipping its own copy of Maxima wants, and an
 installer that knows where it put things.
 
+## Refuse to look elsewhere
+
+`Config::search` says how far a kernel may go beyond what the `Config` names.
+Each setting includes the ones before it:
+
+| `Search::` | Consults |
+|---|---|
+| `Configured` | only what the `Config` names |
+| `Environment` | and `MAXIMA_ROOT`, `MAXIMA_PREFIX`, `PATH` |
+| `Automatic` | and the conventional install locations (the default) |
+
+```cpp
+proxima::Config config;
+config.maxima_root = "/opt/my-app/maxima";
+config.search = proxima::Search::Configured;   // that one, or an error
+```
+
+With `Search::Configured`, a program runs the Maxima it named or none at all:
+nothing on the machine can stand in for it. The error says what was not
+consulted, so the cause is plain.
+
 ## Use a particular installation
 
 ```cpp

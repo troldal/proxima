@@ -464,6 +464,15 @@ MaximaInstall discover_maxima(const Config &config, const EnvLookup &env,
             + " and <root>/lib/maxima/<version>/binary-sbcl/maxima.core");
     }
 
+    // Nothing named, and told not to look: an error naming what would have
+    // been consulted, rather than a Maxima the program never asked for.
+    if (config.search == Search::Configured) {
+        throw KernelError(
+            "No Maxima configured, and Config::search is Search::Configured, so "
+            "none was looked for. Set Config::sbcl_exe and Config::maxima_core, "
+            "or Config::maxima_root, or allow Search::Environment.");
+    }
+
     std::vector<fs::path> tried;
 
     const auto search
@@ -481,14 +490,21 @@ MaximaInstall discover_maxima(const Config &config, const EnvLookup &env,
         return *install;
     }
     // Only worth listing the conventional locations once nothing was named
-    // explicitly and nothing on PATH panned out.
-    if (auto install = search(known_install_roots())) {
-        return *install;
+    // explicitly and nothing on PATH panned out — and only when allowed to
+    // look that far.
+    if (config.search == Search::Automatic) {
+        if (auto install = search(known_install_roots())) {
+            return *install;
+        }
     }
 
     std::string message
         = std::string("No usable Maxima installation found. Expected <root>/bin/")
           + kSbclName + " and <root>/lib/maxima/<version>/binary-sbcl/maxima.core. ";
+    if (config.search == Search::Environment) {
+        message += "Config::search is Search::Environment, so the conventional "
+                   "install locations were not consulted. ";
+    }
     if (tried.empty()) {
         message += "No candidate locations: set Config::maxima_root or the "
                    "MAXIMA_ROOT environment variable.";

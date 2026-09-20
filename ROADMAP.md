@@ -141,7 +141,7 @@ milestone widens that.
   smallest working copy from an installation. Settle what that copy needs —
   whether `share/maxima/<version>/src` is required is not yet checked. See the
   [how-to](docs/sphinx/how-to/choose-maxima.md).
-- [ ] **Searching as a policy, not a default that cannot be turned off.** A
+- [x] **Searching as a policy, not a default that cannot be turned off.** A
   `Config` setting — configured only, configured and the environment, or the
   full search — so that an embedder who wants no surprises gets a clear error
   instead of whatever Maxima happens to be on the machine. Alongside it,
@@ -153,6 +153,10 @@ milestone widens that.
   `PATH`, so that scan is what makes the library work out of the box there.
   The Unix scans of `/usr`, `/usr/local` and `/opt` are already covered by a
   launcher on `PATH`.
+  *Done:* `Config::search`, with `Search::Configured`, `Search::Environment`
+  and `Search::Automatic` (the default). What the automatic search covers is
+  unchanged: the scans stay, since on Windows nothing puts Maxima on `PATH`,
+  and a program that wants none of them now says so.
 - [ ] **Windows paths with non-ASCII characters** work only through 8.3 short
   names, which exist only on drives with short-name generation on. Find a way
   that does not depend on them, or document the limit where users will see it.

@@ -49,7 +49,7 @@ defaults to it.
 
 ## Configuration
 
-`Config` covers `maxima_root`, `sbcl_exe`, `maxima_core`, `timeout`, `startup_timeout`, `cache_entries`,
+`Config` covers `maxima_root`, `sbcl_exe`, `maxima_core`, `search`, `timeout`, `startup_timeout`, `cache_entries`,
 `cache_bytes`, `cache_directory`, `cache_directory_limit` (256 MB by default,
 evicting the least recently used answers), `load_user_init` and `user_dir`.
 The user's own `maxima-init.mac` is **not** loaded by default: a library
@@ -61,5 +61,8 @@ which name it outright and end the search; else `Config::maxima_root`, then
 `bin`, then the conventional install locations. A root given explicitly is
 authoritative: if it is wrong, that is an error rather than a reason to run
 some other installation. Where the core lies under a root, the installation
-is asked — `maxima -d` — rather than guessed at. See
+is asked — `maxima -d` — rather than guessed at. `Config::search` bounds how
+far the looking goes: `Search::Configured` refuses to look at all,
+`Search::Environment` stops after the environment, and `Search::Automatic`,
+the default, goes on to the conventional locations. See
 [the how-to](../how-to/choose-maxima.md).
