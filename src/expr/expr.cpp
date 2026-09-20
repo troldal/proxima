@@ -23,55 +23,73 @@ namespace {
 
 using detail::Application;
 using detail::Node;
+using detail::OpaqueText;
+using detail::Power;
+using detail::Product;
+using detail::RelationNode;
+using detail::Sum;
+using detail::SymbolName;
 
 void hash_combine(std::size_t &seed, std::size_t value) {
     // The usual mixing constant; adequate for a hash table key, and cheap.
     seed ^= value + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
 }
 
-std::size_t hash_of(const Node &node) {
-    std::size_t seed = std::hash<int>{}(static_cast<int>(node.kind));
-
-    switch (node.kind) {
-    case Kind::Integer:
-        hash_combine(seed, std::hash<Integer>{}(node.integer()));
-        break;
-    case Kind::Rational:
-        hash_combine(seed, std::hash<Integer>{}(node.fraction().numerator));
-        hash_combine(seed, std::hash<Integer>{}(node.fraction().denominator));
-        break;
-    case Kind::Real:
-        // 0.0 == -0.0, so the two must hash alike, and MSVC's std::hash<double>
-        // hashes the bit pattern, which differs. (NaN, the other value whose
-        // equality and bits disagree, is refused by Expr::real.)
-        hash_combine(seed,
-                     std::hash<double>{}(node.real() == 0.0 ? 0.0 : node.real()));
-        break;
-    case Kind::Symbol:
-    case Kind::Opaque:
-    case Kind::Function:
-        hash_combine(seed, std::hash<std::string>{}(node.text()));
-        break;
-    case Kind::Relation:
-        hash_combine(seed, std::hash<int>{}(static_cast<int>(node.rel_op)));
-        break;
-    case Kind::Add:
-    case Kind::Mul:
-    case Kind::Pow:
-        break;
+/// The hash of the operands, in order. Order-sensitive, which is correct:
+/// these are structural hashes, and the normaliser (docs/design.md step 10)
+/// is what makes x+1 and 1+x agree by putting their operands in canonical
+/// order first.
+void hash_operands(std::size_t &seed, const std::vector<Expr> &operands) {
+    for (const Expr &operand : operands) {
+        hash_combine(seed, operand.hash());
     }
+}
 
-    // Order-sensitive, which is correct: these are structural hashes, and the
-    // normaliser (docs/design.md step 10) is what makes x+1 and 1+x agree by putting
-    // their operands in a canonical order first.
-    for (const Expr &arg : node.args()) {
-        hash_combine(seed, arg.hash());
-    }
+/// The hash of a node's payload, and so of the node: the kind, then what the
+/// alternative holds. Consistent with Expr::operator==.
+std::size_t hash_of(Kind kind, const Node::Payload &payload) {
+    std::size_t seed = std::hash<int>{}(static_cast<int>(kind));
+    std::visit(
+        fxt::overload{
+            [&](const Integer &n) { hash_combine(seed, std::hash<Integer>{}(n)); },
+            [&](const Fraction &q) {
+                hash_combine(seed, std::hash<Integer>{}(q.numerator));
+                hash_combine(seed, std::hash<Integer>{}(q.denominator));
+            },
+            [&](double r) {
+                // 0.0 == -0.0, so the two must hash alike, and MSVC's
+                // std::hash<double> hashes the bit pattern, which
+                // differs. (NaN, the other value whose equality and
+                // bits disagree, is refused by Expr::real.)
+                hash_combine(seed, std::hash<double>{}(r == 0.0 ? 0.0 : r));
+            },
+            [&](const SymbolName &s) {
+                hash_combine(seed, std::hash<std::string>{}(s.name));
+            },
+            [&](const OpaqueText &o) {
+                hash_combine(seed, std::hash<std::string>{}(o.text));
+            },
+            [&](const Sum &s) { hash_operands(seed, s.terms); },
+            [&](const Product &p) { hash_operands(seed, p.factors); },
+            [&](const Power &p) { hash_operands(seed, p.operands()); },
+            [&](const Application &a) {
+                hash_combine(seed, std::hash<std::string>{}(a.head));
+                hash_operands(seed, a.args);
+            },
+            [&](const RelationNode &r) {
+                hash_combine(seed, std::hash<int>{}(static_cast<int>(r.op())));
+                hash_operands(seed, r.sides());
+            },
+        },
+        payload);
     return seed;
 }
 
-Expr finish(Node node) {
-    node.hash = hash_of(node);
+/// Wraps a payload as a node, hashed once, and the node as an Expr. The one
+/// place a Node is made.
+Expr finish(Node::Payload payload) {
+    Node node(std::move(payload), 0);
+    node.hash = hash_of(node.kind(), node.payload);
     return detail::make_expr(std::make_shared<const Node>(std::move(node)));
 }
 
@@ -85,10 +103,7 @@ Expr finish(Node node) {
 // --- construction ---------------------------------------------------------
 
 Expr Expr::make_integer(Integer value) {
-    Node node;
-    node.kind = Kind::Integer;
-    node.payload = std::move(value);
-    return finish(std::move(node));
+    return finish(std::move(value));
 }
 
 Expr::Expr() : Expr(make_integer(0)) {}
@@ -118,10 +133,7 @@ Expr Expr::rational(Integer numerator, Integer denominator) {
         return make_integer(std::move(numerator));
     }
 
-    Node node;
-    node.kind = Kind::Rational;
-    node.payload = Fraction{std::move(numerator), std::move(denominator)};
-    return finish(std::move(node));
+    return finish(Fraction{std::move(numerator), std::move(denominator)});
 }
 
 Expr Expr::real(double value) {
@@ -142,39 +154,23 @@ Expr Expr::real(double value) {
         // So it is the symbol from the start.
         return symbol(value > 0 ? "inf" : "minf");
     }
-    Node node;
-    node.kind = Kind::Real;
-    node.payload = value;
-    return finish(std::move(node));
+    return finish(value);
 }
 
 Expr Expr::symbol(std::string name) {
-    Node node;
-    node.kind = Kind::Symbol;
-    node.payload = std::move(name);
-    return finish(std::move(node));
+    return finish(SymbolName{std::move(name)});
 }
 
 Expr Expr::function(std::string head, std::vector<Expr> args) {
-    Node node;
-    node.kind = Kind::Function;
-    node.payload = Application{std::move(head), std::move(args)};
-    return finish(std::move(node));
+    return finish(Application{std::move(head), std::move(args)});
 }
 
 Expr Expr::relation(RelOp op, Expr lhs, Expr rhs) {
-    Node node;
-    node.kind = Kind::Relation;
-    node.rel_op = op;
-    node.payload = std::vector<Expr>{std::move(lhs), std::move(rhs)};
-    return finish(std::move(node));
+    return finish(RelationNode(op, std::move(lhs), std::move(rhs)));
 }
 
 Expr Expr::opaque(std::string text) {
-    Node node;
-    node.kind = Kind::Opaque;
-    node.payload = std::move(text);
-    return finish(std::move(node));
+    return finish(OpaqueText{std::move(text)});
 }
 
 Expr Expr::add(std::vector<Expr> terms) {
@@ -187,10 +183,7 @@ Expr Expr::add(std::vector<Expr> terms) {
     if (terms.size() == 1) {
         return std::move(terms.front());
     }
-    Node node;
-    node.kind = Kind::Add;
-    node.payload = std::move(terms);
-    return finish(std::move(node));
+    return finish(Sum{std::move(terms)});
 }
 
 Expr Expr::mul(std::vector<Expr> factors) {
@@ -201,35 +194,29 @@ Expr Expr::mul(std::vector<Expr> factors) {
     if (factors.size() == 1) {
         return std::move(factors.front());
     }
-    Node node;
-    node.kind = Kind::Mul;
-    node.payload = std::move(factors);
-    return finish(std::move(node));
+    return finish(Product{std::move(factors)});
 }
 
 Expr Expr::pow(Expr base, Expr exponent) {
     if (auto simplified = detail::normalize_power(base, exponent)) {
         return *simplified;
     }
-    Node node;
-    node.kind = Kind::Pow;
-    node.payload = std::vector<Expr>{std::move(base), std::move(exponent)};
-    return finish(std::move(node));
+    return finish(Power(std::move(base), std::move(exponent)));
 }
 
 // --- inspection -----------------------------------------------------------
 
 Kind Expr::kind() const {
-    return node_->kind;
+    return node_->kind();
 }
 
 bool Expr::is_number() const {
-    const Kind k = node_->kind;
+    const Kind k = node_->kind();
     return k == Kind::Integer || k == Kind::Rational || k == Kind::Real;
 }
 
 bool Expr::is_negative_number() const {
-    switch (node_->kind) {
+    switch (node_->kind()) {
     case Kind::Integer:
         return node_->integer().is_negative();
     case Kind::Rational:
@@ -254,91 +241,91 @@ const std::string &Expr::text_ref() const {
     return node_->text();
 }
 RelOp Expr::relation_ref() const {
-    return node_->rel_op;
+    return node_->relation().op();
 }
 
 std::optional<Integer> Expr::as_integer() const {
-    if (node_->kind != Kind::Integer) {
+    if (node_->kind() != Kind::Integer) {
         return std::nullopt;
     }
     return node_->integer();
 }
 
 std::optional<Fraction> Expr::as_fraction() const {
-    if (node_->kind == Kind::Integer) {
+    if (node_->kind() == Kind::Integer) {
         return Fraction{node_->integer(), Integer(1)};
     }
-    if (node_->kind == Kind::Rational) {
+    if (node_->kind() == Kind::Rational) {
         return node_->fraction();
     }
     return std::nullopt;
 }
 
 std::optional<double> Expr::as_real() const {
-    if (node_->kind != Kind::Real) {
+    if (node_->kind() != Kind::Real) {
         return std::nullopt;
     }
     return node_->real();
 }
 
 std::optional<Symbol> Expr::as_symbol() const {
-    if (node_->kind != Kind::Symbol) {
+    if (node_->kind() != Kind::Symbol) {
         return std::nullopt;
     }
     return Symbol(node_->text());
 }
 
 Integer Expr::integer_value() const {
-    if (node_->kind != Kind::Integer) {
-        wrong_kind("an integer", node_->kind);
+    if (node_->kind() != Kind::Integer) {
+        wrong_kind("an integer", node_->kind());
     }
     return node_->integer();
 }
 
 Integer Expr::numerator() const {
-    if (node_->kind == Kind::Integer) {
+    if (node_->kind() == Kind::Integer) {
         return node_->integer();
     }
-    if (node_->kind != Kind::Rational) {
-        wrong_kind("a rational", node_->kind);
+    if (node_->kind() != Kind::Rational) {
+        wrong_kind("a rational", node_->kind());
     }
     return node_->fraction().numerator;
 }
 
 Integer Expr::denominator() const {
-    if (node_->kind == Kind::Integer) {
+    if (node_->kind() == Kind::Integer) {
         return Integer(1);
     }
-    if (node_->kind != Kind::Rational) {
-        wrong_kind("a rational", node_->kind);
+    if (node_->kind() != Kind::Rational) {
+        wrong_kind("a rational", node_->kind());
     }
     return node_->fraction().denominator;
 }
 
 double Expr::real_value() const {
-    if (node_->kind != Kind::Real) {
-        wrong_kind("a real", node_->kind);
+    if (node_->kind() != Kind::Real) {
+        wrong_kind("a real", node_->kind());
     }
     return node_->real();
 }
 
 const std::string &Expr::name() const {
-    if (node_->kind != Kind::Symbol && node_->kind != Kind::Function) {
-        wrong_kind("a symbol or function", node_->kind);
+    if (node_->kind() != Kind::Symbol && node_->kind() != Kind::Function) {
+        wrong_kind("a symbol or function", node_->kind());
     }
     return node_->text();
 }
 
 RelOp Expr::relation_op() const {
-    if (node_->kind != Kind::Relation) {
-        wrong_kind("a relation", node_->kind);
+    if (node_->kind() != Kind::Relation) {
+        wrong_kind("a relation", node_->kind());
     }
-    return node_->rel_op;
+    return node_->relation().op();
 }
 
 const std::string &Expr::opaque_text() const {
-    if (node_->kind != Kind::Opaque) {
-        wrong_kind("opaque", node_->kind);
+    if (node_->kind() != Kind::Opaque) {
+        wrong_kind("opaque", node_->kind());
     }
     return node_->text();
 }
@@ -374,11 +361,11 @@ bool Expr::operator==(const Expr &other) const {
     }
     const Node &a = *node_;
     const Node &b = *other.node_;
-    if (a.kind != b.kind || a.hash != b.hash) {
+    if (a.kind() != b.kind() || a.hash != b.hash) {
         return false;
     }
 
-    switch (a.kind) {
+    switch (a.kind()) {
     case Kind::Integer:
         return a.integer() == b.integer();
     case Kind::Rational:
@@ -392,7 +379,7 @@ bool Expr::operator==(const Expr &other) const {
     case Kind::Function:
         return a.text() == b.text() && a.args() == b.args();
     case Kind::Relation:
-        return a.rel_op == b.rel_op && a.args() == b.args();
+        return a.relation().op() == b.relation().op() && a.args() == b.args();
     case Kind::Add:
     case Kind::Mul:
     case Kind::Pow:
