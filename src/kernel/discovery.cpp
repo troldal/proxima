@@ -218,16 +218,18 @@ CommandRunner system_command() {
         if (argv.empty()) {
             return std::nullopt;
         }
-        std::vector<std::string> command = argv;
 #ifdef _WIN32
         // Windows cannot start a .bat directly: CreateProcess needs the
         // command interpreter, which reads the script.
+        std::vector<std::string> command = argv;
         if (command.front().ends_with(".bat") || command.front().ends_with(".cmd")) {
             const auto comspec = system_env()("COMSPEC");
             command.insert(
                 command.begin(),
                 {comspec.value_or("C:\\Windows\\System32\\cmd.exe"), "/c"});
         }
+#else
+        const std::vector<std::string> &command = argv;
 #endif
         try {
             ChildProcessTransport child(command);
@@ -235,7 +237,7 @@ CommandRunner system_command() {
             // Bounded in both directions: a launcher that says nothing cannot
             // hold discovery up, and one that says too much cannot exhaust
             // memory. Either way what is wanted is a handful of short lines.
-            constexpr std::size_t kMostOutput = 64 * 1024;
+            constexpr std::size_t kMostOutput = std::size_t{64} * 1024;
             const auto deadline
                 = std::chrono::steady_clock::now() + std::chrono::seconds(20);
             while (output.size() < kMostOutput) {
