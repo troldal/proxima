@@ -50,6 +50,33 @@
 
 namespace {
 
+// --- where Maxima is ------------------------------------------------------
+//
+// Fill these in to say, rather than have Proxima look:
+//
+//     kSbclExe    = "C:/maxima-5.50.0/bin/sbcl.exe";
+//     kMaximaCore = "C:/maxima-5.50.0/lib/maxima/5.50.0/binary-sbcl/maxima.core";
+//
+// Naming the SBCL runtime and the Maxima core means nothing is searched for
+// and no layout is assumed — what an application shipping its own copy of
+// Maxima does. kMaximaRoot instead names the installation and leaves the
+// layout to Proxima, which asks the installation itself where its core is.
+//
+// Empty, as here, Proxima discovers it: $MAXIMA_ROOT, a launcher on $PATH,
+// then the conventional locations. Sections 7 to 10 use whichever of the
+// three this comes to; sections 1 to 6 need no Maxima at all.
+constexpr const char *kSbclExe = "";
+constexpr const char *kMaximaCore = "";
+constexpr const char *kMaximaRoot = "";
+
+proxima::Config maxima_location() {
+    proxima::Config config;
+    config.sbcl_exe = kSbclExe;
+    config.maxima_core = kMaximaCore;
+    config.maxima_root = kMaximaRoot;
+    return config;
+}
+
 // --- a little presentation ------------------------------------------------
 
 void section(std::string_view title) {
@@ -455,53 +482,57 @@ void numeric_evaluation() {
 
 // --- 7. Calculus and algebra --------------------------------------------------
 
-void calculus_and_algebra() {
+void calculus_and_algebra(proxima::Kernel &kernel) {
     section("7. Calculus and algebra");
 
     // Every operation takes an optional Kernel as its last argument. Leave it
-    // out and the process-wide shared_kernel() is used, started on first use —
-    // which is why the first call below takes a moment.
+    // out and the process-wide shared_kernel() is used, started on first use.
+    // This tour passes its own, built in main() from the location at the top
+    // of this file, so every question below goes to that Maxima.
     const proxima::Symbol x("x");
     const proxima::Symbol y("y");
     const proxima::Expr f = pow(x, 3) * proxima::sin(x);
 
-    show("diff(x^3 sin(x), x)", *proxima::diff(f, x));
-    show("diff(x^3 sin(x), x, 2)", *proxima::diff(f, x, 2)); // Second derivative.
-    show("expand((x + y)^3)", *proxima::expand(pow(x + y, 3)));
-    show("factor(x^2 - y^2)", *proxima::factor(pow(x, 2) - pow(y, 2)));
-    show("ratsimp((x^2 - 1)/(x - 1))", *proxima::ratsimp((pow(x, 2) - 1) / (x - 1)));
-    show("subst(x^2 + y, x, 3)", *proxima::subst(pow(x, 2) + y, x, 3));
+    show("diff(x^3 sin(x), x)", *proxima::diff(f, x, 1, kernel));
+    show("diff(x^3 sin(x), x, 2)",
+         *proxima::diff(f, x, 2, kernel)); // Second derivative.
+    show("expand((x + y)^3)", *proxima::expand(pow(x + y, 3), kernel));
+    show("factor(x^2 - y^2)", *proxima::factor(pow(x, 2) - pow(y, 2), kernel));
+    show("ratsimp((x^2 - 1)/(x - 1))",
+         *proxima::ratsimp((pow(x, 2) - 1) / (x - 1), kernel));
+    show("subst(x^2 + y, x, 3)", *proxima::subst(pow(x, 2) + y, x, 3, kernel));
 
     // Results are expressions like any other, so they compare structurally
     // with ones you build yourself.
     show("expand((x+1)^2) == x^2 + 2x + 1",
-         *proxima::expand(pow(x + 1, 2)) == pow(x, 2) + 2 * x + 1 ? "true"
-                                                                  : "false");
+         *proxima::expand(pow(x + 1, 2), kernel) == pow(x, 2) + 2 * x + 1 ? "true"
+                                                                          : "false");
 
     // Operations that can legitimately fail return std::expected. Check it
     // before using the value.
-    if (const auto antiderivative = proxima::integrate(f, x)) {
+    if (const auto antiderivative = proxima::integrate(f, x, kernel)) {
         show("integrate(x^3 sin(x), x)", *antiderivative);
     }
-    if (const auto area = proxima::integrate(pow(x, 2), x, 0, 1)) {
+    if (const auto area = proxima::integrate(pow(x, 2), x, 0, 1, kernel)) {
         show("integrate(x^2, x, 0, 1)", *area); // Exactly 1/3.
     }
 
     // Limits, from either side where it matters.
-    if (const auto l = proxima::limit(proxima::sin(x) / x, x, 0)) {
+    if (const auto l
+        = proxima::limit(proxima::sin(x) / x, x, 0, proxima::Side::Both, kernel)) {
         show("limit(sin(x)/x, x, 0)", *l);
     }
-    if (const auto l
-        = proxima::limit(proxima::Expr(1) / x, x, 0, proxima::Side::FromAbove)) {
+    if (const auto l = proxima::limit(proxima::Expr(1) / x, x, 0,
+                                      proxima::Side::FromAbove, kernel)) {
         show("limit(1/x, x, 0, FromAbove)", *l);
     }
-    if (const auto l
-        = proxima::limit(proxima::Expr(1) / x, x, 0, proxima::Side::FromBelow)) {
+    if (const auto l = proxima::limit(proxima::Expr(1) / x, x, 0,
+                                      proxima::Side::FromBelow, kernel)) {
         show("limit(1/x, x, 0, FromBelow)", *l);
     }
 
     // solve returns every solution.
-    if (const auto roots = proxima::solve(eq(pow(x, 2), 2), x)) {
+    if (const auto roots = proxima::solve(eq(pow(x, 2), 2), x, kernel)) {
         show("solve(x^2 = 2, x)", joined(*roots));
     }
 
@@ -510,7 +541,7 @@ void calculus_and_algebra() {
     // answer.
     const std::vector<proxima::Expr> equations{eq(x + y, 3), eq(x - y, 1)};
     const std::vector<proxima::Symbol> unknowns{x, y};
-    if (const auto solutions = proxima::solve(equations, unknowns)) {
+    if (const auto solutions = proxima::solve(equations, unknowns, kernel)) {
         for (const proxima::Solution &solution : *solutions) {
             show("solve({x+y=3, x-y=1}, {x, y})",
                  "x = " + solution[0].str() + ", y = " + solution[1].str());
@@ -521,14 +552,14 @@ void calculus_and_algebra() {
     // Maxima's syntax — and simplifies as it reads, unlike Expr::parse. It
     // does not evaluate: diff(x^2, x) stays a call. kernel.ask(Query::text(...))
     // carries text out.
-    if (const auto parsed = proxima::parse("5!")) {
+    if (const auto parsed = proxima::parse("5!", kernel)) {
         show("proxima::parse(\"5!\")", *parsed);
     }
 }
 
 // --- 8. When there is no answer ---------------------------------------------
 
-void when_there_is_no_answer() {
+void when_there_is_no_answer(proxima::Kernel &kernel) {
     section("8. When there is no answer");
 
     const proxima::Symbol x("x");
@@ -536,27 +567,29 @@ void when_there_is_no_answer() {
     // Failing to find a closed form is an ordinary outcome, not an error, so
     // it comes back as an proxima::Failure inside the std::expected, carrying a
     // reason — usually Maxima's own words.
-    const auto hopeless = proxima::integrate(proxima::exp(proxima::sin(x)), x);
+    const auto hopeless
+        = proxima::integrate(proxima::exp(proxima::sin(x)), x, kernel);
     show("integrate(e^sin(x), x)",
          hopeless ? hopeless->str() : "Failure: " + hopeless.error().message());
 
     // Maxima does not always signal failure as an error. For solve it hands
     // back something that is not a solution, such as x = sin(x); the library
     // recognises that and reports a Failure, so a success really is one.
-    const auto circular = proxima::solve(eq(x, proxima::sin(x)), x);
+    const auto circular = proxima::solve(eq(x, proxima::sin(x)), x, kernel);
     show("solve(x = sin(x), x)",
          circular ? "solved?" : "Failure: " + circular.error().message());
 
     // Some questions Maxima itself rejects, like a divergent integral. That
     // arrives as a Failure too, in Maxima's words.
-    const auto divergent = proxima::integrate(proxima::Expr(1) / x, x, 0, 1);
+    const auto divergent = proxima::integrate(proxima::Expr(1) / x, x, 0, 1, kernel);
     show("integrate(1/x, x, 0, 1)",
          divergent ? divergent->str() : "Failure: " + divergent.error().message());
 
     // An infinite answer is still an answer. From both sides at once, 1/x
     // grows without a sign, and Maxima says `infinity` — its complex
     // infinity, not the inf and minf of the one-sided limits in section 7.
-    const auto both_sides = proxima::limit(proxima::Expr(1) / x, x, 0);
+    const auto both_sides
+        = proxima::limit(proxima::Expr(1) / x, x, 0, proxima::Side::Both, kernel);
     show("limit(1/x, x, 0), both sides",
          both_sides ? both_sides->str()
                     : "Failure: " + both_sides.error().message());
@@ -566,11 +599,12 @@ void when_there_is_no_answer() {
     // bounded but with no single value, and the Failure says so. Maxima's
     // `und`, undefined, is a Failure the same way. From one side, the same
     // limit is an ordinary value.
-    const auto bounded = proxima::limit(proxima::abs(x) / x, x, 0);
+    const auto bounded
+        = proxima::limit(proxima::abs(x) / x, x, 0, proxima::Side::Both, kernel);
     show("limit(abs(x)/x, x, 0)",
          bounded ? bounded->str() : "Failure: " + bounded.error().message());
-    const auto one_sided
-        = proxima::limit(proxima::abs(x) / x, x, 0, proxima::Side::FromAbove);
+    const auto one_sided = proxima::limit(proxima::abs(x) / x, x, 0,
+                                          proxima::Side::FromAbove, kernel);
     show("limit(abs(x)/x, x, 0, FromAbove)",
          one_sided ? one_sided->str() : "Failure: " + one_sided.error().message());
 
@@ -579,7 +613,7 @@ void when_there_is_no_answer() {
     // outcome, not an exception. An Opaque node holds Maxima source the
     // library never interpreted, and this one does not parse. The cause says
     // which kind of failure it was.
-    const auto refused = proxima::diff(proxima::Expr::opaque("(1"), x);
+    const auto refused = proxima::diff(proxima::Expr::opaque("(1"), x, 1, kernel);
     show("diff(<unparseable text>, x)",
          refused ? refused->str() : "Failure: " + refused.error().message());
     show("  cause", proxima::to_string(proxima::cause_of(refused.error())));
@@ -588,8 +622,9 @@ void when_there_is_no_answer() {
     // and_then, transform, value_or and the rest, and a chain stops at the
     // first failure.
     const auto chained
-        = proxima::diff(pow(x, 3), x)
-          | fxt::and_then([](const proxima::Expr &d) { return proxima::factor(d); })
+        = proxima::diff(pow(x, 3), x, 1, kernel)
+          | fxt::and_then(
+              [&](const proxima::Expr &d) { return proxima::factor(d, kernel); })
           | fxt::transform([](const proxima::Expr &e) { return e.str(); })
           | fxt::value_or(std::string("no answer"));
     show("diff(x^3) | and_then(factor) | str", chained);
@@ -597,7 +632,7 @@ void when_there_is_no_answer() {
 
 // --- 9. Assumptions -------------------------------------------------------------
 
-void assumptions() {
+void assumptions(proxima::Kernel &kernel) {
     section("9. Assumptions");
 
     const proxima::Symbol x("x");
@@ -607,33 +642,34 @@ void assumptions() {
     // Some answers depend on facts Maxima has not been told. Interactively it
     // would ask; over a pipe it cannot, so the question comes back as a
     // Failure naming exactly the fact that is missing.
-    const auto unknown = proxima::integrate(pow(x, n), x);
+    const auto unknown = proxima::integrate(pow(x, n), x, kernel);
     show("integrate(x^n, x)",
          unknown ? unknown->str() : "Failure: " + unknown.error().message());
 
-    // Supply the fact with the question. Assumptions are a value, passed as
-    // the last argument like the kernel is: nothing is set up beforehand, and
-    // nothing is left behind for the next call.
+    // Supply the fact with the question. Assumptions are a value, and they
+    // travel in the same argument as the kernel — `{assumptions, kernel}` is
+    // an Env holding both. Nothing is set up beforehand, and nothing is left
+    // behind for the next call.
     const auto positive_n = proxima::assuming(gt(n, 0));
-    if (const auto known = proxima::integrate(pow(x, n), x, positive_n)) {
+    if (const auto known = proxima::integrate(pow(x, n), x, {positive_n, kernel})) {
         show("  under n > 0", *known);
     }
 
     // The same expression can simplify differently under different facts.
     const proxima::Expr root = proxima::sqrt(pow(x, 2));
-    show("  sqrt(x^2), nothing assumed of x", *proxima::expand(root));
+    show("  sqrt(x^2), nothing assumed of x", *proxima::expand(root, kernel));
     show("  sqrt(x^2), under x > 0",
-         *proxima::expand(root, proxima::assuming(gt(x, 0))));
+         *proxima::expand(root, {proxima::assuming(gt(x, 0)), kernel}));
     show("  sqrt(x^2), under x < 0",
-         *proxima::expand(root, proxima::assuming(lt(x, 0))));
+         *proxima::expand(root, {proxima::assuming(lt(x, 0)), kernel}));
 
     // Assumptions grow by making new values. declaring records a property of
     // a symbol, rather than a relation.
     const auto more = positive_n.with(gt(x, 0)).with(k, proxima::Feature::Integer);
     show("  sin(k*pi), k declared integer",
-         *proxima::expand(proxima::sin(k * proxima::pi()), more));
+         *proxima::expand(proxima::sin(k * proxima::pi()), {more, kernel}));
     show("  sin(k*pi), nothing declared",
-         *proxima::expand(proxima::sin(k * proxima::pi())));
+         *proxima::expand(proxima::sin(k * proxima::pi()), kernel));
     show("  more.facts()", joined({more.facts().begin(), more.facts().end()}));
 
     // A value compares by what it says, not how it was built, so the same
@@ -647,13 +683,13 @@ void assumptions() {
 
     // And the question without them still fails, as it should: nothing was
     // left in force.
-    const auto again = proxima::integrate(pow(x, n), x);
+    const auto again = proxima::integrate(pow(x, n), x, kernel);
     show("integrate(x^n, x), under nothing",
          again ? again->str() : "Failure again, as it should be");
 
     // Facts that contradict one another are refused, with their own cause.
     const auto contradiction
-        = proxima::expand(root, proxima::assuming({gt(x, 0), lt(x, 0)}));
+        = proxima::expand(root, {proxima::assuming({gt(x, 0), lt(x, 0)}), kernel});
     show("  under x > 0 and x < 0",
          contradiction ? contradiction->str()
                        : std::string(proxima::to_string(
@@ -675,6 +711,9 @@ void the_kernel() {
     // one kernel take turns.
     //
     // proxima::Config configures it. Every field has a sensible default:
+    //   sbcl_exe         the SBCL runtime to launch, named outright
+    //   maxima_core      the Maxima core to launch it with; with sbcl_exe set,
+    //                   nothing is searched for and no layout is assumed
     //   maxima_root      where Maxima is installed; empty means discover it
     //   timeout         how long one call may take (default two minutes)
     //   startup_timeout  how long starting or restarting may take
@@ -696,7 +735,9 @@ void the_kernel() {
     std::error_code ignored;
     std::filesystem::remove_all(cache_directory, ignored); // Start clean.
 
-    proxima::Config config;
+    // Built on the location at the top of the file, so these kernels run
+    // the same Maxima as the ones above.
+    proxima::Config config = maxima_location();
     config.cache_directory = cache_directory;
 
     const proxima::Expr question = pow(x, 5) * proxima::exp(x);
@@ -806,9 +847,23 @@ int main() {
     // A *mathematical* failure — no closed form, no solution — is none of
     // these. It is an proxima::Failure returned in a std::expected (section 8).
     try {
-        calculus_and_algebra();
-        when_there_is_no_answer();
-        assumptions();
+        // One kernel for the rest of the tour, running the Maxima named at
+        // the top of this file — or the one discovered, when nothing is.
+        const proxima::Config location = maxima_location();
+        if (!location.sbcl_exe.empty() || !location.maxima_core.empty()) {
+            show("Maxima, named outright", location.sbcl_exe.string());
+            show("  with the core", location.maxima_core.string());
+        } else if (!location.maxima_root.empty()) {
+            show("Maxima, under the root", location.maxima_root.string());
+        } else {
+            show("Maxima",
+                 "discovered; fill in kSbclExe and kMaximaCore to name it");
+        }
+        proxima::Kernel kernel(location);
+
+        calculus_and_algebra(kernel);
+        when_there_is_no_answer(kernel);
+        assumptions(kernel);
         the_kernel();
     } catch (const proxima::KernelError &error) {
         std::println(stderr,
