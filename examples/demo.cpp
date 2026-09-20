@@ -22,7 +22,6 @@
 
 #include <cstddef>
 #include <cstdio>
-#include <cstdlib>
 #include <exception>
 #include <print>
 #include <string>
@@ -30,30 +29,29 @@
 
 namespace {
 
-/// Where Maxima is, when this program says rather than letting Proxima look.
-///
-/// Naming the SBCL runtime and the Maxima core outright means nothing is
-/// searched for and no directory layout is assumed — what an application
-/// shipping its own copy of Maxima does:
-///
-///     config.sbcl_exe = "C:/maxima-5.50.0/bin/sbcl.exe";
-///     config.maxima_core =
-///         "C:/maxima-5.50.0/lib/maxima/5.50.0/binary-sbcl/maxima.core";
-///
-/// Taken from the environment here, so the demo still runs anywhere. With
-/// neither variable set, Proxima discovers the installation as it always
-/// does; PROXIMA_MAXIMA_ROOT names a root and leaves the rest to it.
+// Where Maxima is. Fill these in to say, rather than have Proxima look:
+//
+//     kSbclExe    = "C:/maxima-5.50.0/bin/sbcl.exe";
+//     kMaximaCore = "C:/maxima-5.50.0/lib/maxima/5.50.0/binary-sbcl/maxima.core";
+//
+// Naming the SBCL runtime and the Maxima core means nothing is searched for
+// and no directory layout is assumed, which is what an application shipping
+// its own copy of Maxima does — its installer knows where it put them. A real
+// program would read them from its own configuration rather than compile them
+// in. Naming kMaximaRoot instead leaves the layout to Proxima.
+//
+// Empty, as they are here so that this demo runs anywhere, Proxima discovers
+// the installation: $MAXIMA_ROOT, a launcher on $PATH, then the conventional
+// locations.
+constexpr const char *kSbclExe = "";
+constexpr const char *kMaximaCore = "";
+constexpr const char *kMaximaRoot = "";
+
 proxima::Config maxima_location() {
     proxima::Config config;
-    if (const char *root = std::getenv("PROXIMA_MAXIMA_ROOT")) {
-        config.maxima_root = root;
-    }
-    if (const char *sbcl = std::getenv("PROXIMA_SBCL_EXE")) {
-        config.sbcl_exe = sbcl;
-    }
-    if (const char *core = std::getenv("PROXIMA_MAXIMA_CORE")) {
-        config.maxima_core = core;
-    }
+    config.sbcl_exe = kSbclExe;
+    config.maxima_core = kMaximaCore;
+    config.maxima_root = kMaximaRoot;
     return config;
 }
 
@@ -65,8 +63,8 @@ void report_location(const proxima::Config &config) {
     } else if (!config.maxima_root.empty()) {
         std::println("Maxima: under the root {}", config.maxima_root.string());
     } else {
-        std::println("Maxima: discovered (set PROXIMA_SBCL_EXE and "
-                     "PROXIMA_MAXIMA_CORE to name it)");
+        std::println("Maxima: discovered (fill in kSbclExe and kMaximaCore "
+                     "above to name it)");
     }
 }
 
