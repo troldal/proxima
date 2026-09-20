@@ -32,13 +32,25 @@ namespace {
 /// the session exists. A real session draws its own at random.
 constexpr const char *kKey = "test";
 
-/// A complete reply frame, exactly as the Lisp helper formats one.
-std::string frame(std::uint64_t id, bool ok, const std::string &value,
-                  const std::string &reason = "") {
-    return proxima::detail::frame_begin(kKey, id) + (ok ? "T" : "NIL")
+/// A complete reply frame, exactly as the Lisp helper formats one. `status`
+/// is the token it prints first: T for a value, NIL for a Maxima error, Q for
+/// a question it intercepted.
+std::string framed(std::uint64_t id, const std::string &status,
+                   const std::string &value, const std::string &reason) {
+    return proxima::detail::frame_begin(kKey, id) + status
            + proxima::detail::frame_separator(kKey, id) + value
            + proxima::detail::frame_separator(kKey, id) + reason
            + proxima::detail::frame_end(kKey, id) + "\n";
+}
+
+std::string frame(std::uint64_t id, bool ok, const std::string &value,
+                  const std::string &reason = "") {
+    return framed(id, ok ? "T" : "NIL", value, reason);
+}
+
+/// The frame for a question the helper intercepted rather than let Maxima ask.
+std::string question(std::uint64_t id, const std::string &asked) {
+    return framed(id, "Q", "NIL", asked);
 }
 
 /// The banner Maxima prints before anything else, plus the prompts that appear
@@ -106,9 +118,9 @@ TEST_CASE("a successful reply yields the internal s-expression") {
 
     const proxima::detail::Reply reply
         = scripted.session->eval(Payload::text("2*x*sin(x)"));
-    CHECK(reply.ok);
-    CHECK(reply.value == "((MTIMES SIMP) 2 $X ((%SIN SIMP) $X))");
-    CHECK(reply.reason.empty());
+    CHECK(reply.ok());
+    CHECK(reply.value() == "((MTIMES SIMP) 2 $X ((%SIN SIMP) $X))");
+    CHECK(reply.reason().empty());
 }
 
 TEST_CASE("a Maxima error is a value, not an exception") {
@@ -119,22 +131,42 @@ TEST_CASE("a Maxima error is a value, not an exception") {
 
     const proxima::detail::Reply reply
         = scripted.session->eval(Payload::text("integrate(x, 5)"));
-    CHECK_FALSE(reply.ok);
-    CHECK(reply.reason == "integrate: variable must not be a number; found: 5");
-    CHECK(reply.value.empty());
+    CHECK_FALSE(reply.ok());
+    CHECK(reply.reason() == "integrate: variable must not be a number; found: 5");
+    CHECK(reply.value().empty());
+    CHECK(reply.cause() == proxima::Cause::MaximaError);
+}
+
+TEST_CASE("an intercepted question is told apart from an ordinary error") {
+    // The helper answers a question Maxima wanted to ask with a status of its
+    // own, so the cause arrives with the reply. It used to arrive as an
+    // ordinary failure, and the cause was recovered downstream by matching the
+    // helper's own wording — which any Maxima error beginning with those same
+    // words would have matched too.
+    ScriptedSession scripted(
+        {question(2, "this computation needs an assumption that was not "
+                     "supplied. Maxima asked: Is n equal to -1?")});
+
+    const proxima::detail::Reply reply
+        = scripted.session->eval(Payload::text("integrate(x^n, x)"));
+    CHECK_FALSE(reply.ok());
+    CHECK(reply.cause() == proxima::Cause::NeedsAssumption);
+    CHECK(reply.reason().find("Is n equal to -1?") != std::string::npos);
+    CHECK(proxima::cause_of(proxima::detail::to_result(reply).error())
+          == proxima::Cause::NeedsAssumption);
 }
 
 TEST_CASE("exact rationals survive the round trip") {
     // The whole reason for using the internal form rather than display output:
     // 1/3 stays a rational instead of becoming 0.333...
     ScriptedSession scripted({frame(2, true, "((RAT SIMP) 11 15)")});
-    CHECK(scripted.session->eval(Payload::text("1/3 + 2/5")).value
+    CHECK(scripted.session->eval(Payload::text("1/3 + 2/5")).value()
           == "((RAT SIMP) 11 15)");
 }
 
 TEST_CASE("prompts and banner text between frames are discarded") {
     ScriptedSession scripted({noise(5) + "\n" + frame(2, true, "42")});
-    CHECK(scripted.session->eval(Payload::text("6*7")).value == "42");
+    CHECK(scripted.session->eval(Payload::text("6*7")).value() == "42");
 }
 
 TEST_CASE("a reply split across several reads is reassembled") {
@@ -145,7 +177,7 @@ TEST_CASE("a reply split across several reads is reassembled") {
 
     ScriptedSession scripted({whole.substr(0, third), whole.substr(third, third),
                               whole.substr(2 * third)});
-    CHECK(scripted.session->eval(Payload::text("x+1")).value
+    CHECK(scripted.session->eval(Payload::text("x+1")).value()
           == "((MPLUS SIMP) 1 $X)");
 }
 
@@ -156,7 +188,7 @@ TEST_CASE("a delimiter split across two reads is still recognised") {
     const size_t cut = whole.size() - 4;
 
     ScriptedSession scripted({whole.substr(0, cut), whole.substr(cut)});
-    CHECK(scripted.session->eval(Payload::text("7")).value == "7");
+    CHECK(scripted.session->eval(Payload::text("7")).value() == "7");
 }
 
 TEST_CASE("a stale frame from an earlier request is skipped") {
@@ -166,7 +198,7 @@ TEST_CASE("a stale frame from an earlier request is skipped") {
     ScriptedSession scripted(
         {frame(1, true, "$STALE_ANSWER") + frame(2, true, "$CORRECT_ANSWER")});
 
-    CHECK(scripted.session->eval(Payload::text("something")).value
+    CHECK(scripted.session->eval(Payload::text("something")).value()
           == "$CORRECT_ANSWER");
 }
 
@@ -176,7 +208,7 @@ TEST_CASE("a value containing delimiter-like text is not truncated") {
     // may terminate its frame.
     const std::string tricky = R"("contains @@E99@@ and @@B3@@ inside")";
     ScriptedSession scripted({frame(2, true, tricky)});
-    CHECK(scripted.session->eval(Payload::text("\"...\"")).value == tricky);
+    CHECK(scripted.session->eval(Payload::text("\"...\"")).value() == tricky);
 }
 
 TEST_CASE("a value containing its own request's id is not truncated") {
@@ -185,7 +217,7 @@ TEST_CASE("a value containing its own request's id is not truncated") {
     // no value is ever computed from, is what rules that out.
     const std::string tricky = R"("would end early at @@E2@@ and @@S2@@")";
     ScriptedSession scripted({frame(2, true, tricky)});
-    CHECK(scripted.session->eval(Payload::text("\"...\"")).value == tricky);
+    CHECK(scripted.session->eval(Payload::text("\"...\"")).value() == tricky);
 }
 
 TEST_CASE("each session draws a frame key of its own") {
@@ -266,7 +298,7 @@ TEST_CASE("a session that cannot answer restarts") {
     CHECK(built == 2);
 
     // And the session works again.
-    CHECK(session.eval(Payload::text("something")).value == "$RECOVERED");
+    CHECK(session.eval(Payload::text("something")).value() == "$RECOVERED");
 }
 
 /// Forwards to a FakeTransport the test owns, so the test can still inspect it
@@ -316,7 +348,7 @@ TEST_CASE("a timeout ends the busy child at once instead of waiting for it") {
     CHECK_FALSE(busy.killed_gracefully());
 
     // And only that call was lost.
-    CHECK(session.eval(Payload::text("again")).value == "$AFTER");
+    CHECK(session.eval(Payload::text("again")).value() == "$AFTER");
 }
 
 TEST_CASE("bookkeeping does not wait behind a call in progress") {
@@ -410,7 +442,7 @@ TEST_CASE("an answer computed across an invalidation is not cached") {
     CHECK(invalidating.wait_for(2s) == std::future_status::ready);
 
     gate->release = true;
-    CHECK(asking.get().value == "$BEFORE");
+    CHECK(asking.get().value() == "$BEFORE");
     invalidating.get();
     CHECK(session.cache_stats().entries == 0);
 }
@@ -443,12 +475,12 @@ TEST_CASE("a set of assumptions gets a context once, and is switched to") {
     MaximaSession &session = *scripted.session;
     const Environment positive = assuming("x > 0");
 
-    CHECK(session.eval_pure(Payload::text("one"), positive).value == "$ONE");
-    CHECK(session.eval_pure(Payload::text("two"), positive).value == "$TWO");
-    CHECK(session.eval_pure(Payload::text("one")).value == "$BARE");
+    CHECK(session.eval_pure(Payload::text("one"), positive).value() == "$ONE");
+    CHECK(session.eval_pure(Payload::text("two"), positive).value() == "$TWO");
+    CHECK(session.eval_pure(Payload::text("one")).value() == "$BARE");
     // Asked before under the same assumptions: from the cache, no frame.
-    CHECK(session.eval_pure(Payload::text("one"), positive).value == "$ONE");
-    CHECK(session.eval_pure(Payload::text("three"), positive).value == "$THREE");
+    CHECK(session.eval_pure(Payload::text("one"), positive).value() == "$ONE");
+    CHECK(session.eval_pure(Payload::text("three"), positive).value() == "$THREE");
 
     // One answer per question and set of assumptions: "one" twice.
     CHECK(session.cache_stats().entries == 4);
@@ -471,9 +503,9 @@ TEST_CASE("contradictory assumptions are refused, and leave no context behind") 
 
     const proxima::detail::Reply refused
         = session.eval_pure(Payload::text("question"), assuming("x < 0"));
-    CHECK_FALSE(refused.ok);
-    CHECK(refused.reason.starts_with(MaximaSession::kInconsistent));
-    CHECK(refused.reason.find("x < 0") != std::string::npos);
+    CHECK_FALSE(refused.ok());
+    CHECK(refused.cause() == proxima::Cause::Inconsistent);
+    CHECK(refused.reason().find("x < 0") != std::string::npos);
     CHECK(proxima::cause_of(proxima::detail::to_result(refused).error())
           == proxima::Cause::Inconsistent);
 
@@ -502,7 +534,7 @@ TEST_CASE("past the limit, the least recently used context is killed") {
         CHECK(
             scripted.session
                 ->eval_pure(Payload::text("q"), assuming("x > " + std::to_string(i)))
-                .value
+                .value()
             == "$ANSWER");
     }
     const std::string sent = scripted.transport->sent_text();
@@ -534,13 +566,14 @@ TEST_CASE(
     };
 
     MaximaSession session(factory, proxima::Config{}, kKey);
-    CHECK(session.eval_pure(Payload::text("q"), assuming("x > 0")).value == "$OLD");
+    CHECK(session.eval_pure(Payload::text("q"), assuming("x > 0")).value()
+          == "$OLD");
 
     session.restart();
     CHECK(built == 2);
     // The cache went with the old process, and so did its context: the new
     // one is made before the question is asked again.
-    CHECK(session.eval_pure(Payload::text("q"), assuming("x > 0")).value
+    CHECK(session.eval_pure(Payload::text("q"), assuming("x > 0")).value()
           == "$FRESH");
 
     SUBCASE("unless there is no way to start another") {

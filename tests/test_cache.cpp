@@ -22,10 +22,7 @@ using proxima::detail::ReplyCache;
 namespace {
 
 proxima::detail::Reply valued(const std::string &value) {
-    proxima::detail::Reply reply;
-    reply.ok = true;
-    reply.value = value;
-    return reply;
+    return proxima::detail::Reply::value(value);
 }
 
 } // namespace
@@ -40,7 +37,7 @@ TEST_CASE("a cache returns what it was given") {
     cache.insert("a", valued("1"));
     const proxima::detail::Reply *found = cache.find("a");
     REQUIRE(found != nullptr);
-    CHECK(found->value == "1");
+    CHECK(found->value() == "1");
     CHECK(cache.hits() == 1);
 }
 
@@ -65,7 +62,7 @@ TEST_CASE("re-inserting a key replaces rather than duplicates") {
     cache.insert("a", valued("2"));
 
     CHECK(cache.size() == 1);
-    CHECK(cache.find("a")->value == "2");
+    CHECK(cache.find("a")->value() == "2");
 }
 
 TEST_CASE("a capacity of zero disables caching without misbehaving") {

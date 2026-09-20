@@ -10,7 +10,7 @@
 // A Lisp helper installed at startup wraps every reply in delimiters carrying
 // the request's own id:
 //
-//     @@B<tag>@@<ok>@@S<tag>@@<value>@@S<tag>@@<reason>@@E<tag>@@
+//     @@B<tag>@@<status>@@S<tag>@@<value>@@S<tag>@@<reason>@@E<tag>@@
 //
 // where the tag is `<key>-<id>`: the request's id, behind a key drawn at
 // random for each session. The id alone was enough to keep one reply from
@@ -37,7 +37,9 @@
 // - **errcatch turns errors into values.** It yields `[]` on failure and
 //   `[result]` on success, so Maxima never drops into an error prompt that
 //   leaves the stream off by one. Success and failure are read from the frame
-//   rather than guessed at from the shape of some text.
+//   rather than guessed at from the shape of some text — and so is *which*
+//   failure: the status is `T` for a value, `Q` for a question Maxima needed
+//   to ask and could not, and `NIL` for an error of its own.
 // - **Nothing variable ever reaches Maxima's reader as syntax.** The only
 //   text Maxima parses is the fixed wrapper plus a string literal. Reading
 //   the string's *contents* happens inside errcatch, so a malformed
@@ -123,6 +125,12 @@ std::string request_for(std::string_view key, std::uint64_t id,
 /// its frame was bounded only by Config::timeout — at pipe speed, gigabytes.
 /// The largest reply measured in practice is under a megabyte.
 inline constexpr std::size_t kMaxFrameBytes = std::size_t{256} * 1024 * 1024;
+
+/// The status a frame's first field carries: `T` for a value, `Q` for a
+/// question Maxima could not ask — the caller has an assumption to supply —
+/// and anything else for an error of Maxima's own.
+inline constexpr std::string_view kStatusValue = "T";
+inline constexpr std::string_view kStatusQuestion = "Q";
 
 /// Reads request `id`'s frame out of `buffer`, given where its closing
 /// delimiter was found. Everything before the opening delimiter is banner

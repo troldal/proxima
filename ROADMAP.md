@@ -350,7 +350,7 @@ what is missing, with no base class for a user's type to inherit.
   two-operand kinds built only through a constructor. `Expr::args()` still
   hands out a vector, so those keep vector storage behind it; a span is the
   public change, listed with the API findings' small things.
-- [ ] **`Reply` and the cause, by string prefix.** `Reply` is `{ok, value,
+- [x] **`Reply` and the cause, by string prefix.** `Reply` is `{ok, value,
   reason}`, so a success with a reason and a failure with a value are both
   representable; and `to_result` decides the cause by whether the reason
   *begins with* "this computation needs an assumption" — a literal that
@@ -361,7 +361,13 @@ what is missing, with no base class for a user's type to inherit.
   status token — `T`, `NIL`, or a third value for a question — and make
   `Reply` a value or a failure-with-cause, which the caches can serialise
   as easily as a flag.
-- [ ] **`MaximaSession`'s lifecycle is booleans and sentinels.** `recovering_`,
+  *Done.* The helper now prints `Q` for a question it intercepted, `NIL`
+  for a Maxima error and `T` for a value, so the cause is decided where the
+  failure happens. `Reply` is a `variant<string, Failed>` behind
+  `ok()`/`value()`/`reason()`/`cause()`; the three literals and
+  `kInconsistent` are gone. The persistent format is `proxima-cache-2`: one
+  cause field and one text field, where there were a flag and two texts.
+- [x] **`MaximaSession`'s lifecycle is booleans and sentinels.** `recovering_`,
   `state_accounted_`, a `factory_` that may be empty (three constructors,
   one of which makes "a death final"), a `transport_` that may be null, and
   `active_context_` using the empty string for "unknown". Together they
@@ -369,6 +375,14 @@ what is missing, with no base class for a user's type to inherit.
   that no type spells out, and `restart()` finds the last of those by
   testing the factory at the moment it is called. An explicit state, and
   `std::optional` where the empty string stands for "not known".
+  *Done, in part.* The state machine is now `enum class Phase { Running,
+  Recovering, CannotRestart }`, and the transport-only constructor holds a
+  factory that *says* it cannot restart rather than no factory at all, so
+  nothing tests emptiness. `transport_` is reached through an accessor that
+  reports rather than dereferencing null. Two of the review's points needed
+  no change: `active_context_` was already a `std::optional`, and
+  `state_accounted_` is an honest flag — one fact, two values — not a state
+  machine in disguise.
 - [ ] **`SExpr` and `DisplayNode` carry every field for every kind.** Both
   are the shape `Node` had before it became a variant: a kind beside
   `text`, `real`, `items` and the rest, with `digits()` "meaningless for

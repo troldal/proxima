@@ -105,7 +105,7 @@ public:
     ///
     /// Fails, without asking, if the environment cannot be established: a
     /// Maxima error in one of its statements, or facts that contradict one
-    /// another (a reason beginning kInconsistent).
+    /// another (Cause::Inconsistent).
     Reply eval_pure(const Payload &payload, const Environment &environment = {});
 
     /// Discards every cached reply.
@@ -131,22 +131,30 @@ public:
 
     /// Replaces Maxima with a fresh process: every statement's change is
     /// discarded, the contexts made for assumptions are made again when next
-    /// needed, and persistence resumes. Throws KernelError for a session built
-    /// without a factory, which has no way to make another process.
+    /// needed, and persistence resumes. Throws KernelError for a session with
+    /// no way to make another process — one built around a single transport.
     void restart();
 
     /// How many sets of assumptions keep a Maxima context at once.
     static constexpr std::size_t kMaxContexts = 16;
 
-    /// How a failure to establish contradictory assumptions begins, so that
-    /// to_result can give it Cause::Inconsistent.
-    static constexpr std::string_view kInconsistent
-        = "the assumptions are inconsistent: ";
-
 private:
     /// Which deadline a conversation runs on. A call's can be changed while it
     /// waits; the startup one, for the handshake and a replay, is fixed.
     enum class Deadline { Call, Startup };
+
+    /// Where the session stands with respect to the process behind it.
+    ///
+    /// Running is the ordinary state, and the only one in which a broken
+    /// conversation sets off a recovery. Recovering is set for the duration
+    /// of one, so that a failure during the handshake does not start another
+    /// inside it. CannotRestart is a session built around a single transport,
+    /// as the tests build one: a death is final, and nothing is attempted.
+    ///
+    /// This used to be a bool for the middle state and an *empty std::function*
+    /// for the last, so "can this session be restarted" was read off whether
+    /// the factory existed, in three places that had to agree.
+    enum class Phase { Running, Recovering, CannotRestart };
 
     /// Sends one request and reads its frame. The pipe lock must be held.
     Reply eval_locked(const Payload &payload, Deadline deadline);
@@ -173,6 +181,11 @@ private:
 
     void handshake();
     void write_line(std::string_view line);
+
+    /// The transport. A live session always has one: it is null only between
+    /// the old one going and the new one arriving, inside recover(), so this
+    /// reports rather than dereferencing nothing.
+    ITransport &transport();
 
     /// Everything a persistent key has to be qualified by beyond the question
     /// and its assumptions: the two versions.
@@ -203,6 +216,10 @@ private:
     std::uint64_t state_generation_ = 0;
 
     Config config_;
+
+    /// Always callable: a session that cannot make another transport holds a
+    /// factory that says so, rather than an empty one for the rest of the
+    /// class to test.
     TransportFactory factory_;
     std::unique_ptr<ITransport> transport_;
     std::uint64_t next_request_id_ = 0;
@@ -226,9 +243,7 @@ private:
     std::optional<std::string> active_context_ = "initial";
     ContextTable contexts_{kMaxContexts};
 
-    /// Set while recovering, so that a failure during the handshake or replay
-    /// does not set off another recovery inside the first.
-    bool recovering_ = false;
+    Phase phase_ = Phase::Running;
 };
 
 } // namespace proxima::detail

@@ -94,7 +94,12 @@ bool take_field(std::string_view &rest, std::string_view &field) {
     return true;
 }
 
-constexpr const char *kFormat = "proxima-cache-1";
+// Bumped from -1, which stored `ok` as a flag and the value and the reason
+// as two fields, one of them always empty. An entry now stores the cause,
+// which used to be guessed from the reason's first words when it was read.
+// Entries in the old shape are simply not read back: the line below does not
+// match, and they are swept as any other stale file is.
+constexpr const char *kFormat = "proxima-cache-2";
 
 /// How old a temporary must be before a sweep takes it for an orphan. No
 /// writer takes anything like this long to write one entry.
@@ -250,18 +255,33 @@ std::optional<Reply> PersistentCache::find(std::string_view source) const {
         return std::nullopt;
     }
 
-    std::string_view ok;
-    std::string_view value;
-    std::string_view reason;
-    if (!take_field(rest, ok) || !take_field(rest, value)
-        || !take_field(rest, reason)) {
+    // The cause as a decimal number, empty for a value; then the one text
+    // field that cause decides the meaning of.
+    std::string_view cause_text;
+    std::string_view text;
+    if (!take_field(rest, cause_text) || !take_field(rest, text)) {
         return std::nullopt; // Truncated, most likely a partial write.
     }
 
-    Reply reply;
-    reply.ok = ok == "1";
-    reply.value = std::string(value);
-    reply.reason = std::string(reason);
+    std::optional<Reply> reply;
+    if (cause_text.empty()) {
+        reply = Reply::value(std::string(text));
+    } else {
+        int number = 0;
+        const auto [stopped, ec] = std::from_chars(
+            cause_text.data(), cause_text.data() + cause_text.size(), number);
+        if (ec != std::errc{} || stopped != cause_text.data() + cause_text.size()) {
+            return std::nullopt;
+        }
+        // A cause this build does not have: the file was written by a later
+        // version of the library. Nothing sensible to read it back as, and a
+        // wrong cause is worse than a recomputation.
+        const std::optional<Cause> cause = cause_from_number(number);
+        if (!cause) {
+            return std::nullopt;
+        }
+        reply = Reply::failure(*cause, std::string(text));
+    }
 
     // A read is a use: it keeps the entry from eviction. After the stream has
     // closed, since Windows may refuse to change the time of a file held open.
@@ -320,9 +340,10 @@ void PersistentCache::insert(std::string_view source, const Reply &reply) const 
         }
         out << kFormat << '\n';
         write_field(out, key);
-        write_field(out, reply.ok ? "1" : "0");
-        write_field(out, reply.value);
-        write_field(out, reply.reason);
+        write_field(out, reply.ok()
+                             ? std::string()
+                             : std::to_string(static_cast<int>(reply.cause())));
+        write_field(out, reply.ok() ? reply.value() : reply.reason());
         if (!out) {
             out.close();
             std::error_code ec;

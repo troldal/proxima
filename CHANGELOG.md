@@ -8,6 +8,15 @@ change the API. [RELEASING.md](RELEASING.md) says how a release is made, and
 
 ## [Unreleased]
 
+### Changed
+
+- **The on-disk answer cache has a new format,** `proxima-cache-2`, which
+  records the *cause* of a failed answer rather than leaving it to be
+  recovered from the first words of Maxima's message. Entries written by 0.3
+  and earlier are not read back: they are ignored as any unrecognised file is,
+  and swept when `Config::cache_directory_limit` is reached. Nothing is lost
+  but the time to ask those questions again.
+
 ## [0.3.0] — 2026-09-20
 
 *Which Maxima a program gets, and how much say it has in that.*

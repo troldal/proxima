@@ -105,11 +105,11 @@ proxima::integrate(pow(x, n), x, proxima::assuming(gt(n, 0)))
    v                                                                 |
  one framed exchange over the pipe                  transport/       |
    >>  cppsend(<id>, errcatch(ratdisrep(cppread("..."))))$           |
-   <<  @@B<tag>@@ ok @@S<tag>@@ value @@S<tag>@@ reason @@E<tag>@@   |
+   <<  @@B<tag>@@status@@S<tag>@@ value @@S<tag>@@ reason @@E<tag>@@   |
        where <tag> is <key>-<id>                                     |
    |                                                                 |
    v                                                                 |
- Reply { ok, value, reason }  --> stored in both caches              |
+ Reply: a value, or a failure and its Cause --> both caches          |
    |                                                                 |
    |<----------------------------------------------------------------+
    v
@@ -142,7 +142,8 @@ exception if you prefer those.
  Maxima reports an error                errcatch, into the      MaximaError
                                         frame's reason
  Maxima wants to ask "Is n positive?"   the helper intercepts   NeedsAssumption
-                                        the question
+                                        the question, and says
+                                        so in the frame's status
  the assumptions contradict each other  assume() says so        Inconsistent
  no answer in closed form               read from the result    NoClosedForm,
                                                                 NotSolved, ...

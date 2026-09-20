@@ -72,23 +72,21 @@ TEST_CASE("to_expr reads a reply into an expression, or passes its failure on") 
     CHECK(*read == proxima::Expr::symbol("x") + 1);
 
     // As every operation composes it: the session's reply, made a result,
-    // then read. A Maxima error is the Failure, with Maxima's wording and a
-    // cause a program can branch on.
-    const auto failed
-        = proxima::detail::to_result(
-              proxima::detail::Reply{false, "",
-                                     "expt: undefined: 0 to a negative exponent."})
-              .and_then(proxima::detail::to_expr);
+    // then read. A failure keeps Maxima's wording, and the cause the protocol
+    // gave it travels with it rather than being guessed from those words.
+    const auto failed = proxima::detail::to_result(
+                            proxima::detail::Reply::failure(
+                                proxima::Cause::MaximaError,
+                                "expt: undefined: 0 to a negative exponent."))
+                            .and_then(proxima::detail::to_expr);
     REQUIRE_FALSE(failed.has_value());
     CHECK(failed.error().message() == "expt: undefined: 0 to a negative exponent.");
     CHECK(proxima::cause_of(failed.error()) == proxima::Cause::MaximaError);
 
-    // The Lisp helper's own message, for a question Maxima could not ask,
-    // has the cause that names the remedy.
-    const auto question = proxima::detail::to_result(
-        proxima::detail::Reply{false, "",
-                               "this computation needs an assumption that was not "
-                               "supplied. Maxima asked: Is n equal to -1?"});
+    // A question Maxima could not ask carries the cause that names the
+    // remedy, whatever its wording happens to be.
+    const auto question = proxima::detail::to_result(proxima::detail::Reply::failure(
+        proxima::Cause::NeedsAssumption, "Maxima asked: Is n equal to -1?"));
     CHECK(proxima::cause_of(question.error()) == proxima::Cause::NeedsAssumption);
 
     // Not a Maxima term at all: the protocol failing, not the mathematics.

@@ -36,7 +36,10 @@ namespace {
 // Overriding `retrieve`, the single point all of that goes through, turns a
 // question into an ordinary Maxima error. errcatch then reports it as a Failure
 // carrying the question text, the session stays synchronised, and the caller is
-// told exactly which assumption to supply.
+// told exactly which assumption to supply. It also sets a flag the framing
+// reads, so that the frame *says* the failure was a question — status `Q`
+// rather than `NIL`. The reason used to be matched against the wording below
+// to tell the two apart, in C++, in two other files.
 //
 // `errcatch` hands `x` back as a Maxima list: empty on failure, one element on
 // success. On failure the message is rendered by calling errormsg() with
@@ -67,8 +70,10 @@ constexpr const char *kHelperLisp = R"LISP((progn
         (*read-default-float-format* 'double-float)
         (*readtable* (copy-readtable nil)))
    (maxima::meval (maxima::cppresolve (read-from-string text)))))
+ (defvar maxima::*cpp-asked* nil)
  (defun maxima::retrieve (msg flag &rest more)
   (declare (ignore flag more))
+  (setf maxima::*cpp-asked* t)
   (maxima::merror
    "this computation needs an assumption that was not supplied. Maxima asked: ~a"
    (with-output-to-string (s)
@@ -93,7 +98,9 @@ constexpr const char *kHelperLisp = R"LISP((progn
      (setf reason (string-trim (list #\Space #\Newline #\Tab)
                                (get-output-stream-string sink)))))
    (format t "~&@@B~a@@~a@@S~a@@~s@@S~a@@~a@@E~a@@~%"
-           id (if ok "T" "NIL") id (if ok (cadr x) nil) id reason id))
+           id (cond (ok "T") (maxima::*cpp-asked* "Q") (t "NIL"))
+           id (if ok (cadr x) nil) id reason id)
+   (setf maxima::*cpp-asked* nil))
   (quote maxima::$done))
  (cl-user::run)))LISP";
 
@@ -191,18 +198,20 @@ Reply parse_frame(std::string_view buffer, std::size_t end_at, std::string_view 
                           + "separator");
     }
 
-    Reply reply;
-    reply.ok = body.substr(0, first_separator) == "T";
-
+    const std::string_view status = body.substr(0, first_separator);
     const std::size_t value_at = first_separator + separator.size();
     const std::size_t reason_at = second_separator + separator.size();
-    if (reply.ok) {
-        reply.value
-            = std::string(body.substr(value_at, second_separator - value_at));
-    } else {
-        reply.reason = std::string(body.substr(reason_at));
+
+    if (status == kStatusValue) {
+        return Reply::value(
+            std::string(body.substr(value_at, second_separator - value_at)));
     }
-    return reply;
+    // A question Maxima could not ask is the one failure whose remedy is the
+    // caller's: supply the fact. The helper says so in the status, so nothing
+    // here reads the message to find out.
+    const Cause cause
+        = status == kStatusQuestion ? Cause::NeedsAssumption : Cause::MaximaError;
+    return Reply::failure(cause, std::string(body.substr(reason_at)));
 }
 
 } // namespace proxima::detail

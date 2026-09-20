@@ -18,6 +18,14 @@ namespace {
 // child is still alive. Not a deadline; see read_frame.
 constexpr std::chrono::milliseconds kPollInterval{50};
 
+/// What a session built around a single transport says when asked for
+/// another. Thrown by restart(), and by the factory such a session holds, so
+/// that both say the same thing.
+[[noreturn]] void no_restart() {
+    throw KernelError("this session cannot be restarted: it was built "
+                      "without a way to start another Maxima");
+}
+
 } // namespace
 
 std::string MaximaSession::persistence_stamp() const {
@@ -81,22 +89,37 @@ MaximaSession::MaximaSession(std::unique_ptr<ITransport> transport, Config confi
                              std::string frame_key)
     : config_(std::move(config)), transport_(std::move(transport)),
       frame_key_(std::move(frame_key)),
-      cache_(config_.cache_entries, config_.cache_bytes) {
-    // No factory, so this session cannot be restarted; a death is final.
+      cache_(config_.cache_entries, config_.cache_bytes),
+      phase_(Phase::CannotRestart) {
     if (!transport_) {
         throw KernelError("MaximaSession was given a null transport");
     }
+    // One transport and no way to make another: a death is final. The factory
+    // still answers — by saying so — which keeps "no factory at all" from
+    // being a state the rest of this class has to know about.
+    factory_ = []() -> std::unique_ptr<ITransport> { no_restart(); };
     handshake();
 }
 
 MaximaSession::~MaximaSession() {
-    if (transport_ && transport_->alive()) {
-        // Ask Maxima to leave on its own; the transport terminates it if it
-        // does not. Errors here are irrelevant, we are tearing down regardless.
-        write_line("quit();");
+    try {
+        if (transport_ && transport_->alive()) {
+            // Ask Maxima to leave on its own; the transport terminates it if
+            // it does not.
+            write_line("quit();");
+        }
+    } catch (...) {
+        // A pipe that will not take one last line is nothing this destructor
+        // can do anything about, and a destructor that throws takes the
+        // program with it. kill() below is what actually ends the process.
     }
-    if (transport_) {
-        transport_->kill();
+    try {
+        if (transport_) {
+            transport_->kill();
+        }
+    } catch (...) {
+        // As above. The child is a process of the operating system's; if it
+        // cannot be ended here, reporting it from a destructor would not help.
     }
 }
 
@@ -112,8 +135,9 @@ void MaximaSession::handshake() {
     // A form rather than text, so the handshake depends on nothing but the
     // helper itself — eval_string lives in a package Maxima autoloads.
     const Reply ready = eval_locked(Payload::form("T"), Deadline::Startup);
-    if (!ready.ok) {
-        throw KernelError("Maxima rejected the startup handshake: " + ready.reason);
+    if (!ready.ok()) {
+        throw KernelError("Maxima rejected the startup handshake: "
+                          + ready.reason());
     }
 }
 
@@ -125,7 +149,7 @@ Reply MaximaSession::converse(const Payload &payload) {
         // reporting, so that only this call is lost rather than every call
         // after it. Recovery failing is not worth replacing the original
         // diagnosis with — the next call will try again.
-        if (factory_ && !recovering_) {
+        if (phase_ == Phase::Running) {
             try {
                 recover();
             } catch (...) {
@@ -152,7 +176,7 @@ Reply MaximaSession::eval(const Payload &payload) {
     // Outside every context made for assumptions, so that what a statement
     // assumes or declares is not filed in one of them and lost when it is
     // evicted.
-    if (const Reply switched = switch_context("initial"); !switched.ok) {
+    if (const Reply switched = switch_context("initial"); !switched.ok()) {
         return switched;
     }
     // The statement runs in `initial`, and the session goes on assuming it is
@@ -164,12 +188,12 @@ Reply MaximaSession::eval(const Payload &payload) {
 
 Reply MaximaSession::switch_context(const std::string &name) {
     if (active_context_ == name) {
-        return {true, "", ""};
+        return Reply::value("");
     }
     // Names are this session's own or `initial`, never the caller's, so
     // they can travel as text.
     Reply reply = converse(Payload::text("context: " + name));
-    if (reply.ok) {
+    if (reply.ok()) {
         active_context_ = name;
     } else {
         active_context_.reset(); // Whatever Maxima has current, it is not known.
@@ -181,20 +205,20 @@ std::optional<Reply>
 MaximaSession::select_environment(const Environment &environment) {
     if (environment.key.empty()) {
         const Reply switched = switch_context("initial");
-        return switched.ok ? std::nullopt : std::optional<Reply>(switched);
+        return switched.ok() ? std::nullopt : std::optional<Reply>(switched);
     }
 
     if (const std::optional<std::string> existing
         = contexts_.find(environment.key)) {
         const Reply switched = switch_context(*existing);
-        return switched.ok ? std::nullopt : std::optional<Reply>(switched);
+        return switched.ok() ? std::nullopt : std::optional<Reply>(switched);
     }
 
     // A context of its own, under `initial` so that what a statement put
     // there is in force here too. supcontext makes it current.
     const std::string name = contexts_.next_name();
     Reply made = converse(Payload::text("supcontext(" + name + ", initial)"));
-    if (!made.ok) {
+    if (!made.ok()) {
         active_context_.reset();
         return made;
     }
@@ -209,18 +233,19 @@ MaximaSession::select_environment(const Environment &environment) {
     };
     for (const Environment::Statement &statement : environment.statements) {
         Reply reply = converse(statement.payload);
-        if (!reply.ok) {
+        if (!reply.ok()) {
             discard();
             return reply;
         }
         // assume answers with a list saying what it did with each fact; a
         // fact that contradicts those already in force is `inconsistent`, and
         // is not added.
-        if (reply.value == "((MLIST SIMP) $INCONSISTENT)") {
+        if (reply.value() == "((MLIST SIMP) $INCONSISTENT)") {
             discard();
-            return Reply{false, "",
-                         std::string(kInconsistent) + statement.description
-                             + " contradicts the assumptions before it"};
+            return Reply::failure(Cause::Inconsistent,
+                                  "the assumptions are inconsistent: "
+                                      + statement.description
+                                      + " contradicts the assumptions before it");
         }
     }
 
@@ -312,11 +337,13 @@ void MaximaSession::set_timeout(std::chrono::milliseconds timeout) {
 }
 
 void MaximaSession::recover() {
-    recovering_ = true;
+    const Phase before = phase_;
+    phase_ = Phase::Recovering;
     struct Restore {
-        bool &flag;
-        ~Restore() { flag = false; }
-    } restore{recovering_};
+        Phase &phase;
+        Phase to;
+        ~Restore() { phase = to; }
+    } restore{phase_, before};
 
     // terminate, not kill: the process being replaced was never asked to quit.
     // After a timeout it is still busy computing and will not leave on its own,
@@ -355,9 +382,8 @@ void MaximaSession::recover() {
 
 void MaximaSession::restart() {
     const std::lock_guard<std::mutex> pipe(pipe_mutex_);
-    if (!factory_) {
-        throw KernelError("this session cannot be restarted: it was built "
-                          "without a way to start another Maxima");
+    if (phase_ == Phase::CannotRestart) {
+        no_restart();
     }
     recover();
 }
@@ -367,8 +393,15 @@ bool MaximaSession::persistence_active() const {
     return using_persistence();
 }
 
+ITransport &MaximaSession::transport() {
+    if (!transport_) {
+        throw KernelError("this Maxima session has no transport");
+    }
+    return *transport_;
+}
+
 void MaximaSession::write_line(std::string_view line) {
-    transport_->send(std::string(line) + "\n");
+    transport().send(std::string(line) + "\n");
 }
 
 std::chrono::milliseconds MaximaSession::timeout_for(Deadline deadline) const {
@@ -408,7 +441,7 @@ Reply MaximaSession::read_frame(std::uint64_t id, Deadline deadline_kind) {
         const auto remaining
             = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
         const std::string chunk
-            = transport_->receive(std::min(kPollInterval, remaining));
+            = transport().receive(std::min(kPollInterval, remaining));
         if (!chunk.empty()) {
             search_from
                 = buffer.size() >= end.size() ? buffer.size() - (end.size() - 1) : 0;
@@ -425,7 +458,7 @@ Reply MaximaSession::read_frame(std::uint64_t id, Deadline deadline_kind) {
         }
         // Nothing arrived. Either the child is gone, or it is simply still
         // thinking and we have time left to wait.
-        if (!transport_->alive()) {
+        if (!transport().alive()) {
             throw KernelError("Maxima session ended unexpectedly");
         }
     }

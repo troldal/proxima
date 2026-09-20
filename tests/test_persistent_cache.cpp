@@ -37,10 +37,7 @@ std::filesystem::path scratch(const std::string &name) {
 }
 
 proxima::detail::Reply valued(const std::string &value) {
-    proxima::detail::Reply reply;
-    reply.ok = true;
-    reply.value = value;
-    return reply;
+    return proxima::detail::Reply::value(value);
 }
 
 std::size_t file_count(const std::filesystem::path &directory) {
@@ -68,8 +65,8 @@ TEST_CASE("an entry survives being written and read back") {
     const PersistentCache reopened(directory, "stamp");
     const auto found = reopened.find("2+2");
     REQUIRE(found.has_value());
-    CHECK(found->ok);
-    CHECK(found->value == "4");
+    CHECK(found->ok());
+    CHECK(found->value() == "4");
 }
 
 TEST_CASE("values containing newlines and quotes survive") {
@@ -78,16 +75,55 @@ TEST_CASE("values containing newlines and quotes survive") {
     const auto directory = scratch("awkward");
     const PersistentCache cache(directory, "stamp");
 
-    proxima::detail::Reply reply;
-    reply.ok = false;
-    reply.value = "";
-    reply.reason = "line one\nline \"two\"\n\nand a trailing newline\n";
+    const proxima::detail::Reply reply = proxima::detail::Reply::failure(
+        proxima::Cause::MaximaError,
+        "line one\nline \"two\"\n\nand a trailing newline\n");
     cache.insert("q", reply);
 
     const auto found = cache.find("q");
     REQUIRE(found.has_value());
-    CHECK_FALSE(found->ok);
-    CHECK(found->reason == reply.reason);
+    CHECK_FALSE(found->ok());
+    CHECK(found->reason() == reply.reason());
+}
+
+TEST_CASE("the cause comes back with the failure, not guessed from its words") {
+    // It used to be recovered by matching the reason against literals, so an
+    // answer that happened to begin with the same words read back as the wrong
+    // cause. The cause is stored.
+    const auto directory = scratch("cause");
+    const PersistentCache cache(directory, "stamp");
+
+    cache.insert("q",
+                 proxima::detail::Reply::failure(proxima::Cause::NeedsAssumption,
+                                                 "Maxima asked: Is n equal to -1?"));
+
+    const auto found = cache.find("q");
+    REQUIRE(found.has_value());
+    CHECK(found->cause() == proxima::Cause::NeedsAssumption);
+    CHECK(found->reason() == "Maxima asked: Is n equal to -1?");
+}
+
+TEST_CASE("a cause this build does not have is a miss, not a wrong cause") {
+    // An entry written by a later version of the library, carrying a cause
+    // this one has no name for. Recomputing costs a question; reading it back
+    // as some other cause would be a lie.
+    const auto directory = scratch("future_cause");
+    const PersistentCache cache(directory, "stamp");
+    cache.insert("q", valued("42"));
+    REQUIRE(file_count(directory) == 1);
+    const std::filesystem::path entry
+        = std::filesystem::directory_iterator(directory)->path();
+
+    const std::string key = "stamp\n\nq"; // As above: the stamp, a blank line,
+                                          // then the question.
+    {
+        std::ofstream out(entry, std::ios::binary | std::ios::trunc);
+        out << "proxima-cache-2\n"
+            << key.size() << '\n'
+            << key << "4\n9999"
+            << "3\nwat";
+    }
+    CHECK_FALSE(cache.find("q").has_value());
 }
 
 TEST_CASE("a different stamp is a different cache") {
@@ -105,8 +141,8 @@ TEST_CASE("a different stamp is a different cache") {
 
     // And they coexist rather than overwriting one another.
     under_another.insert("sqrt(x^2)", valued("x"));
-    CHECK(under_one.find("sqrt(x^2)")->value == "abs(x)");
-    CHECK(under_another.find("sqrt(x^2)")->value == "x");
+    CHECK(under_one.find("sqrt(x^2)")->value() == "abs(x)");
+    CHECK(under_another.find("sqrt(x^2)")->value() == "x");
 }
 
 TEST_CASE("a corrupt or truncated entry is ignored, not misread") {
@@ -117,7 +153,7 @@ TEST_CASE("a corrupt or truncated entry is ignored, not misread") {
     // Truncate every file in the directory to its first line.
     for (const auto &entry : std::filesystem::directory_iterator(directory)) {
         std::ofstream out(entry.path(), std::ios::binary | std::ios::trunc);
-        out << "proxima-cache-1\n";
+        out << "proxima-cache-2\n";
     }
     CHECK_FALSE(cache.find("q").has_value());
 }
@@ -136,19 +172,20 @@ TEST_CASE("a length larger than the file is a miss, not an exception") {
 
     SUBCASE("in the first field") {
         std::ofstream out(entry, std::ios::binary | std::ios::trunc);
-        out << "proxima-cache-1\n18446744073709551615\n";
+        out << "proxima-cache-2\n18446744073709551615\n";
     }
     SUBCASE("after a key that matches") {
         // The key is the stamp, a blank line, then the question.
         const std::string key = "stamp\n\nq";
         std::ofstream out(entry, std::ios::binary | std::ios::trunc);
-        out << "proxima-cache-1\n"
+        out << "proxima-cache-2\n"
             << key.size() << '\n'
-            << key << "1\n1" << "18446744073709551615\n";
+            << key << "0\n"
+            << "18446744073709551615\n";
     }
     SUBCASE("or just longer than what is there") {
         std::ofstream out(entry, std::ios::binary | std::ios::trunc);
-        out << "proxima-cache-1\n1000\nshort";
+        out << "proxima-cache-2\n1000\nshort";
     }
 
     std::optional<proxima::detail::Reply> found;
@@ -234,7 +271,7 @@ TEST_CASE("another writer's temporaries are left alone") {
         CHECK(contents == partial);
     }
     REQUIRE(cache.find("q").has_value());
-    CHECK(cache.find("q")->value == "42");
+    CHECK(cache.find("q")->value() == "42");
     // The entry and the three foreign files: no temporary of ours left behind.
     CHECK(file_count(directory) == 4);
 }

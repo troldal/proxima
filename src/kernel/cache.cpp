@@ -15,7 +15,7 @@ const Reply *ReplyCache::find(const std::string &key) {
 
 std::size_t ReplyCache::footprint(const std::string &key, const Reply &reply) {
     constexpr std::size_t kOverhead = 256;
-    return 2 * key.size() + reply.value.size() + reply.reason.size() + kOverhead;
+    return 2 * key.size() + reply.value().size() + reply.reason().size() + kOverhead;
 }
 
 void ReplyCache::insert(std::string key, Reply reply) {

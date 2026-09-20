@@ -158,7 +158,8 @@ The internal values that pass between these:
  Payload      cppread("...")        the one part of a request that varies;
               eval_string("...")    only these two factories make one, and
                                      both escape their argument
- Reply        { ok, value, reason } one answer, as the caches store it
+ Reply        a value, or a Cause   one answer, as the caches store it
+              and Maxima's wording   — never both, and never neither
 ```
 
 ## 4. One question's types, in order
@@ -176,7 +177,7 @@ layers:
                                           MaximaSession::eval_pure
                                                             |
                                                             v
-                                          Reply { ok, value, reason }
+                                       Reply { value | Cause, message }
                                                             |
                                                 [to_result] v
                                           result<std::string>
