@@ -164,6 +164,18 @@ Decisions that change the public API, made before it is frozen.
   may be added in minor versions, or the enums are closed — and document it.
 - [ ] **Deprecated names.** `simplify` is an older name for `ratsimp`. Remove it
   before 1.0, or keep it for good.
+- [ ] **Relations written infix.** `==` cannot be overloaded to build an
+  equation, since it is structural equality returning bool, so relations are
+  `eq(x * x, 4)`. The named-operator trick would allow
+  `x * x <rel::eq> 4`: a tag object per relation, `operator<` returning the
+  left side and `operator>` completing it, each a hidden friend of the type
+  it takes. Tried as a prototype: about 30 lines, clean on GCC 16, Clang and
+  MSVC `/W4`, with arithmetic binding tighter as wanted and a plain number
+  allowed on either side. What sinks it as written is clang-format, which
+  spaces it to `x * x < rel::eq > 4` — the same expression, but no longer
+  looking like an operator, and formatting is enforced here. Decide whether
+  an opt-in `<proxima/relops.hpp>` is worth it anyway, or whether `eq` stays
+  the only spelling.
 - [ ] **Use the C++23 library where it is now available.** `std::ranges::to`
   was waiting for GCC 14 to be the oldest compiler, which it is now
   ([TODO §9.4](TODO.md)). `std::generator` still waits for libc++;
