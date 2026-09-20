@@ -163,22 +163,27 @@ Kernel failures are thrown instead, after the session has been repaired:
 
 ## Inside the session
 
-The session is the only part with moving pieces:
+The session is the only part with moving pieces. It holds the conversation —
+one request at a time, the caches kept honest across it, and recovery when
+Maxima dies — and takes the rest from units beside it that know nothing of
+the conversation and are tested without one:
 
 ```
  +------------------------------ MaximaSession -------------------------------+
+ |  the conversation: send a request, read its frame, cache the answer,       |
+ |  switch context, recover                                                   |
  |                                                                            |
- |  ReplyCache            PersistentCache          contexts                   |
+ |  ReplyCache            PersistentCache          ContextTable               |
  |  in memory, LRU,       one file per answer;     one Maxima context per     |
- |  bounded by count      the key includes the     distinct Assumptions,      |
- |  and bytes             Maxima and library       switched only when the     |
- |                        versions                 set differs                |
+ |  bounded by count      the key includes the     distinct Assumptions, LRU  |
+ |  and bytes             Maxima and library       of sixteen; the session    |
+ |                        versions                 does the switching         |
  |                                                                            |
- |  protocol              recovery                 discovery (at startup)     |
- |  numbered frames with  terminate, relaunch,     finds sbcl + maxima.core:  |
- |  a random key, one     reinstall the helper     Config, MAXIMA_ROOT, then  |
- |  request at a time                              PATH and the usual places  |
- |                                                                            |
+ |  protocol              launch                   discovery (at startup)     |
+ |  Payload, numbered     the SBCL command line,   finds sbcl + maxima.core:  |
+ |  frames with a random  the environment, the     Config, MAXIMA_ROOT, then  |
+ |  key, the helper Lisp, private user directory   PATH and the usual places  |
+ |  reading a frame back                                                      |
  +----------------------------------+-----------------------------------------+
                                     |  ITransport: send bytes, receive bytes
                   +-----------------+-----------------+
@@ -230,7 +235,8 @@ makes hashing and comparison cheap.
  src/parse/         the offline parser, Expr::parse
  src/render/        the rendering walk; infix, TeX, MathML; std::format
  src/numeric/       eval_numeric, compile
- src/kernel/        Kernel, the operations, the session, caches, discovery
+ src/kernel/        Kernel, the operations, the session and the units beside
+                    it: protocol, launch, the context table, caches, discovery
  src/wire/          s-expression reader, and the Expr <-> Maxima mapping
  src/transport/     ITransport, the child process, the scripted fake
  src/util/          UTF-8 conversions, used wherever paths or the

@@ -1,28 +1,15 @@
 #include "kernel/session.hpp"
 
-#include "kernel/discovery.hpp"
-#include "transport/child_process.hpp"
-#include "util/utf8.hpp"
-#include "wire/to_maxima.hpp"
+#include "kernel/launch.hpp"
+#include "kernel/protocol.hpp"
 
 #include <proxima/errors.hpp>
 #include <proxima/version.hpp>
 
 #include <algorithm>
-#include <cerrno>
 #include <chrono>
-#include <exception>
-#include <filesystem>
-#include <format>
-#include <random>
 #include <string>
-#include <system_error>
-
-#ifndef _WIN32
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
-#endif
+#include <utility>
 
 namespace proxima::detail {
 namespace {
@@ -30,128 +17,6 @@ namespace {
 // How long to wait for any single chunk of output before checking whether the
 // child is still alive. Not a deadline; see read_frame.
 constexpr std::chrono::milliseconds kPollInterval{50};
-
-// Maxima expects Windows paths with forward slashes; upstream's maxima.bat
-// performs the same substitution before exporting maxima_prefix. UTF-8, like
-// every string handed to the transport; '\\' is ASCII, so replacing it in the
-// encoded bytes cannot touch part of a longer character.
-std::string to_maxima_path(const std::filesystem::path &p) {
-    std::string text = to_utf8(p);
-    std::replace(text.begin(), text.end(), '\\', '/');
-    return text;
-}
-
-// The Lisp helpers installed at startup: one that reads a form and evaluates
-// it, one that does the framing, and one that stops Maxima asking questions.
-//
-// `$cppread` is the outbound half of the s-expression protocol. It reads one
-// Lisp form from the string it is given — with *read-eval* off, so `#.` cannot
-// run code, and with the Maxima package current, so `MPLUS` and `$X` land on
-// the symbols Maxima uses — and hands it to meval. Because it is called from
-// inside errcatch, a form that fails to read or to evaluate is an ordinary
-// Maxima error with a message, not a silence.
-//
-// One thing Maxima's parser does that reading a form does not: resolve
-// aliases. `subst` is an alias for `substitute`, and a form headed `$SUBST`
-// would evaluate to itself, unrecognised, where the text `subst(...)` would
-// have been rewritten on the way in. `cppresolve` walks the form applying
-// Maxima's own `getalias` to every symbol, which is exactly what the parser
-// does — including `$true` and `$false` to their Lisp spellings.
-//
-// Maxima interrogates the user when it needs a fact it has not been told —
-// `integrate(x^n, x)` asks "Is n equal to -1?" — by printing a prompt and
-// reading a line from standard input. Over a pipe that is fatal twice over: the
-// read blocks until the timeout, and then Maxima consumes the *next request* as
-// the answer, leaving every subsequent reply attached to the wrong question.
-//
-// Overriding `retrieve`, the single point all of that goes through, turns a
-// question into an ordinary Maxima error. errcatch then reports it as a Failure
-// carrying the question text, the session stays synchronised, and the caller is
-// told exactly which assumption to supply — see proxima::Context.
-//
-// `errcatch` hands `x` back as a Maxima list: empty on failure, one element on
-// success. On failure the message is rendered by calling errormsg() with
-// *standard-output* bound to a string, which is what keeps it inside the frame
-// instead of loose in the stream. The request id appears in all three
-// delimiters, so a frame can only ever be matched to the request that asked
-// for it.
-//
-// The reply is printed with Lisp's print limits switched off. Maxima itself
-// runs with *print-length* at 100 and *print-level* at 15, and under those a
-// sum of more than a hundred terms printed as its first hundred and `...`, and
-// anything nested deeper than fifteen levels as `#`. The reader took both for
-// symbols, so a large result came back as a smaller, wrong one that looked
-// right. *print-base* and *print-radix* are pinned for the same reason: what is
-// printed here is data for a reader, not text for a person.
-//
-// Keep the delimiters here in step with frame_begin/frame_separator/frame_end
-// below; a test asserts that they agree.
-constexpr const char *kHelperLisp = R"LISP((progn
- (defun maxima::cppresolve (form)
-  (cond ((symbolp form) (maxima::getalias form))
-        ((atom form) form)
-        (t (mapcar (function maxima::cppresolve) form))))
- (defun maxima::$cppread (text)
-  (let ((*package* (find-package :maxima))
-        (*read-eval* nil)
-        (*read-base* 10)
-        (*read-default-float-format* 'double-float)
-        (*readtable* (copy-readtable nil)))
-   (maxima::meval (maxima::cppresolve (read-from-string text)))))
- (defun maxima::retrieve (msg flag &rest more)
-  (declare (ignore flag more))
-  (maxima::merror
-   "this computation needs an assumption that was not supplied. Maxima asked: ~a"
-   (with-output-to-string (s)
-    (dolist (part (cond ((not (listp msg)) (list msg))
-                        ((consp (car msg)) (cdr msg))
-                        (t msg)))
-     (princ (if (stringp part) part (maxima::$sconcat part)) s)))))
- (defun maxima::$cppsend (id x)
-  (let ((ok (and (consp x) (cdr x)))
-        (reason "")
-        (*print-circle* nil)
-        (*print-pretty* nil)
-        (*print-readably* nil)
-        (*print-length* nil)
-        (*print-level* nil)
-        (*print-lines* nil)
-        (*print-base* 10)
-        (*print-radix* nil))
-   (unless ok
-    (let ((sink (make-string-output-stream)))
-     (let ((*standard-output* sink)) (ignore-errors (maxima::$errormsg)))
-     (setf reason (string-trim (list #\Space #\Newline #\Tab)
-                               (get-output-stream-string sink)))))
-   (format t "~&@@B~a@@~a@@S~a@@~s@@S~a@@~a@@E~a@@~%"
-           id (if ok "T" "NIL") id (if ok (cadr x) nil) id reason id))
-  (quote maxima::$done))
- (cl-user::run)))LISP";
-
-std::unique_ptr<ITransport> launch_maxima(const Config &config,
-                                          std::string &version_tag) {
-    const MaximaInstall install
-        = discover_maxima(config, system_env(), system_command());
-    version_tag = install.version_tag;
-
-    // SBCL's runtime opens its executable and core by the names on its
-    // command line, which it reads through the ANSI API on Windows; those two
-    // get a spelling it can open. The root stays as it is: it only reaches the
-    // environment, which SBCL and Maxima read in full Unicode.
-    MaximaInstall launchable = install;
-    launchable.sbcl_exe = sbcl_readable_path(install.sbcl_exe);
-    // The core may need the child's working directory to be spelled for it:
-    // see core_spelling. The environment keeps the real paths, which SBCL and
-    // Maxima read in full Unicode.
-    const CoreSpelling spelling = core_spelling(install.maxima_core);
-    launchable.maxima_core = spelling.core;
-
-    // The command gets the spellings SBCL's runtime can read; the environment
-    // gets the real paths, which it and Maxima read in full Unicode.
-    return std::make_unique<ChildProcessTransport>(
-        MaximaSession::launch_command(launchable),
-        MaximaSession::launch_environment(install, config), spelling.start_dir);
-}
 
 } // namespace
 
@@ -170,187 +35,6 @@ bool MaximaSession::using_persistence() const {
     return persistent_ != nullptr && persistent_->usable() && state_accounted_;
 }
 
-namespace {
-
-// What the helper formats with ~a in every delimiter.
-std::string frame_tag(std::string_view key, std::uint64_t id) {
-    return std::format("{}-{}", key, id);
-}
-
-} // namespace
-
-std::string random_frame_key() {
-    std::random_device device;
-    const std::uint64_t bits
-        = (std::uint64_t{device()} << 32) ^ std::uint64_t{device()};
-    return std::format("{:016x}", bits);
-}
-
-std::string MaximaSession::frame_begin(std::string_view key, std::uint64_t id) {
-    return "@@B" + frame_tag(key, id) + "@@";
-}
-
-std::string MaximaSession::frame_separator(std::string_view key, std::uint64_t id) {
-    return "@@S" + frame_tag(key, id) + "@@";
-}
-
-std::string MaximaSession::frame_end(std::string_view key, std::uint64_t id) {
-    return "@@E" + frame_tag(key, id) + "@@";
-}
-
-std::vector<std::string> MaximaSession::setup_statements() {
-    return {
-        // Results as one-dimensional text rather than ASCII art. Irrelevant to
-        // the framed values themselves, but it keeps anything Maxima prints
-        // outside a frame from becoming a wall of layout.
-        "display2d:false$",
-        // Maxima otherwise retains every %i/%o label for the life of the
-        // session, which for a long-lived kernel is an unbounded leak.
-        "nolabels:true$",
-        // Errors are rendered into the frame by the helper instead; without
-        // this they would also be printed loose in the stream.
-        "errormsg:false$",
-    };
-}
-
-Payload Payload::form(std::string_view sexpr) {
-    return Payload("cppread(" + string_literal(sexpr) + ")");
-}
-
-Payload Payload::text(std::string_view source) {
-    return Payload("eval_string(" + string_literal(source) + ")");
-}
-
-std::string MaximaSession::request_for(std::string_view key, std::uint64_t id,
-                                       const Payload &payload) {
-    // errcatch turns a Maxima error into an empty list rather than an error
-    // prompt; ratdisrep keeps canonical rational (MRAT) forms from coming back
-    // in place of general ones. The payload is a call on a string literal, so
-    // this text is well-formed whatever the caller asked. The tag travels as a
-    // Maxima string, which is a Lisp string by the time the helper prints it
-    // with ~a — without quotes, exactly as frame_begin spells it.
-    return "cppsend(" + string_literal(frame_tag(key, id)) + ", errcatch(ratdisrep("
-           + payload.str() + ")))$";
-}
-
-std::vector<std::string>
-MaximaSession::launch_command(const MaximaInstall &install) {
-    // UTF-8, as the transport takes every string. path::string() would be the
-    // ANSI code page on Windows, which mangles a Maxima installed under a path
-    // outside it before SBCL ever sees it.
-    std::vector<std::string> argv{to_utf8(install.sbcl_exe), "--core",
-                                  to_utf8(install.maxima_core), "--noinform"};
-
-    if (install.raise_dynamic_space_size) {
-        // What maxima.bat does on 64-bit builds, and for the same reason:
-        // without the larger heap, load("lapack") runs out of dynamic space.
-        argv.emplace_back("--dynamic-space-size");
-        argv.emplace_back("2000");
-    }
-
-    // --disable-debugger is a *toplevel* option, not a runtime one, so it
-    // belongs after --end-runtime-options. Without it, an unhandled Lisp error
-    // drops SBCL into a debugger that reads standard input — over a pipe, a
-    // deadlock. With it, the process exits instead, which recover() can undo.
-    // errcatch is unaffected: it handles the error before the debugger would
-    // ever see it.
-    argv.insert(argv.end(), {"--end-runtime-options", "--disable-debugger", "--eval",
-                             kHelperLisp, "--end-toplevel-options"});
-    return argv;
-}
-
-std::vector<EnvOverride>
-MaximaSession::launch_environment(const MaximaInstall &install,
-                                  const Config &config) {
-    std::vector<EnvOverride> env;
-
-    // Correct even where the image already has a prefix compiled in, which
-    // matters for a relocated or portable installation whose baked-in path no
-    // longer exists.
-    env.emplace_back("MAXIMA_PREFIX", to_maxima_path(install.root));
-
-#ifdef _WIN32
-    // Windows only, and deliberately so. The Windows bundle keeps sbcl.core
-    // beside sbcl.exe and maxima.bat sets SBCL_HOME to that directory because
-    // the crosscompiled installer does not. A distribution SBCL has its home
-    // compiled in (/usr/lib/sbcl on openSUSE), which is *not* <root>/bin —
-    // overriding it there would break contrib loading rather than fix it.
-    env.emplace_back("SBCL_HOME", to_maxima_path(install.sbcl_exe.parent_path()));
-#endif
-
-    if (!config.load_user_init) {
-        // Point Maxima's user directory somewhere we control so it does not
-        // read the user's maxima-init.mac. See Config::load_user_init.
-        std::filesystem::path user_dir = config.user_dir;
-        if (user_dir.empty()) {
-            user_dir = default_user_dir();
-        } else {
-            std::error_code ec;
-            std::filesystem::create_directories(user_dir, ec);
-        }
-        env.emplace_back("MAXIMA_USERDIR", to_maxima_path(user_dir));
-    }
-
-    return env;
-}
-
-void ensure_private_directory(const std::filesystem::path &dir) {
-#ifdef _WIN32
-    // %TEMP% is under the user's own profile, which other users cannot write.
-    std::error_code ec;
-    std::filesystem::create_directories(dir, ec);
-#else
-    const auto refuse = [&dir](const std::string &why) {
-        throw KernelError("refusing to use " + to_utf8(dir)
-                          + " as Maxima's user directory: " + why);
-    };
-
-    // mkdir with the mode, rather than create_directories and a chmod after,
-    // so there is no moment at which the directory exists and is open to
-    // others. An existing one is accepted only if it is already private.
-    if (::mkdir(dir.c_str(), 0700) != 0 && errno != EEXIST) {
-        refuse(std::generic_category().message(errno));
-    }
-
-    // lstat, not stat: a symbolic link planted in its place is refused rather
-    // than followed to wherever its owner chose.
-    struct stat info{};
-    if (::lstat(dir.c_str(), &info) != 0) {
-        refuse(std::generic_category().message(errno));
-    }
-    if (!S_ISDIR(info.st_mode)) {
-        refuse("it is not a directory");
-    }
-    if (info.st_uid != ::geteuid()) {
-        refuse("it belongs to another user");
-    }
-    if ((info.st_mode & static_cast<mode_t>(0077)) != 0) {
-        refuse("other users have access to it");
-    }
-#endif
-}
-
-std::filesystem::path default_user_dir() {
-    std::error_code ec;
-    const std::filesystem::path temp = std::filesystem::temp_directory_path(ec);
-
-#ifdef _WIN32
-    const std::filesystem::path user_dir = temp / "proxima" / "userdir";
-    ensure_private_directory(user_dir);
-#else
-    // Maxima runs whatever maxima-init.mac it finds here. /tmp is shared by
-    // every user of the machine, so a single /tmp/proxima/userdir — what this
-    // used to be — let whoever created it first run code in every other
-    // user's Proxima. One directory per user, and only if it is really theirs.
-    const std::filesystem::path base
-        = temp / ("proxima-" + std::to_string(::geteuid()));
-    ensure_private_directory(base);
-    const std::filesystem::path user_dir = base / "userdir";
-    ensure_private_directory(user_dir);
-#endif
-    return user_dir;
-}
-
 MaximaSession::MaximaSession(Config config)
     : config_(std::move(config)),
       cache_(config_.cache_entries, config_.cache_bytes) {
@@ -360,12 +44,10 @@ MaximaSession::MaximaSession(Config config)
     // inside a conversation, holding only the pipe lock, while another thread
     // may be reading the version to form a persistent key.
     factory_ = [this] {
-        // Not `version`, which would hide proxima::version (MSVC's C4459).
-        std::string launched_version;
-        auto transport = launch_maxima(config_, launched_version);
+        Launched launched = launch_maxima(config_);
         const std::lock_guard<std::mutex> state(state_mutex_);
-        maxima_version_ = std::move(launched_version);
-        return transport;
+        maxima_version_ = std::move(launched.version_tag);
+        return std::move(launched.transport);
     };
     transport_ = factory_();
     handshake();
@@ -487,7 +169,11 @@ Reply MaximaSession::switch_context(const std::string &name) {
     // Names are this session's own or `initial`, never the caller's, so
     // they can travel as text.
     Reply reply = converse(Payload::text("context: " + name));
-    active_context_ = reply.ok ? name : std::string();
+    if (reply.ok) {
+        active_context_ = name;
+    } else {
+        active_context_.reset(); // Whatever Maxima has current, it is not known.
+    }
     return reply;
 }
 
@@ -498,19 +184,18 @@ MaximaSession::select_environment(const Environment &environment) {
         return switched.ok ? std::nullopt : std::optional<Reply>(switched);
     }
 
-    if (const auto found = context_index_.find(environment.key);
-        found != context_index_.end()) {
-        contexts_.splice(contexts_.begin(), contexts_, found->second);
-        const Reply switched = switch_context(found->second->second);
+    if (const std::optional<std::string> existing
+        = contexts_.find(environment.key)) {
+        const Reply switched = switch_context(*existing);
         return switched.ok ? std::nullopt : std::optional<Reply>(switched);
     }
 
     // A context of its own, under `initial` so that what a statement put
     // there is in force here too. supcontext makes it current.
-    const std::string name = "proxima_a" + std::to_string(++next_context_);
+    const std::string name = contexts_.next_name();
     Reply made = converse(Payload::text("supcontext(" + name + ", initial)"));
     if (!made.ok) {
-        active_context_.clear();
+        active_context_.reset();
         return made;
     }
     active_context_ = name;
@@ -539,16 +224,11 @@ MaximaSession::select_environment(const Environment &environment) {
         }
     }
 
-    contexts_.emplace_front(environment.key, name);
-    context_index_.emplace(environment.key, contexts_.begin());
-    while (contexts_.size() > kMaxContexts) {
-        // Never the one just made, which is at the front and current.
-        const auto &[key, victim] = contexts_.back();
+    // Never the one just made, which is at the front and current.
+    for (const std::string &victim : contexts_.insert(environment.key, name)) {
         const Reply killed = converse(Payload::text("killcontext(" + victim + ")"));
         static_cast<void>(
             killed); // A context Maxima no longer has is gone either way.
-        context_index_.erase(key);
-        contexts_.pop_back();
     }
     return std::nullopt;
 }
@@ -666,7 +346,6 @@ void MaximaSession::recover() {
     // old process and go with it.
     active_context_ = "initial";
     contexts_.clear();
-    context_index_.clear();
 
     const std::lock_guard<std::mutex> state(state_mutex_);
     cache_.clear();
@@ -702,10 +381,7 @@ std::chrono::milliseconds MaximaSession::timeout_for(Deadline deadline) const {
 }
 
 Reply MaximaSession::read_frame(std::uint64_t id, Deadline deadline_kind) {
-    const std::string begin = frame_begin(frame_key_, id);
-    const std::string separator = frame_separator(frame_key_, id);
     const std::string end = frame_end(frame_key_, id);
-
     const auto started = std::chrono::steady_clock::now();
 
     std::string buffer;
@@ -714,7 +390,7 @@ Reply MaximaSession::read_frame(std::uint64_t id, Deadline deadline_kind) {
     // delimiter split across two reads would begin. Searching the whole buffer
     // after every read made a large reply cost time quadratic in its size.
     std::size_t search_from = 0;
-    size_t end_at = std::string::npos;
+    std::size_t end_at = std::string::npos;
     while ((end_at = buffer.find(end, search_from)) == std::string::npos) {
         // Recomputed every time round, so set_timeout can shorten a call that is
         // already waiting. And checked every time round, not only when a read
@@ -754,44 +430,7 @@ Reply MaximaSession::read_frame(std::uint64_t id, Deadline deadline_kind) {
         }
     }
 
-    const size_t begin_at = buffer.rfind(begin, end_at);
-    if (begin_at == std::string::npos) {
-        throw KernelError("Maxima produced a malformed reply: the closing "
-                          "delimiter for request "
-                          + frame_tag(frame_key_, id)
-                          + " arrived without its opening " + "delimiter");
-    }
-
-    // Everything before `begin_at` is banner text, prompts, or a frame belonging
-    // to some earlier request; none of it is our answer.
-    const size_t body_at = begin_at + begin.size();
-    const std::string body = buffer.substr(body_at, end_at - body_at);
-
-    const size_t first_separator = body.find(separator);
-    if (first_separator == std::string::npos) {
-        throw KernelError("Maxima produced a malformed reply for request "
-                          + std::to_string(id) + ": missing field separator");
-    }
-    const size_t second_separator
-        = body.find(separator, first_separator + separator.size());
-    if (second_separator == std::string::npos) {
-        throw KernelError("Maxima produced a malformed reply for request "
-                          + std::to_string(id) + ": missing second field "
-                          + "separator");
-    }
-
-    Reply reply;
-    reply.ok = body.compare(0, first_separator, "T") == 0;
-
-    const size_t value_at = first_separator + separator.size();
-    const size_t reason_at = second_separator + separator.size();
-
-    if (reply.ok) {
-        reply.value = body.substr(value_at, second_separator - value_at);
-    } else {
-        reply.reason = body.substr(reason_at);
-    }
-    return reply;
+    return parse_frame(buffer, end_at, frame_key_, id);
 }
 
 } // namespace proxima::detail

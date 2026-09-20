@@ -138,7 +138,9 @@ add_library(proxima
         src/kernel/discovery.cpp
         src/kernel/persistent_cache.cpp
         src/kernel/kernel.cpp
+        src/kernel/launch.cpp
         src/kernel/ops.cpp
+        src/kernel/protocol.cpp
         src/kernel/sbcl_path.cpp
         src/kernel/session.cpp
         src/transport/child_process.cpp

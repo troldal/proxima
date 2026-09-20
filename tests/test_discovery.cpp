@@ -5,7 +5,8 @@
 #include <doctest/doctest.h>
 
 #include "kernel/discovery.hpp"
-#include "kernel/session.hpp"
+#include "kernel/launch.hpp"
+#include "kernel/protocol.hpp"
 #include "util/utf8.hpp"
 
 #include <proxima/config.hpp>
@@ -33,7 +34,6 @@ using proxima::detail::candidate_roots;
 using proxima::detail::EnvLookup;
 using proxima::detail::inspect_root;
 using proxima::detail::MaximaInstall;
-using proxima::detail::MaximaSession;
 using proxima::detail::to_utf8;
 
 namespace {
@@ -212,7 +212,7 @@ TEST_CASE("discovery with nothing configured names the locations it tried") {
 
 TEST_CASE("launch command wires the core and installs the Lisp helper") {
     const std::vector<std::string> argv
-        = MaximaSession::launch_command(fake_install());
+        = proxima::detail::launch_command(fake_install());
 
     REQUIRE_FALSE(argv.empty());
     CHECK(argv.front()
@@ -233,7 +233,7 @@ TEST_CASE("the Lisp helper's delimiters agree with the ones C++ looks for") {
     // The format string lives in Lisp and the matching lives in C++, so they
     // can drift apart silently — the symptom would be every reply timing out.
     // Both sides derive from the same literal shape, and this pins that down.
-    const std::string lisp = joined(MaximaSession::launch_command(fake_install()));
+    const std::string lisp = joined(proxima::detail::launch_command(fake_install()));
 
     // The helper formats the tag — key and id — with ~a, so strip the tag
     // from each delimiter and look for the surrounding literal text.
@@ -245,15 +245,15 @@ TEST_CASE("the Lisp helper's delimiters agree with the ones C++ looks for") {
     };
 
     for (const auto &[prefix, suffix] :
-         {strip_tag(MaximaSession::frame_begin("k3y", 7)),
-          strip_tag(MaximaSession::frame_separator("k3y", 7)),
-          strip_tag(MaximaSession::frame_end("k3y", 7))}) {
+         {strip_tag(proxima::detail::frame_begin("k3y", 7)),
+          strip_tag(proxima::detail::frame_separator("k3y", 7)),
+          strip_tag(proxima::detail::frame_end("k3y", 7))}) {
         CHECK(lisp.find(prefix + "~a" + suffix) != std::string::npos);
     }
 }
 
 TEST_CASE("a request is wrapped so errors become values") {
-    const std::string request = MaximaSession::request_for(
+    const std::string request = proxima::detail::request_for(
         "k3y", 42, proxima::detail::Payload::text("integrate(x, 5)"));
 
     // The tag as a string, which the helper prints with ~a and so without its
@@ -275,19 +275,19 @@ TEST_CASE("the heap adjustment tracks the install rather than being hard-coded")
     // Set on 64-bit Windows, matching maxima.bat; not set on Unix, matching
     // /usr/bin/maxima, which leaves it to MAXIMA_LISP_OPTIONS.
     const std::string wide
-        = joined(MaximaSession::launch_command(fake_install(true)));
+        = joined(proxima::detail::launch_command(fake_install(true)));
     CHECK(wide.find("--dynamic-space-size") != std::string::npos);
     CHECK(wide.find("2000") != std::string::npos);
 
     const std::string narrow
-        = joined(MaximaSession::launch_command(fake_install(false)));
+        = joined(proxima::detail::launch_command(fake_install(false)));
     CHECK(narrow.find("--dynamic-space-size") == std::string::npos);
 }
 
 TEST_CASE("launch environment isolates the user's maxima-init.mac by default") {
     proxima::Config config;
     config.user_dir = abs("controlled/userdir");
-    const auto env = MaximaSession::launch_environment(fake_install(), config);
+    const auto env = proxima::detail::launch_environment(fake_install(), config);
 
     const auto find = [&env](std::string_view name) -> std::string {
         for (const auto &[key, value] : env) {
@@ -317,7 +317,7 @@ TEST_CASE("launch environment isolates the user's maxima-init.mac by default") {
 TEST_CASE("opting into the user's configuration leaves MAXIMA_USERDIR alone") {
     proxima::Config config;
     config.load_user_init = true;
-    const auto env = MaximaSession::launch_environment(fake_install(), config);
+    const auto env = proxima::detail::launch_environment(fake_install(), config);
 
     for (const auto &[key, value] : env) {
         CHECK(key != "MAXIMA_USERDIR");
@@ -330,7 +330,7 @@ TEST_CASE("the default user directory is private to the user") {
     // of the machine, so whoever made it first could run code in everyone
     // else's Proxima.
     const auto env
-        = MaximaSession::launch_environment(fake_install(), proxima::Config{});
+        = proxima::detail::launch_environment(fake_install(), proxima::Config{});
     std::string user_dir;
     for (const auto &[key, value] : env) {
         if (key == "MAXIMA_USERDIR") {
@@ -531,7 +531,7 @@ TEST_CASE("the launch recipe carries non-ASCII paths as UTF-8") {
     install.maxima_core
         = install.root / "lib" / "maxima" / "5.50.0" / "binary-sbcl" / "maxima.core";
 
-    const std::vector<std::string> argv = MaximaSession::launch_command(install);
+    const std::vector<std::string> argv = proxima::detail::launch_command(install);
     REQUIRE(argv.size() > 2);
     CHECK(argv[0] == utf8(install.sbcl_exe));
     CHECK(argv[0].find(kUnicodeNameBytes) != std::string::npos);
@@ -539,7 +539,7 @@ TEST_CASE("the launch recipe carries non-ASCII paths as UTF-8") {
 
     proxima::Config config;
     config.user_dir = unicode_path("userdir");
-    const auto env = MaximaSession::launch_environment(install, config);
+    const auto env = proxima::detail::launch_environment(install, config);
     for (const auto &[key, value] : env) {
         // Every path in the environment names the install or the user
         // directory, and each must be the UTF-8 bytes.

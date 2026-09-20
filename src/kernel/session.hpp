@@ -2,131 +2,33 @@
 
 // Internal header. Note what is *not* here: this class holds no handles and
 // includes no platform headers. It speaks the Maxima protocol over an
-// ITransport and nothing else.
+// ITransport and nothing else — the protocol itself is kernel/protocol.hpp,
+// starting Maxima is kernel/launch.hpp, and which context a set of
+// assumptions has is kernel/context_table.hpp. What is left is the
+// conversation: sending requests, reading frames, keeping the caches honest,
+// and putting the session back on its feet when Maxima dies.
 
 #include "kernel/cache.hpp"
-#include "kernel/discovery.hpp"
+#include "kernel/context_table.hpp"
 #include "kernel/persistent_cache.hpp"
-#include "transport/itransport.hpp"
-#include "transport/process_env.hpp"
-
+#include "kernel/protocol.hpp"
 #include "kernel/reply.hpp"
+#include "transport/itransport.hpp"
+
 #include <proxima/config.hpp>
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
-#include <filesystem>
 #include <functional>
-#include <list>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_map>
-#include <utility>
 #include <vector>
 
 namespace proxima::detail {
-
-/// Drives a persistent Maxima session.
-///
-/// Maxima is reached directly through its underlying SBCL Lisp image, bypassing
-/// maxima.bat//usr/bin/maxima entirely. That avoids spawning a fresh Maxima
-/// process (and, on Windows, a flashing console window) per query.
-///
-/// ## The protocol
-///
-/// A Lisp helper installed at startup wraps every reply in delimiters carrying
-/// the request's own id:
-///
-///     @@B<tag>@@<ok>@@S<tag>@@<value>@@S<tag>@@<reason>@@E<tag>@@
-///
-/// where the tag is `<key>-<id>`: the request's id, behind a key drawn at
-/// random for each session. The id alone was enough to keep one reply from
-/// being mistaken for another, but not to keep a *value* from ending its own
-/// frame — a Maxima string containing `@@E7@@`, printed inside frame 7, did
-/// exactly that, and ids are sequential and so easy to guess. The key is never
-/// part of any value Maxima is asked to compute.
-///
-/// and each request is sent as
-///
-///     cppsend(<id>, errcatch(ratdisrep(<payload>)))$
-///
-/// where the payload is one of exactly two calls, each taking a single string
-/// literal that this layer escaped itself:
-///
-///     cppread("((MPLUS) 1 $X)")        a Maxima internal form, read and evaluated
-///     eval_string("integrate(x^2, x)") Maxima source, parsed and evaluated
-///
-/// Five things fall out of that shape:
-///
-/// - **The id makes desynchronisation detectable.** A reply is only accepted
-///   for the request that asked for it; a stale or duplicated frame is skipped
-///   rather than silently returned as the answer to the wrong question.
-/// - **errcatch turns errors into values.** It yields `[]` on failure and
-///   `[result]` on success, so Maxima never drops into an error prompt that
-///   leaves the stream off by one. Success and failure are read from the frame
-///   rather than guessed at from the shape of some text.
-/// - **Nothing variable ever reaches Maxima's reader as syntax.** The only
-///   text Maxima parses is the fixed wrapper plus a string literal. Reading
-///   the string's *contents* happens inside errcatch, so a malformed
-///   expression is an ordinary failure with a message. Before this, the
-///   expression was spliced in raw, and a stray `$` failed in the reader —
-///   before errcatch — which produced no frame at all and cost the caller the
-///   full Config::timeout and a restart.
-/// - **The value is Maxima's internal s-expression, not its display output.**
-///   `(%oN)` text is a display format: it is ambiguous, it line-wraps, and it
-///   loses exact rationals. The internal form has no precedence to re-derive
-///   and keeps `((RAT SIMP) 1 3)` as a rational. `ratdisrep` prevents canonical
-///   rational (`MRAT`) forms coming back in place of general ones. And with
-///   `cppread` the *outbound* direction is the same form, so an expression
-///   goes out as structure and comes back as structure: the infix printer is
-///   no longer part of the protocol at all.
-/// - **Errors no longer leak into the stream.** With `errormsg:false` Maxima
-///   stops printing them, and the helper renders the message into the frame, so
-///   everything between frames is noise that can simply be discarded.
-/// The variable part of a request: a Maxima call taking one string literal.
-///
-/// Only the two factories can make one, and both escape the string they are
-/// given, so there is no way to hand the session text that Maxima's reader
-/// will see as syntax. That is the whole point of the type; see the protocol
-/// notes above.
-class Payload {
-public:
-    /// `cppread("<sexpr>")` — a Maxima internal form, to be read by the Lisp
-    /// helper and evaluated. What to_maxima produces.
-    static Payload form(std::string_view sexpr);
-
-    /// `eval_string("<source>")` — Maxima source text, parsed and evaluated
-    /// by Maxima's own parser. The escape hatch for anything an Expr cannot
-    /// say.
-    static Payload text(std::string_view source);
-
-    /// The call, exactly as it is substituted into the request wrapper. Also
-    /// the reply-cache key, since it is the whole question.
-    const std::string &str() const { return call_; }
-
-    bool operator==(const Payload &other) const = default;
-
-private:
-    explicit Payload(std::string call) : call_(std::move(call)) {}
-    std::string call_;
-};
-
-/// A fresh frame key: sixteen hex digits from std::random_device.
-std::string random_frame_key();
-
-/// Creates `dir` accessible to its owner only, or accepts it if it already
-/// exists as a directory — not a link — owned by this user and closed to
-/// everyone else; otherwise throws KernelError. On Windows, only creates it.
-void ensure_private_directory(const std::filesystem::path &dir);
-
-/// The user directory Maxima is given when Config::user_dir is empty: a
-/// per-user private directory under the system temporary directory, checked
-/// with ensure_private_directory, since Maxima executes the maxima-init.mac it
-/// finds there.
-std::filesystem::path default_user_dir();
 
 /// What eval_pure needs to answer under a set of assumptions: a key naming
 /// the set, empty for none, and the statements that establish it in a fresh
@@ -141,13 +43,19 @@ struct Environment {
     std::vector<Statement> statements;
 };
 
+/// Drives a persistent Maxima session.
+///
+/// Maxima is reached directly through its underlying SBCL Lisp image, bypassing
+/// maxima.bat//usr/bin/maxima entirely. That avoids spawning a fresh Maxima
+/// process (and, on Windows, a flashing console window) per query. The shape
+/// of what travels each way is documented in kernel/protocol.hpp.
 class MaximaSession {
 public:
     /// Produces a transport, and can be asked again after one dies. Holding a
     /// factory rather than a transport is what makes restarting possible.
     using TransportFactory = std::function<std::unique_ptr<ITransport>()>;
 
-    /// Discovers Maxima under `config.maxima_root` and launches it.
+    /// Discovers Maxima as `config` says and launches it.
     explicit MaximaSession(Config config);
 
     /// Drives transports from `factory`, which is called again on restart.
@@ -235,42 +143,6 @@ public:
     static constexpr std::string_view kInconsistent
         = "the assumptions are inconsistent: ";
 
-    /// Builds the argv used to launch Maxima's SBCL image for `install`, with
-    /// its paths in UTF-8. Exposed for testing; touches no filesystem and
-    /// starts nothing.
-    static std::vector<std::string> launch_command(const MaximaInstall &install);
-
-    /// Builds the environment overrides layered over the parent's environment,
-    /// with its paths in UTF-8 and forward slashes. Exposed for testing; may
-    /// create Config::user_dir, or the default user directory, but starts
-    /// nothing. Throws KernelError if the default directory exists and is not
-    /// private to this user (see default_user_dir).
-    static std::vector<EnvOverride> launch_environment(const MaximaInstall &install,
-                                                       const Config &config);
-
-    /// The statements sent once at startup to make the session machine-readable
-    /// and deterministic. Exposed so tests can script a transport that expects
-    /// exactly these.
-    static std::vector<std::string> setup_statements();
-
-    /// Wraps `payload` in the framed, error-trapping call sent to Maxima, for
-    /// request `id` of the session whose frame key is `key`. Exposed for
-    /// testing.
-    static std::string request_for(std::string_view key, std::uint64_t id,
-                                   const Payload &payload);
-
-    /// Frame delimiters for request `id` under frame key `key`. Exposed so
-    /// tests can script replies in the same shape Maxima produces.
-    static std::string frame_begin(std::string_view key, std::uint64_t id);
-    static std::string frame_separator(std::string_view key, std::uint64_t id);
-    static std::string frame_end(std::string_view key, std::uint64_t id);
-
-    /// The most a single reply may occupy before it is abandoned as a broken
-    /// conversation. Without a limit, a child that streamed without ever
-    /// closing its frame was bounded only by Config::timeout — at pipe speed,
-    /// gigabytes. The largest reply measured in practice is under a megabyte.
-    static constexpr std::size_t kMaxFrameBytes = std::size_t{256} * 1024 * 1024;
-
 private:
     /// Which deadline a conversation runs on. A call's can be changed while it
     /// waits; the startup one, for the handshake and a replay, is fixed.
@@ -348,15 +220,11 @@ private:
     /// describe, until the next restart.
     bool state_accounted_ = true;
 
-    /// Guarded by the pipe lock: which context Maxima has current, empty when
-    /// unknown (after a statement, which may have changed it), and the
-    /// contexts made for assumptions, most recently used first.
-    std::string active_context_ = "initial";
-    std::list<std::pair<std::string, std::string>> contexts_; ///< (key, name)
-    std::unordered_map<std::string,
-                       std::list<std::pair<std::string, std::string>>::iterator>
-        context_index_;
-    std::uint64_t next_context_ = 0;
+    /// Guarded by the pipe lock: which context Maxima has current — none when
+    /// unknown, after a statement that may have changed it — and the contexts
+    /// made for assumptions.
+    std::optional<std::string> active_context_ = "initial";
+    ContextTable contexts_{kMaxContexts};
 
     /// Set while recovering, so that a failure during the handshake or replay
     /// does not set off another recovery inside the first.

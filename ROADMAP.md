@@ -334,7 +334,7 @@ what is missing, with no base class for a user's type to inherit.
 
 **States the types allow and the code forbids**
 
-- [ ] **`Node`'s kind and payload can disagree.** `kind` is one field and
+- [x] **`Node`'s kind and payload can disagree.** `kind` is one field and
   `payload` a variant beside it, so a node of `Kind::Integer` holding a
   string is constructible, and every one of the eight builders sets both by
   hand; the accessors then `std::get` on trust. And `Add`, `Mul`, `Pow` and
@@ -346,6 +346,10 @@ what is missing, with no base class for a user's type to inherit.
   rather than a vector where there are exactly two — and derive `kind()`
   from its index. Internal; the library's central invariant should not rest
   on discipline in eight places.
+  *Done:* one alternative per kind, `kind()` read off the index, the
+  two-operand kinds built only through a constructor. `Expr::args()` still
+  hands out a vector, so those keep vector storage behind it; a span is the
+  public change, listed with the API findings' small things.
 - [ ] **`Reply` and the cause, by string prefix.** `Reply` is `{ok, value,
   reason}`, so a success with a reason and a failure with a value are both
   representable; and `to_result` decides the cause by whether the reason
@@ -398,7 +402,7 @@ what is missing, with no base class for a user's type to inherit.
 
 **SOLID, where it is worth a change**
 
-- [ ] **`MaximaSession` has five jobs.** Framing the protocol (`request_for`,
+- [x] **`MaximaSession` has five jobs.** Framing the protocol (`request_for`,
   `read_frame`, the delimiters), keeping the transport alive (`recover`,
   `handshake`), deciding what is cached and when (`eval_pure` against two
   caches and a generation counter), managing Maxima's contexts for
@@ -409,6 +413,12 @@ what is missing, with no base class for a user's type to inherit.
   cannot be tested apart. Three of them come out cleanly: a `Framing`
   unit, a `ContextTable`, and a `Launcher`; each is already internally
   coherent and mostly static.
+  *Done:* `kernel/protocol` (Payload, the delimiters, the request
+  wrapper, the helper Lisp, and reading a frame), `kernel/launch` (the
+  command line, the environment, the private user directory, and starting
+  Maxima for a Config) and `kernel/context_table` (the LRU of contexts,
+  tested on its own). The session keeps the conversation: 400 lines, from
+  800, and no static helpers exposed for testing.
 - [ ] **Adding a construct to rendering touches six places.** `DisplayKind`,
   `Construct`, `Slot`, `to_display`, `render_node` and `construct_of` all
   change together, and a user cannot add one at all. That is the closed

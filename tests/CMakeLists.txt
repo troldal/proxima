@@ -19,6 +19,7 @@ add_executable(proxima_tests
         test_assumptions.cpp
         test_basics.cpp
         test_cache.cpp
+        test_context_table.cpp
         test_discovery.cpp
         test_doc_pages.cpp
         test_docs.cpp

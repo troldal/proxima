@@ -9,7 +9,7 @@
 #include <doctest/doctest.h>
 
 #include "kernel/kernel_internal.hpp"
-#include "kernel/session.hpp"
+#include "kernel/protocol.hpp"
 #include "wire/from_maxima.hpp"
 #include "wire/sexpr.hpp"
 #include "wire/to_maxima.hpp"

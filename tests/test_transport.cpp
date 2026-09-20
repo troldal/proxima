@@ -4,6 +4,7 @@
 
 #include <doctest/doctest.h>
 
+#include "kernel/protocol.hpp"
 #include "kernel/reply.hpp"
 #include "kernel/session.hpp"
 #include "transport/fake_transport.hpp"
@@ -34,10 +35,10 @@ constexpr const char *kKey = "test";
 /// A complete reply frame, exactly as the Lisp helper formats one.
 std::string frame(std::uint64_t id, bool ok, const std::string &value,
                   const std::string &reason = "") {
-    return MaximaSession::frame_begin(kKey, id) + (ok ? "T" : "NIL")
-           + MaximaSession::frame_separator(kKey, id) + value
-           + MaximaSession::frame_separator(kKey, id) + reason
-           + MaximaSession::frame_end(kKey, id) + "\n";
+    return proxima::detail::frame_begin(kKey, id) + (ok ? "T" : "NIL")
+           + proxima::detail::frame_separator(kKey, id) + value
+           + proxima::detail::frame_separator(kKey, id) + reason
+           + proxima::detail::frame_end(kKey, id) + "\n";
 }
 
 /// The banner Maxima prints before anything else, plus the prompts that appear
@@ -86,7 +87,7 @@ TEST_CASE("the handshake makes the session machine-readable and deterministic") 
 
     // And a framed probe, which is what synchronises the stream. A form, so
     // that the handshake needs nothing but the helper installed at launch.
-    CHECK(sent.find(MaximaSession::request_for(kKey, 1, Payload::form("T")))
+    CHECK(sent.find(proxima::detail::request_for(kKey, 1, Payload::form("T")))
           != std::string::npos);
 }
 
@@ -96,7 +97,7 @@ TEST_CASE("a request carries its own correlation id") {
 
     // Request 1 was the handshake probe, so the first real request is 2.
     CHECK(scripted.transport->sent().back()
-          == MaximaSession::request_for(kKey, 2, Payload::text("x+1")) + "\n");
+          == proxima::detail::request_for(kKey, 2, Payload::text("x+1")) + "\n");
 }
 
 TEST_CASE("a successful reply yields the internal s-expression") {
@@ -198,21 +199,21 @@ TEST_CASE("each session draws a frame key of its own") {
 TEST_CASE("a reply that never completes is abandoned at the size limit") {
     // Two halves that together pass the limit and carry no closing delimiter.
     // Without the limit this read would continue until Config::timeout.
-    const std::string half(MaximaSession::kMaxFrameBytes / 2 + 1, 'x');
+    const std::string half(proxima::detail::kMaxFrameBytes / 2 + 1, 'x');
     ScriptedSession scripted({frame(2, true, "1").substr(0, 20) + half, half});
     CHECK_THROWS_AS(scripted.session->eval(Payload::text("x")),
                     proxima::KernelError);
 }
 
 TEST_CASE("a closing delimiter with no opening one is a protocol error") {
-    ScriptedSession scripted({MaximaSession::frame_end(kKey, 2) + "\n"});
+    ScriptedSession scripted({proxima::detail::frame_end(kKey, 2) + "\n"});
     CHECK_THROWS_AS(scripted.session->eval(Payload::text("x")),
                     proxima::KernelError);
 }
 
 TEST_CASE("a frame missing its field separators is a protocol error") {
-    ScriptedSession scripted({MaximaSession::frame_begin(kKey, 2) + "T"
-                              + MaximaSession::frame_end(kKey, 2)});
+    ScriptedSession scripted({proxima::detail::frame_begin(kKey, 2) + "T"
+                              + proxima::detail::frame_end(kKey, 2)});
     CHECK_THROWS_AS(scripted.session->eval(Payload::text("x")),
                     proxima::KernelError);
 }
