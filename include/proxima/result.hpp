@@ -81,7 +81,7 @@ enum class Cause {
     Overflow,
 };
 
-/// Maxima's spelling of the cause, for messages and logs.
+/// The cause's name, for messages and logs: "NoClosedForm", "Parse".
 std::string_view to_string(Cause cause);
 
 /// Why an operation produced no result: fxt::failure, carrying a message —

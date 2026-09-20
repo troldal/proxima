@@ -195,10 +195,10 @@ Kernel &shared_kernel();
 /// defaulting to shared_kernel() and no assumptions, and it converts from
 /// either half or both:
 ///
-///     proxima::integrate(f, x);                         // shared kernel, nothing
-///     assumed proxima::integrate(f, x, assuming(gt(n, 0)));     // shared kernel, n
-///     > 0 proxima::integrate(f, x, kernel);                 // this kernel, nothing
-///     assumed proxima::integrate(f, x, {assuming(gt(n, 0)), kernel});
+///     integrate(f, x);                          // shared kernel, nothing assumed
+///     integrate(f, x, assuming(gt(n, 0)));      // shared kernel, under n > 0
+///     integrate(f, x, kernel);                  // this kernel, nothing assumed
+///     integrate(f, x, {assuming(gt(n, 0)), kernel});
 ///
 /// A value: the environment is passed in, never looked up, so what an
 /// operation means is decided at the call.

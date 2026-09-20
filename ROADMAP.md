@@ -188,15 +188,23 @@ a distribution that ships only that build.
 
 Decisions that change the public API, made before it is frozen.
 
-- [ ] **Review the public API as a whole.** Names, parameter order, which
+- [x] **Review the public API as a whole.** Names, parameter order, which
   header declares what, and what is public but should be in `detail` (the
   display tree in `render.hpp` is public only because a template needs it).
+  *Done* against 0.3.0, every public header read as one surface. Two
+  documentation slips were fixed on the spot; everything else is a decision,
+  and is listed under *From the API review* below.
 - [ ] **`Expr::str()` and `Expr::parse`: members or free functions?** They are
   members of `Expr` but implemented in `src/render` and `src/parse`, which
   keeps the expression model from being built as a library of its own — one
   that needs no Boost.Process, for users who never call Maxima. Decide
   whether that split is wanted; it is an API change either way
-  ([TODO §9.5](TODO.md)).
+  ([TODO §9.5](TODO.md)). Two things the review adds. The names: `Expr::str()`
+  beside `Integer::to_string()` beside the free `to_tex` and `to_mathml` are
+  three spellings of "as text"; whichever way the members go, pick one. And a
+  free `parse` already exists — `proxima::parse`, Maxima's own parser, which
+  needs a kernel — so a free local one cannot take that name without a
+  qualifier, and the pair should say which is which.
 - [ ] **How renderers extend.** Adding a construct to the rendering walk (as
   `Postfix` was added in 0.1) adds enumerators to `Construct` and `Slot`,
   which breaks a user's exhaustive `switch`. Decide the rule — enumerators
@@ -222,6 +230,88 @@ Decisions that change the public API, made before it is frozen.
 - [ ] **Document every public declaration.** Turn on Doxygen's warnings for
   undocumented members in the docs build, so the reference cannot fall
   behind.
+
+### From the API review
+
+What reading every public header as one surface turned up. Each is a
+decision rather than a bug, and most are renames, which is why they are here
+and not later: after 1.0 they cannot be made.
+
+- [ ] **One vocabulary for the node kinds.** The same node has two names
+  wherever it appears: `Kind::Add`, `Mul`, `Pow` and `Function` against the
+  views `node::Sum`, `Product`, `Power` and `Call`, and the renderer's
+  `Construct::Sum`, `Product`, `Power`, `Call`. Pick one — the views' and the
+  renderer's, most likely — and rename the enumerators.
+- [ ] **One convention for an enum's spelling.** Four public enums are spelled
+  four ways: `to_string(Cause)`, `name_of(Feature)`, `kind_name(Kind)` and
+  `symbol_for(RelOp)`; `Truth`, `Side` and `Search` have none; and only `Kind`
+  has a `std::formatter`. Pick one name, and give every public enum a
+  formatter.
+- [ ] **The names of the ways to a number.** `eval_numeric` and `eval_complex`
+  evaluate locally; `to_double` and `to_complex` evaluate locally and fall
+  back on Maxima; `to_float` is Maxima's `float`, and returns an `Expr`. Two
+  prefixes with a meaning, and one name that fits neither. Decide the grid,
+  and give `to_float` a name that says it keeps the expression.
+- [ ] **Optional arguments ahead of the `Env`.** `diff(f, x, 1, kernel)`,
+  `limit(f, x, 0, Side::Both, kernel)`, `coeff(e, t, 1, env)`: a kernel cannot
+  be passed without first spelling out a default the caller never wanted to
+  mention, and the examples now show that at every call. Overloads without
+  the optional parameter, or the `Env` ahead of it — decide, and apply the
+  rule to every operation.
+- [ ] **A shared kernel that can be configured.** `shared_kernel()` takes no
+  `Config`, so a program that wants the default kernel — the one every
+  operation uses when no `Env` is given — to run a particular Maxima, or to
+  keep a disk cache, has no way to say so, and must thread a `Kernel` of its
+  own through every call. That is exactly what the examples had to do. A way
+  to configure it before first use, or a documented decision not to.
+- [ ] **Solving a system takes spans.** `solve(equations, unknowns)` takes
+  `std::span<const Expr>` and `std::span<const Symbol>`, so
+  `solve({eq(x + y, 3), eq(x - y, 1)}, {x, y})` does not compile and every
+  caller builds two vectors first. `initializer_list` overloads, or ranges.
+- [ ] **The exceptions and the causes do not line up.** `unwrap` throws
+  `ParseError`, `EvalError` or `OverflowError` for those three causes and
+  `MaximaError` for every other, so `unwrap(solve(eqs, {}))` throws
+  `MaximaError` — `Cause::Argument` — although Maxima was never asked. The
+  builders throw the base `Error` for a zero denominator or a NaN, which no
+  cause names. Decide the mapping: one exception per cause, or one exception
+  carrying the cause.
+- [ ] **Reading text: `optional`, `result` or throw.** `Integer::parse` returns
+  an `optional`, `Expr::parse` a `result`, and `Integer(std::string_view)`
+  throws `ParseError`. One convention.
+- [ ] **What is in `detail` but belongs outside.** `detail::with_operands` —
+  a node rebuilt with new operands, normalised — is the one primitive a
+  user's own walk needs, and `traverse.hpp` says as much; promote it.
+  `detail::same_representation` is the identity test `transform` relies on,
+  and a user's rewrite wants it for the same reason. Go through the rest of
+  `detail` in the public headers with the same question.
+- [ ] **`Symbol` is declared in one header and defined in another.**
+  `expr.hpp` forward-declares it, constrains `ExprArgument` and `pow` by it
+  and returns it from `Expr::as_symbol` — with a note to include
+  `symbol.hpp` first. A class of one member that the core header already
+  depends on belongs in the core header; merge `symbol.hpp` into it, or
+  move `as_symbol` out.
+- [ ] **`result` is lower-case among upper-case types.** `result<T>` is
+  spelled as FXT spells `fxt::result`, while `Failure` is upper-case although
+  it is `fxt::failure`. Decide the spelling of both, and whether `result` is
+  an alias of FXT's or a name of Proxima's own.
+- [ ] **`as_function` is `Compiled` under another name.** `as_function(e, x)`
+  returns the `Compiled` that `Compiled(e, x)` constructs, and `compile(e, x)`
+  is the same as a `result`. Three entry points to one preparation; keep the
+  two that differ in how they fail, and decide whether the third earns its
+  name.
+- [ ] **`[[nodiscard]]` and `noexcept`, audited once.** Only the `with()`
+  methods are `[[nodiscard]]`; `str()`, `to_tex`, `eval_numeric`,
+  `canonical_order` and the rest of the pure functions are not. Accessors
+  that cannot throw — `kind()`, `hash()`, `is()`, `arity()` — are not
+  `noexcept`. Go through every declaration once, before 1.0 makes the
+  contracts permanent.
+- [ ] **Small things, in one pass.** `Integer` has `+=`, `-=`, `*=` and `/=`
+  but no `%=`. `nroots`'s defaults are `Expr::symbol("minf")` and
+  `Expr::symbol("inf")` where `minf()` and `inf()` exist. Bounds are
+  `from`/`to` in `integrate` and `low`/`high` in `nroots` and `find_root`.
+  `Feature`'s last enumerator carries a comment about the tests, which is
+  no concern of a public header. `Kernel::tell` returns `result<fxt::unit>`,
+  the one place an FXT type other than the result appears in a signature.
 
 ### Local tools users of SymPy or GiNaC will look for
 
